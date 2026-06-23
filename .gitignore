@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+*.log
+.vite
+
+# Claude / 智能体相关本地文件（与项目无关，不上传）
+.claude/
+.cursor/
+.aider*
+.github/copilot-instructions.md
+
+# 项目需求/设计文档（本地保留，不上传）
+CLAUDE.md
