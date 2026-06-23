@@ -4,6 +4,9 @@
       <div>
         <h2>系统首页 / 工作台</h2>
         <div class="page__desc">便携式智能联试工具 · 联试全流程概览</div>
+        <el-tag class="system-context" type="info" effect="plain">
+          当前系统：{{ systemStore.current?.name || '全部系统' }}
+        </el-tag>
       </div>
       <el-button-group>
         <el-button type="primary" :icon="Plus" @click="$router.push('/task')">创建测试任务</el-button>
@@ -58,10 +61,14 @@
 
 <script setup>
 import { Plus, Upload, Warning, Tickets } from '@element-plus/icons-vue'
+import { useSystemStore } from '@/stores/system'
+
+const systemStore = useSystemStore()
 
 // 让卡片 body 成为可伸缩的 flex 容器，表格才能填满高度
 const cardBody = { flex: '1', minHeight: '0', padding: '0' }
 
+// 静态设计阶段暂用占位数据；接入真实数据后按 systemStore.currentId 过滤统计与任务列表。
 const stats = [
   { label: '当前连接数', value: 12, color: '#2f6feb' },
   { label: '接口模板数', value: 86, color: '#13c2c2' },
@@ -70,17 +77,17 @@ const stats = [
 ]
 
 const recentTasks = [
-  { name: '接口连通性测试', system: '分系统A', status: '执行中', time: '10:31' },
-  { name: '边界值规则检测', system: '分系统B', status: '已完成', time: '09:45' },
-  { name: '异常接口回放', system: '分系统C', status: '异常', time: '09:20' },
-  { name: '报告生成任务', system: '分系统A', status: '待确认', time: '08:50' }
+  { name: '武器状态接口连通性测试', system: '综合武器管理系统', status: '执行中', time: '10:31' },
+  { name: '弹药余量边界值检测', system: '综合武器管理系统', status: '已完成', time: '09:45' },
+  { name: '火控解算异常回放', system: '火控指挥联试系统', status: '异常', time: '09:20' },
+  { name: '指挥链路报告生成任务', system: '火控指挥联试系统', status: '待确认', time: '08:50' }
 ]
 
 const alerts = [
-  { type: '字段越界', iface: 'IF-003', level: '高', state: '待处理' },
-  { type: '响应超时', iface: 'IF-017', level: '中', state: '已记录' },
-  { type: '格式错误', iface: 'IF-006', level: '高', state: '待处理' },
-  { type: '心跳丢失', iface: '会话-02', level: '中', state: '自动恢复' }
+  { type: '字段越界', iface: 'WM-003', level: '高', state: '待处理' },
+  { type: '响应超时', iface: 'FC-017', level: '中', state: '已记录' },
+  { type: '格式错误', iface: 'WM-006', level: '高', state: '待处理' },
+  { type: '心跳丢失', iface: '指挥链路模块', level: '中', state: '自动恢复' }
 ]
 
 const statusType = (s) => ({ 执行中: 'primary', 已完成: 'success', 异常: 'danger', 待确认: 'info' }[s] || 'info')
@@ -89,6 +96,10 @@ const statusType = (s) => ({ 执行中: 'primary', 已完成: 'success', 异常:
 <style scoped lang="scss">
 .dashboard {
   height: 100%;
+}
+
+.system-context {
+  margin-top: 8px;
 }
 
 .stat-grid {

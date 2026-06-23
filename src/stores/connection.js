@@ -1,40 +1,41 @@
 import { defineStore } from 'pinia'
+import { useSystemStore } from '@/stores/system'
 
 let seq = 100
 const rnd = (a, b) => Math.round(a + Math.random() * (b - a))
-const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
-const seedWave = (base) => Array.from({ length: 40 }, () => clamp(base + rnd(-5, 5), 5, 60))
 
 const makeNode = (o = {}) => ({
   id: ++seq,
+  systemId: null,
   name: '',
-  protocol: 'TCP',
   ip: '127.0.0.1',
   port: 8080,
   timeout: 3000,
   reconnect: { enabled: true, retries: 3, interval: 2000 },
   status: 'disconnected', // disconnected | connecting | connected | error
   latency: 0,
-  sendCount: 0,
-  recvCount: 0,
-  errorCount: 0,
-  wave: [],
   ...o
 })
 
 export const useConnectionStore = defineStore('connection', {
   state: () => ({
     nodes: [
-      makeNode({ name: '分系统A-主控', protocol: 'TCP', ip: '192.168.1.21', port: 9001, status: 'connected', latency: 12, sendCount: 1280, recvCount: 1275, errorCount: 3, wave: seedWave(12) }),
-      makeNode({ name: '分系统B-数据链', protocol: 'UDP', ip: '192.168.1.32', port: 9100, status: 'connected', latency: 23, sendCount: 860, recvCount: 845, errorCount: 1, wave: seedWave(23) }),
-      makeNode({ name: '分系统C-遥测', protocol: 'HTTP', ip: '192.168.1.45', port: 8080, status: 'disconnected' })
+      makeNode({ systemId: 'sys-weapon', name: '武器管理模块', ip: '192.168.10.21', port: 9001, status: 'connected', latency: 12 }),
+      makeNode({ systemId: 'sys-weapon', name: '弹药状态模块', ip: '192.168.10.32', port: 9100, status: 'connected', latency: 23 }),
+      makeNode({ systemId: 'sys-fire-control', name: '火控解算模块', ip: '192.168.20.45', port: 8080, status: 'disconnected' }),
+      makeNode({ systemId: 'sys-fire-control', name: '指挥链路模块', ip: '192.168.20.46', port: 7070, status: 'disconnected' })
     ],
     selectedId: 101
   }),
 
   getters: {
     selected: (s) => s.nodes.find((n) => n.id === s.selectedId) || null,
-    connectedCount: (s) => s.nodes.filter((n) => n.status === 'connected').length
+    modulesOf: (s) => (systemId) => (systemId === null ? s.nodes : s.nodes.filter((n) => n.systemId === systemId)),
+    connectedCount: (s) => {
+      const systemStore = useSystemStore()
+      const modules = systemStore.currentId === null ? s.nodes : s.nodes.filter((n) => n.systemId === systemStore.currentId)
+      return modules.filter((n) => n.status === 'connected').length
+    }
   },
 
   actions: {
@@ -52,36 +53,31 @@ export const useConnectionStore = defineStore('connection', {
       if (i >= 0) this.nodes.splice(i, 1)
       if (this.selectedId === id) this.selectedId = this.nodes[0]?.id ?? null
     },
+    unassignSystem(systemId) {
+      this.nodes.forEach((module) => {
+        if (module.systemId === systemId) module.systemId = null
+      })
+    },
+    // 模拟建立连接：约 1 秒后返回结果，~85% 成功。返回 Promise<boolean> 供页面 toast。
     connect(id) {
       const n = this.nodes.find((x) => x.id === id)
-      if (!n) return
+      if (!n) return Promise.resolve(false)
       n.status = 'connecting'
-      n.wave = []
-      setTimeout(() => {
-        if (n.status === 'connecting') {
-          n.status = 'connected'
-          n.latency = rnd(8, 30)
-        }
-      }, 800)
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          if (n.status !== 'connecting') return resolve(false)
+          const ok = Math.random() > 0.15
+          n.status = ok ? 'connected' : 'error'
+          n.latency = ok ? rnd(8, 30) : 0
+          resolve(ok)
+        }, 900)
+      })
     },
     disconnect(id) {
       const n = this.nodes.find((x) => x.id === id)
       if (!n) return
       n.status = 'disconnected'
       n.latency = 0
-      n.wave = []
-    },
-    // 由页面每 1s 调用：模拟心跳、收发与异常计数
-    tick() {
-      this.nodes.forEach((n) => {
-        if (n.status !== 'connected') return
-        n.latency = clamp(n.latency + rnd(-4, 4), 5, 60)
-        n.sendCount += rnd(2, 8)
-        n.recvCount += rnd(2, 8)
-        if (Math.random() < 0.08) n.errorCount += 1
-        n.wave.push(n.latency)
-        if (n.wave.length > 40) n.wave.shift()
-      })
     }
   }
 })

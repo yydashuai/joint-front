@@ -8,6 +8,8 @@ dist-ssr
 
 # Claude / 智能体相关本地文件（与项目无关，不上传）
 .claude/
+.agents/
+AGENTS.md
 .cursor/
 .aider*
 .github/copilot-instructions.md

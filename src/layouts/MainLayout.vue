@@ -28,10 +28,22 @@
           <span class="topbar__logo">●</span>
           <span class="topbar__name">便携式智能联试工具</span>
         </div>
+        <div class="topbar__system">
+          <span class="topbar__system-label">被测系统：</span>
+          <el-select v-model="currentSystemKey" class="topbar__system-select" size="small">
+            <el-option
+              v-for="option in systemStore.options"
+              :key="option.value ?? 'all'"
+              :label="option.label"
+              :value="option.value ?? ALL_SYSTEM_KEY"
+            />
+          </el-select>
+          <el-button :icon="Setting" size="small" @click="systemManagerVisible = true">管理</el-button>
+        </div>
         <el-menu
           class="topbar__menu"
           mode="horizontal"
-          :ellipsis="false"
+          :ellipsis="true"
           :default-active="$route.path"
           router
         >
@@ -62,15 +74,28 @@
         </router-view>
       </main>
     </div>
+
+    <SystemManager v-model="systemManagerVisible" />
   </div>
 </template>
 
 <script setup>
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { Setting } from '@element-plus/icons-vue'
+import SystemManager from '@/components/SystemManager.vue'
 import { navRoutes } from '@/router'
+import { useSystemStore } from '@/stores/system'
 
 const route = useRoute()
+const systemStore = useSystemStore()
+const systemManagerVisible = ref(false)
+const ALL_SYSTEM_KEY = '__all__'
 const isActive = (item) => route.path === item.path
+const currentSystemKey = computed({
+  get: () => systemStore.currentId ?? ALL_SYSTEM_KEY,
+  set: (id) => systemStore.setCurrent(id === ALL_SYSTEM_KEY ? null : id)
+})
 </script>
 
 <style scoped lang="scss">
@@ -148,7 +173,29 @@ const isActive = (item) => route.path === item.path
   &__brand { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   &__logo { color: var(--el-color-primary); font-size: 18px; }
   &__name { font-weight: 600; font-size: 15px; white-space: nowrap; }
-  &__menu { flex: 1; border-bottom: none !important; }
+  &__system {
+    width: 326px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    background: var(--el-fill-color-blank);
+  }
+  &__system-label {
+    flex-shrink: 0;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+  }
+  &__system-select { width: 190px; }
+  &__menu {
+    flex: 1;
+    min-width: 0;
+    border-bottom: none !important;
+    overflow: hidden;
+  }
   &__user { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
   &__avatar { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; font-size: 14px; }
 }
