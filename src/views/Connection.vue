@@ -367,7 +367,8 @@ const confirmCreate = async () => {
 </script>
 
 <style scoped lang="scss">
-.conn { height: 100%; }
+/* 用 min-height 而非固定 100%：内容变高时整页（工作区）出现滚动条 */
+.conn { min-height: 100%; }
 
 .header-actions { display: flex; align-items: center; gap: 12px; }
 
@@ -392,12 +393,13 @@ const confirmCreate = async () => {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px;
   }
 }
-.topo-wrap { overflow-x: auto; }
+/* 拓扑图封顶 + 内部滚动：拓扑再大也不会把下方列表/配置挤掉 */
+.topo-wrap { max-height: min(400px, 48vh); overflow: auto; }
 
 /* 模块列表 + 配置 */
 .conn-body {
-  flex: 1;
-  min-height: 0;
+  /* 行高由配置卡片内容决定（列表滚动区绝对定位、不撑高行高）；列表与配置等高，超出内部滚动 */
+  flex-shrink: 0;
   display: flex;
   gap: 16px;
 }
@@ -416,7 +418,9 @@ const confirmCreate = async () => {
   display: flex;
   flex-direction: column;
 }
-.node-scroll { height: 100%; }
+/* 列表滚动区绝对填充卡片正文，不参与撑高，使列表高度跟随配置卡片 */
+.node-list :deep(.el-card__body) { position: relative; }
+.node-scroll { position: absolute; inset: 0; }
 .node-item {
   display: flex;
   align-items: center;
