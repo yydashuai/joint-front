@@ -28,9 +28,10 @@
             :current-node-key="currentKey"
             :expand-on-click-node="false"
             @node-click="onNodeClick"
+            @node-contextmenu="onContextMenu"
           >
             <template #default="{ data }">
-              <div class="tnode" :class="`tnode--${data.kind}`">
+              <div class="tnode" :class="`tnode--${data.kind}`" @dblclick="startRename(data)">
                 <el-icon class="tnode__icon"><component :is="data.icon" /></el-icon>
                 <span class="tnode__label">{{ data.label }}</span>
                 <span v-if="data.count !== undefined" class="tnode__count">{{ data.count }}</span>
@@ -220,12 +221,36 @@
     </el-dialog>
 
     <input ref="fileInput" type="file" accept="application/json" hidden @change="onImportFile" />
+
+    <!-- 右键菜单 -->
+    <teleport to="body">
+      <div v-if="ctx.visible" class="ctx-mask" @click="closeCtx" @contextmenu.prevent="closeCtx">
+        <ul class="ctx-menu" :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }" @click.stop>
+          <li @click="ctxRename">重命名</li>
+          <template v-if="ctx.data?.kind === 'system'">
+            <li @click="ctxNewModule">新建模块</li>
+            <li @click="ctxEdit">在连接管理中编辑</li>
+            <li class="danger" @click="ctxDelete">删除系统</li>
+          </template>
+          <template v-else-if="ctx.data?.kind === 'module'">
+            <li @click="ctxNewProto">新建协议</li>
+            <li @click="ctxNewIface">新建接口</li>
+            <li @click="ctxEdit">在连接管理中编辑</li>
+            <li class="danger" @click="ctxDelete">删除模块</li>
+          </template>
+          <template v-else>
+            <li class="danger" @click="ctxDelete">删除</li>
+          </template>
+        </ul>
+      </div>
+    </teleport>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, provide, onMounted, nextTick, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, reactive, computed, provide, onMounted, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import Sortable from 'sortablejs'
 import { Plus, Delete, Upload, Download, Rank, Back } from '@element-plus/icons-vue'
 import { useProtocolStore, FIELD_TYPES, CONST_SUBTYPES, ENDIANS, makeParam } from '@/stores/protocol'
@@ -236,6 +261,7 @@ import FieldNode from '@/components/FieldNode.vue'
 const store = useProtocolStore()
 const systemStore = useSystemStore()
 const connStore = useConnectionStore()
+const router = useRouter()
 
 const listBody = { padding: '0', flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }
 const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
@@ -308,21 +334,62 @@ const onNodeClick = (data) => {
   }
 }
 
-const newSystem = () => {
-  systemStore.add({ name: '新建系统' })
-  ElMessage.success('已新建系统，可在“管理系统”中完善信息')
+/* ---- 命名（弹窗输入，留空用默认名；IDE 式：新建后立即可命名） ---- */
+const DEFAULT_NAME = { system: '新建系统', module: '新建模块', protocol: '新建协议', interface: '新建接口' }
+const promptName = (obj, kind, title) => {
+  ElMessageBox.prompt(title, '命名', {
+    inputValue: obj.name || '',
+    inputPlaceholder: `留空默认「${DEFAULT_NAME[kind]}」`,
+    confirmButtonText: '确定',
+    cancelButtonText: '取消'
+  })
+    .then(({ value }) => { obj.name = (value || '').trim() || DEFAULT_NAME[kind] })
+    .catch(() => { if (!obj.name) obj.name = DEFAULT_NAME[kind] }) // 取消时若仍空白则用默认
 }
-const newModule = (sysNode) => {
-  connStore.add({ name: '新建模块', systemId: sysNode.ref.id, ip: '192.168.1.1', port: 8080 })
-  ElMessage.success('已新建模块，可在“连接管理”中完善连接参数')
+// 重命名（右键菜单 / 双击）
+const startRename = (data) => {
+  if (data?.ref) promptName(data.ref, data.kind, '重命名')
 }
+
+/* ---- 新建：默认名创建（随后可右键/双击重命名） ---- */
+const newSystem = () => { systemStore.add({ name: DEFAULT_NAME.system }) }
+const newModule = (sysNode) => { connStore.add({ name: DEFAULT_NAME.module, systemId: sysNode.ref.id, ip: '192.168.1.1', port: 8080 }) }
 const newProto = (modNode) => {
-  store.addProtocol({ name: '新建协议', systemId: modNode.sys.id, moduleId: modNode.ref.id })
+  store.addProtocol({ name: DEFAULT_NAME.protocol, systemId: modNode.sys.id, moduleId: modNode.ref.id })
   selectedKind.value = 'protocol'
 }
 const newIface = (modNode) => {
-  store.addInterface({ name: '新建接口', systemId: modNode.sys.id, moduleId: modNode.ref.id })
+  store.addInterface({ name: DEFAULT_NAME.interface, systemId: modNode.sys.id, moduleId: modNode.ref.id })
   selectedKind.value = 'interface'
+}
+
+/* ---- 右键菜单 ---- */
+const ctx = reactive({ visible: false, x: 0, y: 0, data: null })
+const onContextMenu = (event, data) => {
+  if (!data || !['system', 'module', 'protocol', 'interface'].includes(data.kind)) return
+  event.preventDefault()
+  Object.assign(ctx, { visible: true, x: event.clientX, y: event.clientY, data })
+}
+const closeCtx = () => { ctx.visible = false }
+const ctxRename = () => { startRename(ctx.data); closeCtx() }
+const ctxNewModule = () => { newModule(ctx.data); closeCtx() }
+const ctxNewProto = () => { newProto(ctx.data); closeCtx() }
+const ctxNewIface = () => { newIface(ctx.data); closeCtx() }
+// 编辑 = 跳转到对应页面（系统/模块都在连接管理维护）
+const ctxEdit = () => {
+  const d = ctx.data
+  if (d.kind === 'system') systemStore.setCurrent(d.ref.id)
+  else if (d.kind === 'module') { systemStore.setCurrent(d.ref.systemId); connStore.select(d.ref.id) }
+  router.push('/connection')
+  closeCtx()
+}
+const ctxDelete = () => {
+  const d = ctx.data
+  if (d.kind === 'system') { connStore.unassignSystem(d.ref.id); systemStore.remove(d.ref.id) }
+  else if (d.kind === 'module') connStore.remove(d.ref.id)
+  else if (d.kind === 'protocol') store.removeProtocol(d.ref.id)
+  else if (d.kind === 'interface') store.removeInterface(d.ref.id)
+  closeCtx()
 }
 
 /* 接口字段编辑：类型切换时清理无关字段 */
@@ -471,6 +538,7 @@ const onImportFile = (e) => {
   &--module { font-weight: 500; }
   &--protocol .tnode__icon { color: var(--el-color-warning); }
   &--interface .tnode__icon { color: var(--el-color-success); }
+  &__edit { flex: 1; min-width: 0; }
 }
 
 /* 右主区 */
@@ -514,6 +582,27 @@ const onImportFile = (e) => {
 .sig {
   font-size: 13px; color: var(--el-text-color-secondary); margin-bottom: 12px;
   code { color: var(--el-color-primary); background: var(--el-fill-color-light); padding: 2px 8px; border-radius: 4px; }
+}
+
+/* 右键菜单 */
+.ctx-mask { position: fixed; inset: 0; z-index: 3000; }
+.ctx-menu {
+  position: fixed;
+  min-width: 150px;
+  padding: 4px 0;
+  background: var(--el-bg-color-overlay, #fff);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  box-shadow: var(--el-box-shadow-light);
+  font-size: 13px;
+  li {
+    list-style: none;
+    padding: 7px 16px;
+    cursor: pointer;
+    color: var(--el-text-color-primary);
+    &:hover { background: var(--el-fill-color-light); }
+    &.danger { color: var(--el-color-danger); }
+  }
 }
 
 /* 接口结构树 */
