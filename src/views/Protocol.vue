@@ -3,44 +3,53 @@
     <div class="page__header">
       <div>
         <h2>接口协议管理</h2>
-        <div class="page__desc">统一管理协议模板与接口定义 · 字段类型 ≥5 种</div>
+        <div class="page__desc">系统 → 模块 → 协议 / 接口 · 字段类型 ≥5 种</div>
       </div>
-      <el-radio-group v-model="tab" size="default">
-        <el-radio-button value="protocol">协议模板</el-radio-button>
-        <el-radio-button value="interface">接口定义</el-radio-button>
-      </el-radio-group>
     </div>
 
-    <!-- ============ 协议模板 ============ -->
-    <div v-show="tab === 'protocol'" class="split">
-      <!-- 协议列表 -->
+    <div class="split">
+      <!-- 左：系统 / 模块 / 协议·接口 层级树 -->
       <el-card class="side" shadow="never" :body-style="listBody">
         <template #header>
           <div class="card-head">
-            <span>协议模板</span>
-            <el-button size="small" :icon="Plus" @click="store.addProtocol()">新建</el-button>
+            <span>系统 · 模块 · 协议/接口</span>
+            <div class="head-actions">
+              <el-button v-if="!systemStore.isAll" link type="info" size="small" :icon="Back" @click="clearFilter">全部系统</el-button>
+              <el-button link type="primary" size="small" :icon="Plus" @click="newSystem">新建系统</el-button>
+            </div>
           </div>
         </template>
-        <el-scrollbar>
-          <div
-            v-for="p in store.protocols"
-            :key="p.id"
-            class="li"
-            :class="{ 'is-active': p.id === store.selectedProtocolId }"
-            @click="store.selectedProtocolId = p.id"
+        <el-scrollbar class="tree-wrap">
+          <el-tree
+            :data="treeData"
+            node-key="key"
+            default-expand-all
+            highlight-current
+            :current-node-key="currentKey"
+            :expand-on-click-node="false"
+            @node-click="onNodeClick"
           >
-            <div class="li__main">
-              <div class="li__name">{{ p.name }}</div>
-              <div class="li__sub">{{ p.fields.length }} 字段</div>
-            </div>
-            <el-tag size="small" effect="plain">{{ p.endian === 'big' ? '大端' : '小端' }}</el-tag>
-          </div>
-          <el-empty v-if="!store.protocols.length" description="暂无协议" :image-size="70" />
+            <template #default="{ data }">
+              <div class="tnode" :class="`tnode--${data.kind}`">
+                <el-icon class="tnode__icon"><component :is="data.icon" /></el-icon>
+                <span class="tnode__label">{{ data.label }}</span>
+                <span v-if="data.count !== undefined" class="tnode__count">{{ data.count }}</span>
+                <span v-if="data.kind === 'system'" class="tnode__ops">
+                  <el-button link type="primary" size="small" @click.stop="newModule(data)">+模块</el-button>
+                </span>
+                <span v-else-if="data.kind === 'module'" class="tnode__ops">
+                  <el-button link type="primary" size="small" @click.stop="newProto(data)">+协议</el-button>
+                  <el-button link type="success" size="small" @click.stop="newIface(data)">+接口</el-button>
+                </span>
+              </div>
+            </template>
+          </el-tree>
+          <el-empty v-if="!treeData.length" description="暂无系统/模块，请先在连接管理添加" :image-size="70" />
         </el-scrollbar>
       </el-card>
 
-      <!-- 字段矩阵 -->
-      <el-card v-if="curProto" class="main" shadow="never" :body-style="mainBody">
+      <!-- 右：协议字段矩阵编辑 -->
+      <el-card v-if="selectedKind === 'protocol' && curProto" class="main" shadow="never" :body-style="mainBody">
         <template #header>
           <div class="proto-head">
             <el-input v-model="curProto.name" class="proto-name" placeholder="协议名称" />
@@ -60,57 +69,62 @@
 
         <el-input v-model="curProto.desc" placeholder="协议说明（可选）" class="proto-desc" />
 
+        <div class="meta-row">
+          <span class="meta-row__label req">所属系统</span>
+          <el-select v-model="curProto.systemId" placeholder="选择系统" class="meta-sel" @change="onProtoSystemChange">
+            <el-option v-for="s in systemOptions" :key="s.value" :label="s.label" :value="s.value" />
+          </el-select>
+          <span class="meta-row__label req">模块</span>
+          <el-select v-model="curProto.moduleId" placeholder="选择模块" class="meta-sel" :disabled="!curProto.systemId">
+            <el-option v-for="m in moduleOptions(curProto.systemId)" :key="m.value" :label="m.label" :value="m.value" />
+          </el-select>
+        </div>
+
         <el-alert v-if="overlapIds.size" type="error" :closable="false" show-icon class="overlap-tip">
-          检测到字节段重叠（{{ overlapIds.size }} 个字段），已标红，请检查偏移 / 长度
+          检测到位段重叠（{{ overlapIds.size }} 个字段），已标红，请检查起始位 / 结束位
         </el-alert>
 
-        <el-table
-          ref="tableRef"
-          :data="curProto.fields"
-          row-key="id"
-          :tree-props="{ children: 'children' }"
-          border
-          size="small"
-          class="matrix"
-        >
-          <el-table-column label="字段名" min-width="150" class-name="tree-cell">
-            <template #default="{ row }"><el-input v-model="row.name" size="small" /></template>
-          </el-table-column>
-          <el-table-column label="数据类型" width="130">
-            <template #default="{ row }">
-              <el-select v-model="row.type" size="small" @change="onTypeChange(row)">
-                <el-option v-for="t in FIELD_TYPES" :key="t" :label="t" :value="t" />
-              </el-select>
+        <el-table ref="tableRef" :data="curProto.fields" row-key="id" border size="small" class="matrix">
+          <el-table-column width="40" align="center" class-name="drag-col">
+            <template #default>
+              <el-icon class="drag-handle" title="拖拽换位"><Rank /></el-icon>
             </template>
           </el-table-column>
-          <el-table-column label="子类型 / 绑定" width="150">
+          <el-table-column label="字段名（语义）" min-width="130">
+            <template #default="{ row }"><el-input v-model="row.name" size="small" placeholder="如 加密标志" /></template>
+          </el-table-column>
+          <el-table-column label="起始位" width="92">
+            <template #default="{ row }"><el-input-number v-model="row.startBit" :min="0" size="small" controls-position="right" style="width: 80px" :class="{ 'num-warn': overlapIds.has(row.id) }" /></template>
+          </el-table-column>
+          <el-table-column label="结束位" width="92">
+            <template #default="{ row }"><el-input-number v-model="row.endBit" :min="0" size="small" controls-position="right" style="width: 80px" :class="{ 'num-warn': overlapIds.has(row.id) }" /></template>
+          </el-table-column>
+          <el-table-column label="长度(位)" width="76" align="center">
             <template #default="{ row }">
-              <el-select v-if="row.type === '常量'" v-model="row.dataType" size="small">
-                <el-option v-for="d in CONST_SUBTYPES" :key="d" :label="d" :value="d" />
-              </el-select>
-              <el-select v-else-if="row.type === '位组序流'" v-model="row.protocolRef" size="small" placeholder="选择协议" clearable>
-                <el-option v-for="o in otherProtocols" :key="o.value" :label="o.label" :value="o.value" />
-              </el-select>
-              <span v-else class="muted">{{ row.type === '共识体' ? '嵌套结构' : (row.type === '流文件' ? '文本文件' : '表格文件') }}</span>
+              <span :class="{ 'len-bad': bitLen(row) <= 0 }">{{ bitLen(row) > 0 ? bitLen(row) : '非法' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="起始字节" width="100">
-            <template #default="{ row }"><el-input-number v-model="row.start" :min="0" size="small" controls-position="right" style="width: 88px" :class="{ 'num-warn': overlapIds.has(row.id) }" /></template>
-          </el-table-column>
-          <el-table-column label="结束字节" width="100">
-            <template #default="{ row }"><el-input-number v-model="row.end" :min="0" size="small" controls-position="right" style="width: 88px" :class="{ 'num-warn': overlapIds.has(row.id) }" /></template>
-          </el-table-column>
-          <el-table-column label="长度" width="72" align="center">
+          <el-table-column label="取值约束" width="244">
             <template #default="{ row }">
-              <span :class="{ 'len-bad': byteLen(row) <= 0 }">{{ byteLen(row) > 0 ? byteLen(row) : '非法' }}</span>
+              <div class="constraint">
+                <el-select v-model="row.constraint.mode" size="small" class="c-mode">
+                  <el-option label="范围" value="range" />
+                  <el-option label="固定值" value="fixed" />
+                </el-select>
+                <template v-if="row.constraint.mode === 'range'">
+                  <el-input-number v-model="row.constraint.min" :controls="false" size="small" class="c-num" />
+                  <span class="c-sep">~</span>
+                  <el-input-number v-model="row.constraint.max" :controls="false" size="small" class="c-num" />
+                </template>
+                <el-input-number v-else v-model="row.constraint.value" :controls="false" size="small" class="c-num c-num--fixed" />
+              </div>
             </template>
           </el-table-column>
-          <el-table-column label="说明" min-width="140">
-            <template #default="{ row }"><el-input v-model="row.desc" size="small" placeholder="—" /></template>
+          <el-table-column label="说明" min-width="150">
+            <template #default="{ row }"><el-input v-model="row.desc" size="small" placeholder="如 1=加密，0=明文" /></template>
           </el-table-column>
-          <el-table-column label="操作" width="110" align="center">
+          <el-table-column label="操作" width="64" align="center">
             <template #default="{ row }">
-              <el-button v-if="row.type === '共识体'" text size="small" :icon="Plus" title="加子字段" @click="addChild(row)" />
               <el-button text size="small" :icon="Delete" title="删除" @click="removeProtoField(row.id)" />
             </template>
           </el-table-column>
@@ -118,36 +132,9 @@
 
         <el-button class="add-row" :icon="Plus" @click="store.addField(curProto)">添加字段</el-button>
       </el-card>
-      <el-empty v-else class="main" description="请选择 / 新建协议" />
-    </div>
 
-    <!-- ============ 接口定义 ============ -->
-    <div v-show="tab === 'interface'" class="split">
-      <el-card class="side" shadow="never" :body-style="listBody">
-        <template #header>
-          <div class="card-head">
-            <span>接口列表</span>
-            <el-button size="small" :icon="Plus" @click="store.addInterface()">新建</el-button>
-          </div>
-        </template>
-        <el-scrollbar>
-          <div
-            v-for="it in store.interfaces"
-            :key="it.id"
-            class="li"
-            :class="{ 'is-active': it.id === store.selectedInterfaceId }"
-            @click="store.selectedInterfaceId = it.id"
-          >
-            <div class="li__main">
-              <div class="li__name">{{ it.name }}</div>
-              <div class="li__sub">入参 {{ it.request.length }} · 出参 {{ it.response.length }}</div>
-            </div>
-          </div>
-          <el-empty v-if="!store.interfaces.length" description="暂无接口" :image-size="70" />
-        </el-scrollbar>
-      </el-card>
-
-      <el-card v-if="curIf" class="main" shadow="never" :body-style="mainBody">
+      <!-- 右：接口结构编辑 -->
+      <el-card v-else-if="selectedKind === 'interface' && curIf" class="main" shadow="never" :body-style="mainBody">
         <template #header>
           <div class="proto-head">
             <el-input v-model="curIf.name" class="proto-name" placeholder="接口名称" />
@@ -158,6 +145,22 @@
         </template>
 
         <el-input v-model="curIf.desc" placeholder="接口说明（可选）" class="proto-desc" />
+
+        <div class="meta-row">
+          <el-input v-model="curIf.path" class="meta-path" placeholder="接口路径，如 /device/status">
+            <template #prepend>路径</template>
+          </el-input>
+        </div>
+        <div class="meta-row">
+          <span class="meta-row__label req">所属系统</span>
+          <el-select v-model="curIf.systemId" placeholder="选择系统" class="meta-sel" @change="onIfSystemChange">
+            <el-option v-for="s in systemOptions" :key="s.value" :label="s.label" :value="s.value" />
+          </el-select>
+          <span class="meta-row__label req">模块</span>
+          <el-select v-model="curIf.moduleId" placeholder="选择模块" class="meta-sel" :disabled="!curIf.systemId">
+            <el-option v-for="m in moduleOptions(curIf.systemId)" :key="m.value" :label="m.label" :value="m.value" />
+          </el-select>
+        </div>
 
         <div class="sig">签名预览：<code>{{ signature }}</code></div>
 
@@ -185,7 +188,8 @@
           </div>
         </el-scrollbar>
       </el-card>
-      <el-empty v-else class="main" description="请选择 / 新建接口" />
+
+      <el-empty v-else class="main main--empty" description="从左侧选择一个协议或接口进行编辑" />
     </div>
 
     <!-- 字段编辑弹窗（接口树用） -->
@@ -220,73 +224,156 @@
 </template>
 
 <script setup>
-import { ref, computed, provide, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, provide, onMounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, Delete, Upload, Download } from '@element-plus/icons-vue'
+import Sortable from 'sortablejs'
+import { Plus, Delete, Upload, Download, Rank, Back } from '@element-plus/icons-vue'
 import { useProtocolStore, FIELD_TYPES, CONST_SUBTYPES, ENDIANS, makeParam } from '@/stores/protocol'
+import { useSystemStore } from '@/stores/system'
+import { useConnectionStore } from '@/stores/connection'
 import FieldNode from '@/components/FieldNode.vue'
 
 const store = useProtocolStore()
-const tab = ref('protocol')
+const systemStore = useSystemStore()
+const connStore = useConnectionStore()
 
 const listBody = { padding: '0', flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }
 const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
 
-// 默认选中
+// 当前在右侧编辑的对象类型：protocol | interface | null
+const selectedKind = ref('protocol')
 if (!store.selectedProtocolId) store.selectedProtocolId = store.protocols[0]?.id ?? null
 if (!store.selectedInterfaceId) store.selectedInterfaceId = store.interfaces[0]?.id ?? null
 
 const curProto = computed(() => store.selectedProtocol)
 const curIf = computed(() => store.selectedInterface)
-const otherProtocols = computed(() => store.protocolOptions.filter((o) => o.value !== curProto.value?.id))
 
-/* 类型切换时清理无关字段 */
+/* ---- 系统/模块 选项（编辑器用） ---- */
+const systemOptions = computed(() => systemStore.systems.map((s) => ({ label: s.name, value: s.id })))
+const moduleOptions = (systemId) => connStore.nodes.filter((n) => n.systemId === systemId).map((m) => ({ label: m.name, value: m.id }))
+const onProtoSystemChange = () => { if (curProto.value) curProto.value.moduleId = null }
+const onIfSystemChange = () => { if (curIf.value) curIf.value.moduleId = null }
+const clearFilter = () => systemStore.setCurrent(null)
+
+/* ---- 层级树：系统 → 模块 → 协议组/接口组 → 项 ---- */
+const treeData = computed(() => {
+  const cur = systemStore.currentId
+  const systems = cur ? systemStore.systems.filter((s) => s.id === cur) : systemStore.systems
+  return systems.map((sys) => ({
+    key: `sys-${sys.id}`,
+    kind: 'system',
+    icon: 'Cpu',
+    label: sys.name,
+    ref: sys,
+    children: connStore.nodes
+      .filter((m) => m.systemId === sys.id)
+      .map((mod) => {
+        const protos = store.protocols.filter((p) => p.moduleId === mod.id)
+        const ifaces = store.interfaces.filter((i) => i.moduleId === mod.id)
+        return {
+          key: `mod-${mod.id}`,
+          kind: 'module',
+          icon: 'Connection',
+          label: mod.name,
+          ref: mod,
+          sys,
+          children: [
+            {
+              key: `pg-${mod.id}`, kind: 'protoGroup', icon: 'Files', label: '协议', count: protos.length,
+              children: protos.map((p) => ({ key: `p-${p.id}`, kind: 'protocol', icon: 'Document', label: p.name, ref: p }))
+            },
+            {
+              key: `ig-${mod.id}`, kind: 'ifGroup', icon: 'Operation', label: '接口', count: ifaces.length,
+              children: ifaces.map((i) => ({ key: `i-${i.id}`, kind: 'interface', icon: 'Link', label: i.name, ref: i }))
+            }
+          ]
+        }
+      })
+  }))
+})
+
+const currentKey = computed(() => {
+  if (selectedKind.value === 'protocol') return `p-${store.selectedProtocolId}`
+  if (selectedKind.value === 'interface') return `i-${store.selectedInterfaceId}`
+  return ''
+})
+
+const onNodeClick = (data) => {
+  if (data.kind === 'protocol') {
+    selectedKind.value = 'protocol'
+    store.selectedProtocolId = data.ref.id
+  } else if (data.kind === 'interface') {
+    selectedKind.value = 'interface'
+    store.selectedInterfaceId = data.ref.id
+  }
+}
+
+const newSystem = () => {
+  systemStore.add({ name: '新建系统' })
+  ElMessage.success('已新建系统，可在“管理系统”中完善信息')
+}
+const newModule = (sysNode) => {
+  connStore.add({ name: '新建模块', systemId: sysNode.ref.id, ip: '192.168.1.1', port: 8080 })
+  ElMessage.success('已新建模块，可在“连接管理”中完善连接参数')
+}
+const newProto = (modNode) => {
+  store.addProtocol({ name: '新建协议', systemId: modNode.sys.id, moduleId: modNode.ref.id })
+  selectedKind.value = 'protocol'
+}
+const newIface = (modNode) => {
+  store.addInterface({ name: '新建接口', systemId: modNode.sys.id, moduleId: modNode.ref.id })
+  selectedKind.value = 'interface'
+}
+
+/* 接口字段编辑：类型切换时清理无关字段 */
 const onTypeChange = (row) => {
   if (row.type !== '共识体') row.children = []
   if (row.type !== '位组序流') row.protocolRef = null
 }
 
-/* 长度（闭区间 [start,end]） */
-const byteLen = (row) => row.end - row.start + 1
+/* 位段长度（闭区间 [startBit, endBit]，单位：位） */
+const bitLen = (row) => row.endBit - row.startBit + 1
 
-/* 字节段重叠检测（同层级两两比较，含嵌套各自层级；[start,end] 闭区间） */
-const rangeValid = (f) => f.end >= f.start
+/* 位段重叠检测（[startBit, endBit] 闭区间） */
+const rangeValid = (f) => f.endBit >= f.startBit
 const rangesOverlap = (a, b) =>
-  rangeValid(a) && rangeValid(b) && a.start <= b.end && b.start <= a.end
-const collectOverlaps = (list, set) => {
-  for (let i = 0; i < list.length; i++) {
-    for (let j = i + 1; j < list.length; j++) {
-      if (rangesOverlap(list[i], list[j])) { set.add(list[i].id); set.add(list[j].id) }
-    }
-  }
-  list.forEach((f) => f.children?.length && collectOverlaps(f.children, set))
-}
+  rangeValid(a) && rangeValid(b) && a.startBit <= b.endBit && b.startBit <= a.endBit
 const overlapIds = computed(() => {
   const s = new Set()
-  if (curProto.value) collectOverlaps(curProto.value.fields, s)
+  const fields = curProto.value?.fields || []
+  for (let i = 0; i < fields.length; i++) {
+    for (let j = i + 1; j < fields.length; j++) {
+      if (rangesOverlap(fields[i], fields[j])) { s.add(fields[i].id); s.add(fields[j].id) }
+    }
+  }
   return s
 })
 
-/* 展开状态：移除 default-expand-all（编辑后会强制展开），改用 toggleRowExpansion 控制初始展开；
-   之后 el-table 按 row-key 保留用户的展开/折叠状态，编辑数据不再自动展开 */
-const tableRef = ref()
-const collectParentRows = (list, rows = []) => {
-  list.forEach((f) => { if (f.children?.length) { rows.push(f); collectParentRows(f.children, rows) } })
-  return rows
-}
-const expandParents = async () => {
-  await nextTick()
-  collectParentRows(curProto.value?.fields || []).forEach((r) => tableRef.value?.toggleRowExpansion(r, true))
-}
-onMounted(expandParents)
-watch(() => store.selectedProtocolId, expandParents)
-
 /* 协议字段矩阵操作 */
-const addChild = (row) => {
-  store.addField(curProto.value, row)
-  nextTick(() => tableRef.value?.toggleRowExpansion(row, true)) // 加子字段时展开父节点
-}
 const removeProtoField = (id) => removeById([curProto.value.fields], id)
+
+/* 拖拽换位：sortablejs 绑定表格 tbody，拖拽手柄调整字段顺序 */
+const tableRef = ref()
+let sortable = null
+const initSortable = () => {
+  const tbody = tableRef.value?.$el?.querySelector('.el-table__body-wrapper tbody')
+  if (!tbody) return
+  sortable?.destroy()
+  sortable = Sortable.create(tbody, {
+    handle: '.drag-handle',
+    animation: 150,
+    ghostClass: 'drag-ghost',
+    onEnd: ({ oldIndex, newIndex }) => {
+      if (oldIndex === newIndex || oldIndex == null || newIndex == null) return
+      const fields = curProto.value?.fields
+      if (!fields) return
+      const [moved] = fields.splice(oldIndex, 1)
+      fields.splice(newIndex, 0, moved)
+    }
+  })
+}
+onMounted(() => nextTick(initSortable))
+watch([() => store.selectedProtocolId, selectedKind], () => nextTick(initSortable))
 
 /* 接口树操作 */
 const addRootParam = (list) => list.push(makeParam({ name: `field${list.length + 1}` }))
@@ -340,7 +427,8 @@ const onImportFile = (e) => {
   reader.onload = () => {
     try {
       const obj = JSON.parse(reader.result)
-      store.addProtocol({ name: (obj.name || '导入协议') + '(导入)', endian: obj.endian || 'big', desc: obj.desc || '', fields: obj.fields || [] })
+      store.addProtocol({ name: (obj.name || '导入协议') + '(导入)', endian: obj.endian || 'big', desc: obj.desc || '', systemId: curProto.value?.systemId ?? null, moduleId: curProto.value?.moduleId ?? null, fields: obj.fields || [] })
+      selectedKind.value = 'protocol'
       ElMessage.success('协议模板已导入')
     } catch {
       ElMessage.error('文件解析失败，请确认为协议 JSON')
@@ -356,35 +444,64 @@ const onImportFile = (e) => {
 
 .split { flex: 1; min-height: 0; display: flex; gap: 16px; }
 
-.card-head { display: flex; align-items: center; justify-content: space-between; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.head-actions { display: flex; align-items: center; gap: 4px; }
 
-/* 左列表 */
-.side { width: 260px; flex-shrink: 0; display: flex; flex-direction: column; }
-.li {
-  display: flex; align-items: center; gap: 8px; padding: 11px 14px; cursor: pointer;
-  border-left: 3px solid transparent;
-  &:hover { background: var(--el-fill-color-light); }
-  &.is-active { background: var(--el-color-primary-light-9); border-left-color: var(--el-color-primary); }
-  &__main { flex: 1; min-width: 0; }
-  &__name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  &__sub { font-size: 12px; color: var(--el-text-color-secondary); }
+/* 左侧层级树 */
+.side { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; }
+.tree-wrap { flex: 1; min-height: 0; padding: 6px 4px; }
+.tnode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding-right: 6px;
+  font-size: 13px;
+  &__icon { color: var(--el-text-color-secondary); }
+  &__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__count {
+    font-size: 11px; color: var(--el-text-color-placeholder);
+    background: var(--el-fill-color); border-radius: 8px; padding: 0 6px;
+  }
+  &__ops { display: none; gap: 2px; }
+  &:hover &__ops { display: inline-flex; }
+
+  &--system { font-weight: 600; }
+  &--system .tnode__icon { color: var(--el-color-primary); }
+  &--module { font-weight: 500; }
+  &--protocol .tnode__icon { color: var(--el-color-warning); }
+  &--interface .tnode__icon { color: var(--el-color-success); }
 }
 
 /* 右主区 */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.main--empty { align-items: center; justify-content: center; }
 .proto-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .proto-name { max-width: 280px; :deep(.el-input__wrapper) { font-weight: 600; } }
 .proto-head__right { display: flex; align-items: center; gap: 8px; .lbl { font-size: 13px; color: var(--el-text-color-secondary); } }
 .proto-desc { margin-bottom: 12px; }
+
+/* 系统/模块 + 接口路径 配置行 */
+.meta-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.meta-row__label { font-size: 13px; color: var(--el-text-color-regular); }
+.meta-row__label.req::before { content: '*'; color: var(--el-color-danger); margin-right: 2px; }
+.meta-sel { width: 200px; }
+.meta-path { max-width: 440px; }
+
 .matrix { flex: 1; }
-/* 树形展开符与字段名输入框同行、垂直居中 */
-.matrix :deep(.tree-cell .cell) {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.matrix :deep(.tree-cell .el-table__expand-icon) { margin: 0; flex-shrink: 0; }
-.matrix :deep(.tree-cell .el-table__indent) { flex-shrink: 0; }
+
+/* 拖拽换位手柄 */
+.drag-handle { cursor: grab; color: var(--el-text-color-placeholder); }
+.drag-handle:active { cursor: grabbing; }
+.matrix :deep(.drag-ghost) { background: var(--el-color-primary-light-9); opacity: 0.7; }
+
+/* 取值约束内联编辑 */
+.constraint { display: flex; align-items: center; gap: 4px; }
+.c-mode { width: 78px; flex-shrink: 0; }
+.c-num { width: 56px; }
+.c-num--fixed { width: 130px; }
+.c-sep { color: var(--el-text-color-secondary); flex-shrink: 0; }
+
 .overlap-tip { margin-bottom: 12px; }
 .num-warn :deep(.el-input__wrapper) { box-shadow: 0 0 0 1px var(--el-color-danger) inset; }
 .num-warn :deep(.el-input__inner) { color: var(--el-color-danger); font-weight: 600; }
