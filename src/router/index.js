@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import MainLayout from '@/layouts/MainLayout.vue'
+import { useAuthStore } from '@/stores/auth'
 
 // 导航元信息：short = 左侧图标条单字，title = 顶部菜单 / 页头标题
 export const navRoutes = [
@@ -18,18 +19,72 @@ export const navRoutes = [
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    // 登录页（不在 MainLayout 内，无需认证）
+    {
+      path: '/login',
+      name: 'login',
+      meta: { public: true },
+      component: () => import('@/views/Login.vue')
+    },
+    // 需要认证的主界面
     {
       path: '/',
       component: MainLayout,
-      children: navRoutes.map(({ path, name, title, component }) => ({
-        path,
-        name,
-        meta: { title },
-        component
-      }))
+      children: [
+        ...navRoutes.map(({ path, name, title, component }) => ({
+          path,
+          name,
+          meta: { title },
+          component
+        })),
+        // 设置页（所有角色可见）
+        {
+          path: '/settings',
+          name: 'settings',
+          meta: { title: '设置' },
+          component: () => import('@/views/Settings.vue')
+        },
+        // 管理员页面
+        {
+          path: '/admin/users',
+          name: 'admin-users',
+          meta: { title: '用户管理', role: 'admin', hidden: true },
+          component: () => import('@/views/admin/Users.vue')
+        },
+        {
+          path: '/admin/permissions',
+          name: 'admin-permissions',
+          meta: { title: '权限管理', role: 'admin', hidden: true },
+          component: () => import('@/views/admin/Permissions.vue')
+        }
+      ]
     },
     { path: '/:pathMatch(.*)*', redirect: '/' }
   ]
+})
+
+/* ========== 路由守卫 ========== */
+router.beforeEach((to, from, next) => {
+  const authStore = useAuthStore()
+
+  // 公开页面（登录页）直接放行
+  if (to.meta.public) {
+    // 已登录用户访问登录页，跳转到首页
+    if (authStore.isLoggedIn) return next('/')
+    return next()
+  }
+
+  // 未登录 → 重定向到登录页，携带原始路径
+  if (!authStore.isLoggedIn) {
+    return next({ path: '/login', query: { redirect: to.fullPath } })
+  }
+
+  // 角色权限检查：管理员专属页面
+  if (to.meta.role === 'admin' && authStore.currentUser?.role !== 'admin') {
+    return next('/')
+  }
+
+  next()
 })
 
 export default router

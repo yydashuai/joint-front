@@ -40,7 +40,7 @@
         <h3 class="section-title">系统健康概览</h3>
         <span class="section-hint">点击系统卡片可快速切换查看</span>
       </div>
-      <el-scrollbar class="health-scroll">
+      <el-scrollbar ref="healthScrollRef" class="health-scroll" @wheel.prevent="onHealthWheel">
         <div class="health-track">
           <div
             v-for="sc in systemCards"
@@ -90,7 +90,7 @@
           <el-button size="small" text type="primary" @click="$router.push('/connection')">管理链路 →</el-button>
         </div>
       </template>
-      <el-table :data="moduleList" size="default" highlight-current-row @row-click="onModuleClick" style="cursor: pointer;">
+      <el-table :data="moduleList" size="small" highlight-current-row @row-click="onModuleClick" style="cursor: pointer;" :height="154">
         <el-table-column label="模块名称" min-width="160">
           <template #default="{ row }">
             <span class="dot" :class="`dot--${row.status}`" />
@@ -215,7 +215,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus, Upload, WarningFilled, Tickets, Back, Cpu, Connection, Document, Warning } from '@element-plus/icons-vue'
 import { useSystemStore } from '@/stores/system'
@@ -231,6 +231,14 @@ const connStore = useConnectionStore()
 const isAll = computed(() => systemStore.isAll)
 const current = computed(() => systemStore.current)
 const currentId = computed(() => systemStore.currentId)
+
+/* ========== 健康概览横向滚动：鼠标滚轮 ========== */
+const healthScrollRef = ref(null)
+const onHealthWheel = (e) => {
+  const wrap = healthScrollRef.value?.wrapRef
+  if (!wrap) return
+  wrap.scrollLeft += e.deltaY || e.deltaX
+}
 
 /* ========== 过滤 ========== */
 const visibleTasks = computed(() =>
@@ -248,7 +256,7 @@ const totalPending = computed(() => {
 /* ========== 树构建：系统 → 模块 → 条目（复用于任务 / 告警） ========== */
 const buildTree = (items, itemMapper) => {
   const systems = isAll.value
-    ? systemStore.systems
+    ? systemStore.visibleSystems
     : systemStore.systems.filter(s => s.id === currentId.value)
   return systems.map(sys => {
     const modules = connStore.nodes.filter(m => m.systemId === sys.id)
@@ -304,7 +312,7 @@ const onLeafClick = (data, route) => {
 
 /* ========== 系统健康卡片（全局视图） ========== */
 const systemCards = computed(() =>
-  systemStore.systems.map(sys => {
+  systemStore.visibleSystems.map(sys => {
     const mods = connStore.modulesOf(sys.id)
     return {
       id: sys.id,
@@ -452,6 +460,10 @@ const stateTag = s => ({ '待处理': 'danger', '已处理': 'success', '已修�
 /* ============ 模块链路状态表（单系统视图） ============ */
 .mod-card {
   flex-shrink: 0;
+
+  :deep(.el-card__header) {
+    padding: 10px 16px;
+  }
 }
 
 .dot {

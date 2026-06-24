@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { systems as seedSystems } from '@/mock/seed-data'
+import { useAuthStore } from '@/stores/auth'
 
 let seq = 100
 
@@ -12,10 +13,24 @@ export const useSystemStore = defineStore('system', {
   getters: {
     current: (state) => state.systems.find((system) => system.id === state.currentId) || null,
     isAll: (state) => state.currentId === null,
-    options: (state) => [
-      { label: '全部系统（总体）', value: null },
-      ...state.systems.map((system) => ({ label: system.name, value: system.id }))
-    ]
+
+    /** 当前用户可见的系统列表（admin 看全部，tester 看授权列表） */
+    visibleSystems(state) {
+      const auth = useAuthStore()
+      if (!auth.currentUser) return state.systems
+      if (auth.currentUser.role === 'admin') return state.systems
+      const allowed = auth.getSystemIds(auth.currentUser.id)
+      return state.systems.filter(s => allowed.includes(s.id))
+    },
+
+    /** 下拉选项（受权限过滤） */
+    options(state) {
+      const visible = this.visibleSystems
+      return [
+        { label: `全部系统（${visible.length}）`, value: null },
+        ...visible.map((system) => ({ label: system.name, value: system.id }))
+      ]
+    }
   },
 
   actions: {
