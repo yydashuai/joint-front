@@ -3,7 +3,7 @@
     <div class="page__header">
       <div>
         <h2>接口协议管理</h2>
-        <div class="page__desc">系统 → 模块 → 协议 / 接口 · 支持 TCP/UDP/HTTP/gRPC/消息队列</div>
+        <div class="page__desc">系统 → 模块 → 协议 / 接口</div>
       </div>
     </div>
 
