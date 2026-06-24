@@ -16,7 +16,7 @@
             <el-icon class="topo__sysnode-icon"><Box /></el-icon>
             <div class="topo__sysnode-main">
               <div class="topo__sysnode-name">{{ g.name }}</div>
-              <div class="topo__sysnode-sub">已连接 {{ connectedOf(g.modules) }} / {{ g.modules.length }}</div>
+              <div class="topo__sysnode-sub">在线 {{ onlineOf(g.modules) }} / {{ g.modules.length }}</div>
             </div>
           </div>
         </template>
@@ -39,16 +39,10 @@
                 {{ statusMeta[m.status].text }}
               </el-tag>
               <el-button
-                v-if="m.status === 'connected'"
-                link type="danger" size="small"
-                @click.stop="emit('disconnect', m)"
-              >断开</el-button>
-              <el-button
-                v-else
-                link type="success" size="small"
-                :loading="m.status === 'connecting'"
-                @click.stop="emit('connect', m)"
-              >连接</el-button>
+                link type="primary" size="small"
+                :loading="m.status === 'pinging'"
+                @click.stop="emit('ping', m)"
+              >检测</el-button>
             </div>
           </div>
         </div>
@@ -70,16 +64,15 @@ const props = defineProps({
   hubLabel: { type: String, default: '全部系统' },
   selectedId: { type: [Number, String, null], default: null }
 })
-const emit = defineEmits(['select', 'connect', 'disconnect', 'select-system'])
+const emit = defineEmits(['select', 'ping', 'select-system'])
 
 const statusMeta = {
-  disconnected: { text: '未连接', tag: 'info' },
-  connecting: { text: '连接中', tag: 'warning' },
-  connected: { text: '已连接', tag: 'success' },
-  error: { text: '异常', tag: 'danger' }
+  online: { text: '在线', tag: 'success' },
+  offline: { text: '离线', tag: 'info' },
+  pinging: { text: '检测中', tag: 'warning' }
 }
 
-const connectedOf = (modules) => modules.filter((m) => m.status === 'connected').length
+const onlineOf = (modules) => modules.filter((m) => m.status === 'online').length
 
 // 统一成"分组"渲染：全部系统→按系统分组；单系统→一个无系统节点的组直接挂模块
 const renderGroups = computed(() =>
@@ -226,10 +219,9 @@ const hasContent = computed(() => (props.grouped ? props.groups.length > 0 : pro
   height: 0;
   border-top: 2px solid var(--el-border-color);
   &.line--sys { width: 40px; border-color: var(--el-border-color-darker); }
-  &.line--connected { border-color: var(--el-color-success); }
-  &.line--connecting { border-top-style: dashed; border-color: var(--el-color-warning); }
-  &.line--disconnected { border-top-style: dashed; border-color: var(--el-border-color); }
-  &.line--error { border-color: var(--el-color-danger); }
+  &.line--online { border-color: var(--el-color-success); }
+  &.line--pinging { border-top-style: dashed; border-color: var(--el-color-warning); }
+  &.line--offline { border-top-style: dashed; border-color: var(--el-border-color); }
 }
 
 /* 模块节点卡片 */
@@ -249,9 +241,8 @@ const hasContent = computed(() => (props.grouped ? props.groups.length > 0 : pro
 
   &:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); }
   &.is-active { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
-  &.node--connected { border-left-color: var(--el-color-success); }
-  &.node--connecting { border-left-color: var(--el-color-warning); }
-  &.node--error { border-left-color: var(--el-color-danger); }
+  &.node--online { border-left-color: var(--el-color-success); }
+  &.node--pinging { border-left-color: var(--el-color-warning); }
 
   &-main { flex: 1; min-width: 0; }
   &-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -260,10 +251,9 @@ const hasContent = computed(() => (props.grouped ? props.groups.length > 0 : pro
 
 .dot {
   width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-  &--connected { background: var(--el-color-success); box-shadow: 0 0 0 3px var(--el-color-success-light-7); }
-  &--connecting { background: var(--el-color-warning); animation: pulse 1s infinite; }
-  &--disconnected { background: var(--el-text-color-placeholder); }
-  &--error { background: var(--el-color-danger); }
+  &--online { background: var(--el-color-success); box-shadow: 0 0 0 3px var(--el-color-success-light-7); }
+  &--offline { background: var(--el-text-color-placeholder); }
+  &--pinging { background: var(--el-text-color-placeholder); animation: pulse 1s infinite; }
 }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 </style>

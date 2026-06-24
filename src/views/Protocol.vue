@@ -45,7 +45,7 @@
               </div>
             </template>
           </el-tree>
-          <el-empty v-if="!treeData.length" description="暂无系统/模块，请先在连接管理添加" :image-size="70" />
+          <el-empty v-if="!treeData.length" description="暂无系统/模块，请先在链路连接管理添加" :image-size="70" />
         </el-scrollbar>
       </el-card>
 
@@ -229,13 +229,13 @@
           <li @click="ctxRename">重命名</li>
           <template v-if="ctx.data?.kind === 'system'">
             <li @click="ctxNewModule">新建模块</li>
-            <li @click="ctxEdit">在连接管理中编辑</li>
+            <li @click="ctxEdit">在链路连接管理中编辑</li>
             <li class="danger" @click="ctxDelete">删除系统</li>
           </template>
           <template v-else-if="ctx.data?.kind === 'module'">
             <li @click="ctxNewProto">新建协议</li>
             <li @click="ctxNewIface">新建接口</li>
-            <li @click="ctxEdit">在连接管理中编辑</li>
+            <li @click="ctxEdit">在链路连接管理中编辑</li>
             <li class="danger" @click="ctxDelete">删除模块</li>
           </template>
           <template v-else>
@@ -375,7 +375,7 @@ const ctxRename = () => { startRename(ctx.data); closeCtx() }
 const ctxNewModule = () => { newModule(ctx.data); closeCtx() }
 const ctxNewProto = () => { newProto(ctx.data); closeCtx() }
 const ctxNewIface = () => { newIface(ctx.data); closeCtx() }
-// 编辑 = 跳转到对应页面（系统/模块都在连接管理维护）
+// 编辑 = 跳转到对应页面（系统/模块都在链路连接管理维护）
 const ctxEdit = () => {
   const d = ctx.data
   if (d.kind === 'system') systemStore.setCurrent(d.ref.id)

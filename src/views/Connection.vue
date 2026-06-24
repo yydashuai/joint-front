@@ -2,9 +2,9 @@
   <div class="page conn">
     <div class="page__header">
       <div>
-        <h2>连接管理</h2>
+        <h2>链路连接管理</h2>
         <div class="page__desc">
-          网口接入被测系统 · 先选择被测系统，再配置其下模块
+          内网链路探测 · 先选择被测系统，再检测其下各模块链路是否通畅
         </div>
       </div>
       <div class="header-actions">
@@ -14,7 +14,7 @@
       </div>
     </div>
 
-    <!-- 系统选择 + 连接拓扑图 -->
+    <!-- 系统选择 + 链路拓扑图 -->
     <el-card class="sys-card" shadow="never" :body-style="{ padding: '14px 16px' }">
       <div class="sys-bar">
         <div class="sys-bar__pick">
@@ -32,14 +32,18 @@
           <template v-if="systemStore.current">
             <span class="sys-bar__chip"><b>负责人</b>{{ systemStore.current.owner || '—' }}</span>
             <span class="sys-bar__chip"><b>模块</b>{{ visibleModules.length }}</span>
-            <span class="sys-bar__chip"><b>已连接</b>{{ store.connectedCount }} / {{ visibleModules.length }}</span>
+            <span class="sys-bar__chip"><b>在线</b>{{ store.onlineCount }} / {{ visibleModules.length }}</span>
             <span class="sys-bar__desc">{{ systemStore.current.desc }}</span>
           </template>
           <template v-else>
             <span class="sys-bar__chip"><b>全部系统</b>跨系统总览</span>
             <span class="sys-bar__chip"><b>模块</b>{{ visibleModules.length }}</span>
-            <span class="sys-bar__chip"><b>已连接</b>{{ store.connectedCount }} / {{ visibleModules.length }}</span>
+            <span class="sys-bar__chip"><b>在线</b>{{ store.onlineCount }} / {{ visibleModules.length }}</span>
           </template>
+          <span class="sys-bar__auto is-on">
+            <span class="sys-bar__auto-dot" />
+            自动检测连通性（每 5 秒）
+          </span>
         </div>
       </div>
 
@@ -54,8 +58,7 @@
           :selected-id="store.selectedId"
           @select="store.select"
           @select-system="onSelectSystem"
-          @connect="connectModule"
-          @disconnect="disconnectModule"
+          @ping="pingModule"
         />
       </div>
     </el-card>
@@ -85,6 +88,7 @@
                 <el-tag v-if="systemStore.isAll" size="small" effect="plain" class="system-tag">{{ moduleSystemName(n) }}</el-tag>
               </div>
               <div class="node-item__sub">{{ n.ip }}:{{ n.port }}</div>
+              <div class="node-item__desc">{{ n.desc || '暂无说明' }}</div>
             </div>
             <el-tag size="small" :type="statusMeta[n.status].tag" effect="light">{{ statusMeta[n.status].text }}</el-tag>
           </div>
@@ -96,12 +100,12 @@
       <el-card v-if="sel" shadow="never" class="cfg-card" :body-style="{ flex: '1', minHeight: '0', overflow: 'auto' }">
         <template #header>
           <div class="card-head">
-            <span>连接参数配置 · {{ sel.name }}</span>
+            <span>链路参数配置 · {{ sel.name }}</span>
             <el-tag :type="statusMeta[sel.status].tag" effect="light">{{ statusMeta[sel.status].text }}</el-tag>
           </div>
         </template>
 
-        <el-form ref="formRef" :model="sel" :rules="rules" label-width="104px" :disabled="isLocked" class="cfg-form">
+        <el-form ref="formRef" :model="sel" :rules="rules" label-width="104px" class="cfg-form">
           <el-row :gutter="20">
             <el-col :span="12">
               <el-form-item label="模块名称" prop="name">
@@ -125,49 +129,39 @@
                 <el-input-number v-model="sel.port" :min="1" :max="65535" controls-position="right" class="w-full" />
               </el-form-item>
             </el-col>
-            <el-col :span="12">
-              <el-form-item label="超时(ms)" prop="timeout">
-                <el-input-number v-model="sel.timeout" :min="100" :max="60000" :step="500" controls-position="right" class="w-full" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="自动重连">
-                <el-switch v-model="sel.reconnect.enabled" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="重连次数">
-                <el-input-number v-model="sel.reconnect.retries" :min="0" :max="20" :disabled="!sel.reconnect.enabled" controls-position="right" class="w-full" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="重连间隔(ms)">
-                <el-input-number v-model="sel.reconnect.interval" :min="200" :max="30000" :step="500" :disabled="!sel.reconnect.enabled" controls-position="right" class="w-full" />
+            <el-col :span="24">
+              <el-form-item label="说明信息" prop="desc">
+                <el-input v-model="sel.desc" type="textarea" :rows="2" maxlength="120" show-word-limit placeholder="描述该模块链路用途，如 火控解算与目标分配数据链路" />
               </el-form-item>
             </el-col>
           </el-row>
         </el-form>
 
-        <div class="cfg-actions">
-          <el-alert v-if="isLocked" type="warning" :closable="false" show-icon class="lock-tip">
-            连接进行中，如需修改参数请先断开连接
-          </el-alert>
-          <div class="cfg-actions__btns">
-            <el-button :disabled="isLocked" @click="saveParams">保存参数</el-button>
-            <el-button
-              v-if="sel.status !== 'connected'"
-              type="success"
-              :icon="VideoPlay"
-              :loading="sel.status === 'connecting'"
-              @click="handleConnect"
-            >建立连接</el-button>
-            <el-button v-else type="danger" :icon="SwitchButton" @click="disconnectModule(sel)">断开连接</el-button>
+        <!-- 连通性检测 -->
+        <div class="ping-bar">
+          <span class="ping-bar__note">系统每 5 秒自动检测一次链路；手动检测将发送 4 个探测包确认链路是否通畅</span>
+          <div class="ping-bar__btns">
+            <el-button type="primary" :icon="Pointer" :loading="sel.status === 'pinging'" @click="handlePing">检测连通性</el-button>
+            <el-button @click="saveParams">保存参数</el-button>
             <el-popconfirm title="确认删除该模块？" @confirm="handleRemove">
               <template #reference>
                 <el-button :icon="Delete" plain>删除模块</el-button>
               </template>
             </el-popconfirm>
           </div>
+        </div>
+
+        <!-- 连通性检测输出 -->
+        <div class="ping-out">
+          <div class="ping-out__head">
+            <span class="ping-out__title">连通性检测输出</span>
+            <el-tag :type="statusMeta[sel.status].tag" size="small" effect="light">{{ statusMeta[sel.status].text }}</el-tag>
+            <span v-if="sel.status === 'online' && sel.latency" class="ping-out__latency">平均时延 {{ sel.latency }}ms</span>
+            <span class="ping-out__spacer" />
+            <el-button v-if="sel.pingLog.length" link size="small" @click="sel.pingLog = []">清空</el-button>
+          </div>
+          <pre v-if="sel.pingLog.length" class="ping-out__body">{{ sel.pingLog.join('\n') }}</pre>
+          <el-empty v-else description="点击「检测连通性」查看链路探测结果" :image-size="56" />
         </div>
       </el-card>
 
@@ -197,8 +191,8 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="超时(ms)" prop="timeout">
-          <el-input-number v-model="draft.timeout" :min="100" :max="60000" :step="500" controls-position="right" class="w-full" />
+        <el-form-item label="说明信息" prop="desc">
+          <el-input v-model="draft.desc" type="textarea" :rows="2" maxlength="120" show-word-limit placeholder="描述该模块链路用途" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -212,9 +206,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, Search, VideoPlay, SwitchButton, Delete, Setting } from '@element-plus/icons-vue'
+import { Plus, Search, Pointer, Delete, Setting } from '@element-plus/icons-vue'
 import SystemManager from '@/components/SystemManager.vue'
 import ConnectionTopology from '@/components/ConnectionTopology.vue'
 import { useConnectionStore } from '@/stores/connection'
@@ -225,11 +219,11 @@ const systemStore = useSystemStore()
 const UNASSIGNED_KEY = '__unassigned__'
 const ALL_KEY = '__all__'
 
+// 内网链路只有“通 / 不通”两态（绿灯 / 灰灯），pinging 为探测中的过渡态
 const statusMeta = {
-  disconnected: { text: '未连接', tag: 'info' },
-  connecting: { text: '连接中', tag: 'warning' },
-  connected: { text: '已连接', tag: 'success' },
-  error: { text: '异常', tag: 'danger' }
+  online: { text: '在线', tag: 'success' },
+  offline: { text: '离线', tag: 'info' },
+  pinging: { text: '检测中', tag: 'warning' }
 }
 
 // 页面内被测系统选择（与顶部栏同源，冗余便于操作）
@@ -260,7 +254,6 @@ const onSelectSystem = (id) => {
   if (systemStore.systems.some((s) => s.id === id)) systemStore.setCurrent(id)
 }
 const sel = computed(() => visibleModules.value.find((module) => module.id === store.selectedId) || null)
-const isLocked = computed(() => sel.value && sel.value.status !== 'disconnected')
 
 const moduleSystemName = (module) => systemStore.systems.find((system) => system.id === module.systemId)?.name || '未分配'
 const selectedModuleSystemKey = computed({
@@ -287,8 +280,7 @@ const ipRule = (rule, value, cb) => {
 const rules = {
   name: [{ required: true, message: '请输入模块名称', trigger: 'blur' }],
   ip: [{ required: true, validator: ipRule, trigger: 'blur' }],
-  port: [{ required: true, message: '请输入端口', trigger: 'blur' }],
-  timeout: [{ required: true, message: '请输入超时时间', trigger: 'blur' }]
+  port: [{ required: true, message: '请输入端口', trigger: 'blur' }]
 }
 
 // 列表先按被测系统过滤，再叠加关键字搜索。
@@ -299,23 +291,21 @@ const filteredModules = computed(() => {
   return visibleModules.value.filter((n) => n.name.toLowerCase().includes(k) || n.ip.includes(k))
 })
 
-// 连接 / 断开（成功失败均 toast）
-const connectModule = async (module) => {
-  if (!module) return
-  const ok = await store.connect(module.id)
-  if (ok) ElMessage.success(`连接成功：${module.name}（${module.ip}:${module.port}）`)
-  else ElMessage.error(`连接失败：${module.name}（${module.ip}:${module.port}）`)
+// 手动检测连通性（4 次）：拓扑图与配置区共用
+const pingModule = (module) => {
+  if (module) store.ping(module.id, 4)
 }
-const disconnectModule = (module) => {
-  if (!module) return
-  store.disconnect(module.id)
-  ElMessage.info(`已断开连接：${module.name}`)
-}
-const handleConnect = async () => {
-  const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
-  await connectModule(sel.value)
-}
+const handlePing = () => pingModule(sel.value)
+
+// 自动检测：系统每 5 秒静默探测当前可见模块，刷新灯色（绿/灰），不可由用户开关
+let autoTimer = null
+const AUTO_INTERVAL = 5000
+onMounted(() => {
+  autoTimer = setInterval(() => {
+    visibleModules.value.forEach((m) => store.autoPing(m.id))
+  }, AUTO_INTERVAL)
+})
+onBeforeUnmount(() => clearInterval(autoTimer))
 
 // 参数配置操作
 const formRef = ref()
@@ -341,7 +331,7 @@ const blankDraft = () => ({
   name: '',
   ip: '192.168.1.',
   port: 8080,
-  timeout: 3000
+  desc: ''
 })
 const draft = reactive(blankDraft())
 const draftSystemKey = computed({
@@ -390,7 +380,20 @@ const confirmCreate = async () => {
   }
   &__desc {
     font-size: 12px; color: var(--el-text-color-secondary);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px;
+  }
+  &__auto {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--el-text-color-secondary);
+    .sys-bar__auto-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--el-text-color-placeholder);
+    }
+    &.is-on .sys-bar__auto-dot {
+      background: var(--el-color-success);
+      box-shadow: 0 0 0 3px var(--el-color-success-light-7);
+      animation: pulse 1.4s infinite;
+    }
   }
 }
 /* 拓扑图封顶 + 内部滚动：拓扑再大也不会把下方列表/配置挤掉 */
@@ -413,7 +416,7 @@ const confirmCreate = async () => {
 }
 
 .node-list {
-  width: 360px;
+  width: 420px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -439,16 +442,20 @@ const confirmCreate = async () => {
     font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden;
   }
   &__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  &__sub { font-size: 12px; color: var(--el-text-color-secondary); }
+  &__sub { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
+  &__desc {
+    font-size: 12px; color: var(--el-text-color-placeholder); margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   .system-tag { flex-shrink: 0; }
 }
 
+/* 链路只有绿灯（通）和灰灯（不通），pinging 时灰灯脉冲 */
 .dot {
   width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0;
-  &--connected { background: var(--el-color-success); box-shadow: 0 0 0 3px var(--el-color-success-light-7); }
-  &--connecting { background: var(--el-color-warning); animation: pulse 1s infinite; }
-  &--disconnected { background: var(--el-text-color-placeholder); }
-  &--error { background: var(--el-color-danger); }
+  &--online { background: var(--el-color-success); box-shadow: 0 0 0 3px var(--el-color-success-light-7); }
+  &--offline { background: var(--el-text-color-placeholder); }
+  &--pinging { background: var(--el-text-color-placeholder); animation: pulse 1s infinite; }
 }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 
@@ -457,9 +464,35 @@ const confirmCreate = async () => {
 .w-full { width: 100%; }
 .cfg-form :deep(.el-form-item) { margin-bottom: 16px; }
 
-.cfg-actions {
-  display: flex; flex-direction: column; gap: 12px;
-  .lock-tip { padding: 6px 10px; }
-  &__btns { display: flex; gap: 10px; }
+/* 连通性检测操作条 */
+.ping-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  padding: 10px 12px; margin-bottom: 12px;
+  background: var(--el-fill-color-lighter); border-radius: 8px;
+  &__note { font-size: 12px; color: var(--el-text-color-secondary); flex: 1; min-width: 200px; }
+  &__btns { display: flex; gap: 10px; flex-shrink: 0; }
+}
+
+/* Ping 输出 */
+.ping-out {
+  &__head {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  }
+  &__title { font-size: 14px; font-weight: 600; }
+  &__latency { font-size: 12px; color: var(--el-text-color-secondary); }
+  &__spacer { flex: 1; }
+  &__body {
+    margin: 0; padding: 12px 14px;
+    background: #1e1e1e; color: #d4d4d4;
+    border-radius: 8px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12.5px; line-height: 1.7;
+    white-space: pre-wrap; word-break: break-all;
+    /* 固定高度 149 + 上下内边距 12×2 = 173px（box-sizing: border-box），输出超出时内部滚动 */
+    height: 173px; overflow: auto;
+  }
+  /* 空态与输出框同高，避免检测前后列表高度跳动 */
+  :deep(.el-empty) { height: 173px; padding: 0; box-sizing: border-box; }
 }
 </style>

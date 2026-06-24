@@ -95,9 +95,9 @@
       <el-card shadow="never" class="module-card" :body-style="{ padding: '0' }">
         <template #header>
           <div class="card-header">
-            <span class="card-title">模块连接状态</span>
+            <span class="card-title">模块链路状态</span>
             <el-button size="small" text type="primary" @click="$router.push('/connection')">
-              管理连接 →
+              管理链路 →
             </el-button>
           </div>
         </template>
@@ -120,7 +120,7 @@
           </el-table-column>
           <el-table-column label="延迟" width="100" align="center">
             <template #default="{ row }">
-              <span v-if="row.status === 'connected'" class="latency-text">{{ row.latency }}ms</span>
+              <span v-if="row.status === 'online'" class="latency-text">{{ row.latency }}ms</span>
               <span v-else class="text-placeholder">—</span>
             </template>
           </el-table-column>
@@ -209,7 +209,7 @@ const currentModules = computed(() => {
 })
 
 const currentModuleCount = computed(() => currentModules.value.length)
-const currentConnected = computed(() => currentModules.value.filter(m => m.status === 'connected').length)
+const currentConnected = computed(() => currentModules.value.filter(m => m.status === 'online').length)
 
 /* ========== 统计卡片 ========== */
 const statCards = computed(() => {
@@ -217,14 +217,14 @@ const statCards = computed(() => {
     return [
       { label: '被测系统', value: systemStore.systems.length, color: '#2f6feb' },
       { label: '模块总数', value: connectionStore.nodes.length, color: '#722ed1' },
-      { label: '已连接模块', value: connectionStore.connectedCount, color: '#52c41a' },
+      { label: '在线模块', value: connectionStore.onlineCount, color: '#52c41a' },
       { label: '协议 / 接口', value: `${protocolStore.protocols.length} / ${protocolStore.interfaces.length}`, color: '#13c2c2' },
       { label: '今日异常', value: totalExceptions.value, color: totalExceptions.value > 0 ? '#fa541c' : '#52c41a' }
     ]
   }
   return [
     { label: '本系统模块', value: currentModuleCount.value, color: '#2f6feb' },
-    { label: '已连接', value: currentConnected.value, color: '#52c41a' },
+    { label: '在线模块', value: currentConnected.value, color: '#52c41a' },
     { label: '协议 / 接口', value: `${protocolStore.protocols.length} / ${protocolStore.interfaces.length}`, color: '#13c2c2' },
     { label: '本系统任务', value: filteredTasks.value.length, color: '#722ed1' },
     { label: '本系统异常', value: filteredAlerts.value.length, color: filteredAlerts.value.length > 0 ? '#fa541c' : '#52c41a' }
@@ -240,7 +240,7 @@ const systemCards = computed(() =>
       name: sys.name,
       owner: sys.owner,
       moduleCount: modules.length,
-      connectedCount: modules.filter(m => m.status === 'connected').length,
+      connectedCount: modules.filter(m => m.status === 'online').length,
       taskCount: tasks.filter(t => t.systemId === sys.id).length,
       exceptionCount: alerts.filter(a => a.systemId === sys.id).length
     }
@@ -285,8 +285,8 @@ const getSystemName = (id) => systemStore.systems.find(s => s.id === id)?.name |
 
 const taskType = (s) => ({ '执行中': '', '已完成': 'success', '异常': 'danger', '待确认': 'warning' }[s] || 'info')
 
-const moduleTag = (s) => ({ connected: 'success', connecting: 'warning', disconnected: 'info', error: 'danger' }[s] || 'info')
-const moduleText = (s) => ({ connected: '已连接', connecting: '连接中', disconnected: '未连接', error: '异常' }[s] || '未知')
+const moduleTag = (s) => ({ online: 'success', pinging: 'warning', offline: 'info' }[s] || 'info')
+const moduleText = (s) => ({ online: '在线', pinging: '检测中', offline: '离线' }[s] || '离线')
 
 const exceptionTag = (s) => ({ '待处理': 'danger', '已记录': 'warning', '自动恢复': 'success', '已忽略': 'info' }[s] || 'info')
 </script>
@@ -438,10 +438,9 @@ const exceptionTag = (s) => ({ '待处理': 'danger', '已记录': 'warning', '�
   height: 8px;
   border-radius: 50%;
 
-  &--connected { background: var(--el-color-success); box-shadow: 0 0 0 3px rgba(82, 196, 26, 0.15); }
-  &--connecting { background: var(--el-color-warning); animation: pulse 1s infinite; }
-  &--disconnected { background: var(--el-text-color-placeholder); }
-  &--error { background: var(--el-color-danger); }
+  &--online { background: var(--el-color-success); box-shadow: 0 0 0 3px rgba(82, 196, 26, 0.15); }
+  &--pinging { background: var(--el-text-color-placeholder); animation: pulse 1s infinite; }
+  &--offline { background: var(--el-text-color-placeholder); }
 }
 
 @keyframes pulse {

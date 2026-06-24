@@ -4,7 +4,7 @@ import MainLayout from '@/layouts/MainLayout.vue'
 // 导航元信息：short = 左侧图标条单字，title = 顶部菜单 / 页头标题
 export const navRoutes = [
   { path: '/', name: 'dashboard', short: '首', title: '系统首页', icon: 'Odometer', component: () => import('@/views/Dashboard.vue') },
-  { path: '/connection', name: 'connection', short: '连', title: '连接管理', icon: 'Connection', component: () => import('@/views/Connection.vue') },
+  { path: '/connection', name: 'connection', short: '连', title: '链路连接管理', icon: 'Connection', component: () => import('@/views/Connection.vue') },
   { path: '/protocol', name: 'protocol', short: '协', title: '接口协议管理', icon: 'Document', component: () => import('@/views/Protocol.vue') },
   { path: '/test-data', name: 'test-data', short: '数', title: '测试数据管理', icon: 'Coin', component: () => import('@/views/TestData.vue') },
   { path: '/task', name: 'task', short: '务', title: '测试任务管理', icon: 'Files', component: () => import('@/views/TestTask.vue') },
