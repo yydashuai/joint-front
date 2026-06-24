@@ -2,9 +2,21 @@
   <el-card class="smt" shadow="never" :body-style="bodyStyle">
     <template #header>
       <div class="smt__head">
-        <span class="smt__title">{{ title }}</span>
+        <span class="smt__title">
+          <span v-for="line in titleLines" :key="line" class="smt__title-line">{{ line }}</span>
+        </span>
         <div class="smt__head-actions">
-          <el-button v-if="!systemStore.isAll" link type="info" size="small" :icon="Back" @click="clearFilter">全部系统</el-button>
+          <el-button-group v-if="!systemStore.isAll" class="smt__view-group">
+            <el-tooltip content="返回全部系统" placement="top" :show-after="300">
+              <el-button size="small" :icon="Back" @click="clearFilter" />
+            </el-tooltip>
+            <el-tooltip :content="treeFullyExpanded ? '全部收起' : '全部展开'" placement="top" :show-after="300">
+              <el-button size="small" :icon="treeFullyExpanded ? Fold : Expand" @click="toggleAll" />
+            </el-tooltip>
+          </el-button-group>
+          <el-button v-else link type="info" size="small" :icon="treeFullyExpanded ? Fold : Expand" @click="toggleAll">
+            {{ treeFullyExpanded ? '全部收起' : '全部展开' }}
+          </el-button>
           <el-button link type="primary" size="small" :icon="Plus" @click="newSystem">新建系统</el-button>
         </div>
       </div>
@@ -12,12 +24,16 @@
 
     <el-scrollbar class="smt__scroll">
       <el-tree
+        ref="treeRef"
         :data="treeData"
         node-key="key"
-        default-expand-all
+        :default-expanded-keys="expandedKeys"
         highlight-current
-        :current-node-key="modelValue"
-        :expand-on-click-node="false"
+        :current-node-key="visibleCurrentNodeKey"
+        :expand-on-click-node="true"
+        :auto-expand-parent="false"
+        @node-expand="onNodeExpand"
+        @node-collapse="onNodeCollapse"
         @node-click="onNodeClick"
         @node-contextmenu="onContextMenu"
       >
@@ -80,10 +96,10 @@
  *   { key, kind, icon, label, count, addLabel, addType, items: [{ key, kind, icon, label, ref }] }
  * ]
  */
-import { reactive, computed } from 'vue'
+import { reactive, computed, ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Plus, Back } from '@element-plus/icons-vue'
+import { Plus, Back, Expand, Fold } from '@element-plus/icons-vue'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
 
@@ -105,6 +121,20 @@ const connStore = useConnectionStore()
 const router = useRouter()
 
 const modulesAreLeaves = computed(() => !props.leafGroups)
+const treeRef = ref()
+const expandedKeys = ref([])
+const collapsedKeys = ref(new Set())
+const knownExpandableKeys = ref(new Set())
+const expansionReady = ref(false)
+const treeFullyExpanded = computed(() => {
+  const keys = collectExpandableKeys(treeData.value)
+  return keys.length > 0 && keys.every((key) => expandedKeys.value.includes(key))
+})
+const titleLines = computed(() => {
+  const parts = props.title.split(' · ')
+  if (parts.length <= 2) return [props.title]
+  return [parts.slice(0, -1).join(' · '), parts.at(-1)]
+})
 
 /* ---- 层级树：系统 → 模块 → (叶子组 → 叶子) ---- */
 const treeData = computed(() => {
@@ -141,6 +171,103 @@ const treeData = computed(() => {
       })
   }))
 })
+
+const collectExpandableKeys = (nodes) => {
+  const keys = []
+  const walk = (items) => {
+    items.forEach((item) => {
+      if (item.children?.length) {
+        keys.push(item.key)
+        walk(item.children)
+      }
+    })
+  }
+  walk(nodes)
+  return keys
+}
+const isKeyVisible = (targetKey, nodes, ancestors = []) => {
+  if (!targetKey) return false
+  for (const item of nodes) {
+    const hiddenByCollapsedParent = ancestors.some((key) => collapsedKeys.value.has(key))
+    if (item.key === targetKey) return !hiddenByCollapsedParent
+    if (item.children?.length) {
+      const visible = isKeyVisible(targetKey, item.children, [...ancestors, item.key])
+      if (visible) return true
+    }
+  }
+  return false
+}
+const visibleCurrentNodeKey = computed(() => (
+  isKeyVisible(props.modelValue, treeData.value) ? props.modelValue : null
+))
+
+const applyCollapsedKeys = () => {
+  nextTick(() => {
+    collapsedKeys.value.forEach((key) => {
+      treeRef.value?.getNode?.(key)?.collapse()
+    })
+  })
+}
+const applyExpandedKeys = () => {
+  nextTick(() => {
+    expandedKeys.value.forEach((key) => {
+      treeRef.value?.getNode?.(key)?.expand(null, false)
+    })
+  })
+}
+
+watch(
+  treeData,
+  (nodes) => {
+    const expandableKeys = collectExpandableKeys(nodes)
+    const currentKeySet = new Set(expandableKeys)
+
+    if (!expansionReady.value) {
+      expandedKeys.value = expandableKeys
+      knownExpandableKeys.value = currentKeySet
+      expansionReady.value = true
+      return
+    }
+
+    const previousKeys = knownExpandableKeys.value
+    const newlyAddedKeys = expandableKeys.filter((key) => !previousKeys.has(key))
+    collapsedKeys.value = new Set([...collapsedKeys.value].filter((key) => currentKeySet.has(key)))
+    expandedKeys.value = [
+      ...expandedKeys.value.filter((key) => currentKeySet.has(key)),
+      ...newlyAddedKeys
+    ]
+    knownExpandableKeys.value = currentKeySet
+    applyCollapsedKeys()
+  },
+  { immediate: true, deep: true, flush: 'post' }
+)
+
+const onNodeExpand = (data) => {
+  const next = new Set(collapsedKeys.value)
+  next.delete(data.key)
+  collapsedKeys.value = next
+  if (!expandedKeys.value.includes(data.key)) expandedKeys.value = [...expandedKeys.value, data.key]
+}
+const onNodeCollapse = (data) => {
+  collapsedKeys.value = new Set([...collapsedKeys.value, data.key])
+  expandedKeys.value = expandedKeys.value.filter((key) => key !== data.key)
+}
+
+const expandAll = () => {
+  expandedKeys.value = collectExpandableKeys(treeData.value)
+  collapsedKeys.value = new Set()
+  applyExpandedKeys()
+}
+const collapseAll = () => {
+  const keys = collectExpandableKeys(treeData.value)
+  expandedKeys.value = []
+  collapsedKeys.value = new Set(keys)
+  applyCollapsedKeys()
+}
+const toggleAll = () => {
+  if (treeFullyExpanded.value) collapseAll()
+  else expandAll()
+}
 
 /* ---- 选择：叶子（无 leafGroups 时为模块；否则为叶子项） ---- */
 const isSelectableLeaf = (d) =>
@@ -206,8 +333,9 @@ const ctxEdit = () => {
 <style scoped lang="scss">
 /* 不设 height:100%（父高为 auto 时会塌回内容高）；靠父级 align-items:stretch 撑高 */
 .smt { display: flex; flex-direction: column; min-height: 0; }
-.smt__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.smt__title { font-size: 14px; font-weight: 600; }
+.smt__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.smt__title { display: flex; flex-direction: column; min-width: 0; font-size: 14px; font-weight: 600; line-height: 1.35; }
+.smt__title-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .smt__head-actions { display: flex; align-items: center; gap: 4px; }
 .smt__scroll { flex: 1; min-height: 0; padding: 6px 4px; }
 

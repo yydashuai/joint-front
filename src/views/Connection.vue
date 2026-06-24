@@ -60,14 +60,14 @@
 
       <div class="conn-main">
         <!-- 链路拓扑 -->
-        <el-card class="topo-card" shadow="never" :body-style="{ padding: '10px 12px' }">
+        <el-card class="topo-card" shadow="never" :body-style="{ padding: '0' }">
           <template #header>
             <div class="card-head">
               <span>链路拓扑</span>
-              <span class="muted">本机联试工具 → 各模块（绿灯=通 / 灰灯=不通）</span>
+              <span class="muted">本机联试工具 → 各模块（绿灯=通 / 灰灯=不通）· 可拖拽 / 缩放 / 全屏</span>
             </div>
           </template>
-          <div class="topo-wrap">
+          <PanZoomCanvas :height="360" title="链路拓扑">
             <ConnectionTopology
               :modules="visibleModules"
               :groups="topoGroups"
@@ -78,7 +78,7 @@
               @select-system="onSelectSystem"
               @ping="pingModule"
             />
-          </div>
+          </PanZoomCanvas>
         </el-card>
 
         <!-- 参数配置 -->
@@ -198,6 +198,7 @@ import { Plus, Pointer, Delete, Setting } from '@element-plus/icons-vue'
 import SystemManager from '@/components/SystemManager.vue'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import ConnectionTopology from '@/components/ConnectionTopology.vue'
+import PanZoomCanvas from '@/components/PanZoomCanvas.vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
 
@@ -405,7 +406,6 @@ const confirmCreate = async () => {
 
 /* 拓扑图封顶 + 内部滚动：拓扑再大也不会把下方配置挤掉 */
 .topo-card { flex-shrink: 0; }
-.topo-wrap { max-height: min(380px, 46vh); overflow: auto; }
 
 .cfg-card { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .detail-empty { flex: 1; padding: 40px 0; }

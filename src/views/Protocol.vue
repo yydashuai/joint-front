@@ -107,7 +107,7 @@
       </el-card>
 
       <!-- 右：接口结构编辑 -->
-      <el-card v-else-if="selectedKind === 'interface' && curIf" class="main" shadow="never" :body-style="mainBody">
+      <el-card v-else-if="selectedKind === 'interface' && curIf" class="main main--interface" shadow="never" :body-style="interfaceBody">
         <template #header>
           <div class="proto-head">
             <el-input v-model="curIf.name" class="proto-name" placeholder="接口名称" />
@@ -124,7 +124,7 @@
             <template #prepend>路径</template>
           </el-input>
         </div>
-        <div class="meta-row">
+        <div class="meta-row meta-row--flush">
           <span class="meta-row__label req">所属系统</span>
           <el-select v-model="curIf.systemId" placeholder="选择系统" class="meta-sel" @change="onIfSystemChange">
             <el-option v-for="s in systemOptions" :key="s.value" :label="s.label" :value="s.value" />
@@ -135,31 +135,81 @@
           </el-select>
         </div>
 
-        <div class="sig">签名预览：<code>{{ signature }}</code></div>
+        <el-divider class="sig-divider" />
+        <div class="sig-panel">
+          <div class="sig-panel__head">
+            <span class="sig-panel__label">签名预览</span>
+            <strong class="sig-panel__name">{{ curIf.name }}</strong>
+          </div>
+          <div class="sig-line">
+            <span class="sig-line__label">接口响应</span>
+            <div class="sig-line__list">
+              <button
+                v-for="p in curIf.response"
+                :key="p.id"
+                type="button"
+                class="sig-token"
+                @click="focusField(p)"
+              >
+                <span class="sig-token__type">{{ typeShort(p) }}</span>
+                <span class="sig-token__name">{{ p.name || '(未命名)' }}</span>
+              </button>
+              <span v-if="!curIf.response.length" class="sig-line__empty">void</span>
+            </div>
+          </div>
+          <div class="sig-line">
+            <span class="sig-line__label">接口参数</span>
+            <div class="sig-line__list">
+              <button
+                v-for="p in curIf.request"
+                :key="p.id"
+                type="button"
+                class="sig-token"
+                @click="focusField(p)"
+              >
+                <span class="sig-token__type">{{ typeShort(p) }}</span>
+                <span class="sig-token__name">{{ p.name || '(未命名)' }}</span>
+              </button>
+              <span v-if="!curIf.request.length" class="sig-line__empty">无参数</span>
+            </div>
+          </div>
+        </div>
 
-        <el-scrollbar class="tree-scroll">
+        <div class="tree-scroll">
           <div class="struct">
             <div class="struct__head">
-              <span class="struct__title">请求结构</span>
+              <span class="struct__title">接口参数</span>
               <el-button size="small" :icon="Plus" @click="addRootParam(curIf.request)">添加参数</el-button>
             </div>
             <div class="struct__tree">
-              <div v-for="p in curIf.request" :key="p.id" class="struct__row"><FieldNode :node="p" /></div>
+              <div
+                v-for="p in curIf.request"
+                :key="p.id"
+                class="struct__row"
+                :class="{ 'struct__row--focused': focusedFieldId === p.id }"
+                :data-field-id="p.id"
+              ><FieldNode :node="p" /></div>
               <el-empty v-if="!curIf.request.length" description="无参数" :image-size="60" />
             </div>
           </div>
 
           <div class="struct">
             <div class="struct__head">
-              <span class="struct__title">响应结构</span>
+              <span class="struct__title">接口响应</span>
               <el-button size="small" :icon="Plus" @click="addRootParam(curIf.response)">添加字段</el-button>
             </div>
             <div class="struct__tree">
-              <div v-for="p in curIf.response" :key="p.id" class="struct__row"><FieldNode :node="p" /></div>
+              <div
+                v-for="p in curIf.response"
+                :key="p.id"
+                class="struct__row"
+                :class="{ 'struct__row--focused': focusedFieldId === p.id }"
+                :data-field-id="p.id"
+              ><FieldNode :node="p" /></div>
               <el-empty v-if="!curIf.response.length" description="无返回字段" :image-size="60" />
             </div>
           </div>
-        </el-scrollbar>
+        </div>
       </el-card>
 
       <el-empty v-else class="main main--empty" description="从左侧选择一个协议或接口进行编辑" />
@@ -213,6 +263,7 @@ const systemStore = useSystemStore()
 const connStore = useConnectionStore()
 
 const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+const interfaceBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'visible' }
 
 // 当前在右侧编辑的对象类型：protocol | interface | null
 const selectedKind = ref('protocol')
@@ -357,11 +408,23 @@ const removeById = (lists, id) => {
 // 树节点编辑弹窗
 const nodeDlg = ref(false)
 const editing = ref(null)
+const focusedFieldId = ref(null)
 provide('treeActions', {
   onEdit: (node) => { editing.value = node; nodeDlg.value = true },
   onAddChild: (node) => node.children.push(makeParam({ name: `field${node.children.length + 1}` })),
   onRemove: (node) => removeById([curIf.value.request, curIf.value.response], node.id)
 })
+
+const focusField = async (node) => {
+  focusedFieldId.value = node.id
+  await nextTick()
+  const target = document.querySelector(`[data-field-id="${node.id}"]`)
+  target?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+  window.setTimeout(() => {
+    editing.value = node
+    nodeDlg.value = true
+  }, 180)
+}
 
 // 接口签名预览
 const typeShort = (p) => (p.type === '常量' ? p.dataType : p.type)
@@ -414,6 +477,7 @@ const onImportFile = (e) => {
 
 /* 右主区 */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.main--interface { overflow-y: auto; overflow-x: hidden; }
 .main--empty { align-items: center; justify-content: center; }
 .proto-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .proto-name { max-width: 280px; :deep(.el-input__wrapper) { font-weight: 600; } }
@@ -422,6 +486,7 @@ const onImportFile = (e) => {
 
 /* 系统/模块 + 接口路径 配置行 */
 .meta-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.meta-row--flush { margin-bottom: 0; }
 .meta-row__label { font-size: 13px; color: var(--el-text-color-regular); }
 .meta-row__label.req::before { content: '*'; color: var(--el-color-danger); margin-right: 2px; }
 .meta-sel { width: 200px; }
@@ -450,18 +515,109 @@ const onImportFile = (e) => {
 .w-full { width: 100%; }
 
 /* 接口签名 */
-.sig {
-  font-size: 13px; color: var(--el-text-color-secondary); margin-bottom: 12px;
-  code { color: var(--el-color-primary); background: var(--el-fill-color-light); padding: 2px 8px; border-radius: 4px; }
+.sig-divider { margin: 12px 0 10px; }
+.sig-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  min-width: 0;
+}
+.sig-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.sig-panel__label,
+.sig-line__label {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.sig-panel__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--el-text-color-primary);
+}
+.sig-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.sig-line__label {
+  width: 56px;
+  text-align: right;
+}
+.sig-line__list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0 4px;
+}
+.sig-line__empty {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+}
+.sig-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  max-width: 220px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-primary);
+  cursor: pointer;
+  &:hover {
+    border-color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--el-color-primary-light-5);
+    outline-offset: 1px;
+  }
+}
+.sig-token__type {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--el-color-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+.sig-token__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
 }
 
 /* 接口结构树 */
-.tree-scroll { flex: 1; min-height: 0; }
+.tree-scroll { flex: 0 0 auto; min-height: 0; overflow: visible; }
 .struct {
   & + & { margin-top: 8px; }
   &__head { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
   &__title { font-size: 14px; font-weight: 600; padding-left: 8px; border-left: 3px solid var(--el-color-primary); }
   &__tree { display: flex; flex-direction: column; gap: 14px; padding: 8px 4px; }
-  &__row { display: flex; }
+  &__row {
+    display: flex;
+    border-radius: 8px;
+  }
+  &__row--focused :deep(.fnode__card) {
+    background: var(--el-color-primary-light-9);
+    box-shadow: 0 0 0 1px var(--el-color-primary-light-5) inset;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  }
 }
 </style>
