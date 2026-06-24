@@ -34,6 +34,7 @@
               <div class="topo__node-main">
                 <div class="topo__node-name">{{ m.name }}</div>
                 <div class="topo__node-sub">{{ m.ip }}:{{ m.port }}</div>
+                <div v-if="m.desc" class="topo__node-desc">{{ m.desc }}</div>
               </div>
               <el-tag size="small" :type="statusMeta[m.status].tag" effect="light" disable-transitions>
                 {{ statusMeta[m.status].text }}
@@ -247,6 +248,10 @@ const hasContent = computed(() => (props.grouped ? props.groups.length > 0 : pro
   &-main { flex: 1; min-width: 0; }
   &-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   &-sub { font-size: 12px; color: var(--el-text-color-secondary); }
+  &-desc {
+    font-size: 11px; color: var(--el-text-color-placeholder); margin-top: 1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
 }
 
 .dot {

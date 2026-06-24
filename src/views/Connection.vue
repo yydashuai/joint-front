@@ -14,8 +14,8 @@
       </div>
     </div>
 
-    <!-- 系统选择 + 链路拓扑图 -->
-    <el-card class="sys-card" shadow="never" :body-style="{ padding: '14px 16px' }">
+    <!-- 系统选择条 -->
+    <el-card class="sys-strip" shadow="never" :body-style="{ padding: '12px 16px' }">
       <div class="sys-bar">
         <div class="sys-bar__pick">
           <span class="sys-bar__label">被测系统</span>
@@ -46,58 +46,43 @@
           </span>
         </div>
       </div>
-
-      <el-divider class="sys-card__divider" />
-
-      <div class="topo-wrap">
-        <ConnectionTopology
-          :modules="visibleModules"
-          :groups="topoGroups"
-          :grouped="systemStore.isAll"
-          :hub-label="hubLabel"
-          :selected-id="store.selectedId"
-          @select="store.select"
-          @select-system="onSelectSystem"
-          @ping="pingModule"
-        />
-      </div>
     </el-card>
 
-    <!-- 模块列表 + 参数配置 -->
-    <div class="conn-body">
-      <el-card class="node-list" shadow="never" :body-style="{ padding: '0', flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }">
-        <template #header>
-          <div class="card-head">
-            <span>模块列表</span>
-            <el-input v-model="keyword" :prefix-icon="Search" size="small" placeholder="搜索名称 / IP" clearable class="search" />
-          </div>
-        </template>
+    <!-- 左：IDE 层级树 ｜ 右：拓扑图 + 参数配置 -->
+    <div class="conn-layout">
+      <SystemModuleTree
+        class="conn-tree"
+        :model-value="`mod-${store.selectedId}`"
+        title="系统 · 模块"
+        empty-text="暂无系统/模块，请新建系统或新建模块"
+        @select="onTreeSelect"
+      />
 
-        <el-scrollbar class="node-scroll">
-          <div
-            v-for="n in filteredModules"
-            :key="n.id"
-            class="node-item"
-            :class="{ 'is-active': n.id === store.selectedId }"
-            @click="store.select(n.id)"
-          >
-            <span class="dot" :class="`dot--${n.status}`" />
-            <div class="node-item__main">
-              <div class="node-item__name">
-                <span>{{ n.name }}</span>
-                <el-tag v-if="systemStore.isAll" size="small" effect="plain" class="system-tag">{{ moduleSystemName(n) }}</el-tag>
-              </div>
-              <div class="node-item__sub">{{ n.ip }}:{{ n.port }}</div>
-              <div class="node-item__desc">{{ n.desc || '暂无说明' }}</div>
+      <div class="conn-main">
+        <!-- 链路拓扑 -->
+        <el-card class="topo-card" shadow="never" :body-style="{ padding: '10px 12px' }">
+          <template #header>
+            <div class="card-head">
+              <span>链路拓扑</span>
+              <span class="muted">本机联试工具 → 各模块（绿灯=通 / 灰灯=不通）</span>
             </div>
-            <el-tag size="small" :type="statusMeta[n.status].tag" effect="light">{{ statusMeta[n.status].text }}</el-tag>
+          </template>
+          <div class="topo-wrap">
+            <ConnectionTopology
+              :modules="visibleModules"
+              :groups="topoGroups"
+              :grouped="systemStore.isAll"
+              :hub-label="hubLabel"
+              :selected-id="store.selectedId"
+              @select="store.select"
+              @select-system="onSelectSystem"
+              @ping="pingModule"
+            />
           </div>
-          <el-empty v-if="!filteredModules.length" description="无匹配模块" :image-size="80" />
-        </el-scrollbar>
-      </el-card>
+        </el-card>
 
-      <!-- 参数配置 -->
-      <el-card v-if="sel" shadow="never" class="cfg-card" :body-style="{ flex: '1', minHeight: '0', overflow: 'auto' }">
+        <!-- 参数配置 -->
+        <el-card v-if="sel" shadow="never" class="cfg-card" :body-style="{ flex: '1', minHeight: '0', overflow: 'auto' }">
         <template #header>
           <div class="card-head">
             <span>链路参数配置 · {{ sel.name }}</span>
@@ -165,7 +150,8 @@
         </div>
       </el-card>
 
-      <el-empty v-else class="detail-empty" description="当前系统下暂无模块，请新建模块或切换被测系统" />
+        <el-empty v-else class="detail-empty" description="当前系统下暂无模块，请新建模块或切换被测系统" />
+      </div>
     </div>
 
     <!-- 新建模块 -->
@@ -208,8 +194,9 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, Search, Pointer, Delete, Setting } from '@element-plus/icons-vue'
+import { Plus, Pointer, Delete, Setting } from '@element-plus/icons-vue'
 import SystemManager from '@/components/SystemManager.vue'
+import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import ConnectionTopology from '@/components/ConnectionTopology.vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
@@ -255,7 +242,10 @@ const onSelectSystem = (id) => {
 }
 const sel = computed(() => visibleModules.value.find((module) => module.id === store.selectedId) || null)
 
-const moduleSystemName = (module) => systemStore.systems.find((system) => system.id === module.systemId)?.name || '未分配'
+// 层级树选中模块 → 同步到当前选中
+const onTreeSelect = (node) => {
+  if (node.kind === 'module' && node.ref) store.select(node.ref.id)
+}
 const selectedModuleSystemKey = computed({
   get: () => sel.value?.systemId ?? UNASSIGNED_KEY,
   set: (id) => {
@@ -282,14 +272,6 @@ const rules = {
   ip: [{ required: true, validator: ipRule, trigger: 'blur' }],
   port: [{ required: true, message: '请输入端口', trigger: 'blur' }]
 }
-
-// 列表先按被测系统过滤，再叠加关键字搜索。
-const keyword = ref('')
-const filteredModules = computed(() => {
-  const k = keyword.value.trim().toLowerCase()
-  if (!k) return visibleModules.value
-  return visibleModules.value.filter((n) => n.name.toLowerCase().includes(k) || n.ip.includes(k))
-})
 
 // 手动检测连通性（4 次）：拓扑图与配置区共用
 const pingModule = (module) => {
@@ -362,9 +344,8 @@ const confirmCreate = async () => {
 
 .header-actions { display: flex; align-items: center; gap: 12px; }
 
-/* 系统选择 + 拓扑图 */
-.sys-card { flex-shrink: 0; }
-.sys-card__divider { margin: 12px 0; }
+/* 系统选择条 */
+.sys-strip { flex-shrink: 0; }
 .sys-bar {
   display: flex;
   align-items: center;
@@ -396,14 +377,21 @@ const confirmCreate = async () => {
     }
   }
 }
-/* 拓扑图封顶 + 内部滚动：拓扑再大也不会把下方列表/配置挤掉 */
-.topo-wrap { max-height: min(400px, 48vh); overflow: auto; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-/* 模块列表 + 配置 */
-.conn-body {
-  /* 行高由配置卡片内容决定（列表滚动区绝对定位、不撑高行高）；列表与配置等高，超出内部滚动 */
+/* 左树 ｜ 右（拓扑 + 配置） */
+.conn-layout {
   flex-shrink: 0;
   display: flex;
+  align-items: stretch;
+  gap: 16px;
+}
+.conn-tree { width: 300px; flex-shrink: 0; }
+.conn-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   gap: 16px;
 }
 
@@ -412,55 +400,15 @@ const confirmCreate = async () => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  .search { width: 160px; }
 }
+.muted { font-size: 12px; color: var(--el-text-color-secondary); }
 
-.node-list {
-  width: 420px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-}
-/* 列表滚动区绝对填充卡片正文，不参与撑高，使列表高度跟随配置卡片 */
-.node-list :deep(.el-card__body) { position: relative; }
-.node-scroll { position: absolute; inset: 0; }
-.node-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  cursor: pointer;
-  border-left: 3px solid transparent;
-  transition: background 0.15s;
-
-  &:hover { background: var(--el-fill-color-light); }
-  &.is-active { background: var(--el-color-primary-light-9); border-left-color: var(--el-color-primary); }
-
-  &__main { flex: 1; min-width: 0; }
-  &__name {
-    display: flex; align-items: center; gap: 6px;
-    font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden;
-  }
-  &__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  &__sub { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
-  &__desc {
-    font-size: 12px; color: var(--el-text-color-placeholder); margin-top: 2px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .system-tag { flex-shrink: 0; }
-}
-
-/* 链路只有绿灯（通）和灰灯（不通），pinging 时灰灯脉冲 */
-.dot {
-  width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0;
-  &--online { background: var(--el-color-success); box-shadow: 0 0 0 3px var(--el-color-success-light-7); }
-  &--offline { background: var(--el-text-color-placeholder); }
-  &--pinging { background: var(--el-text-color-placeholder); animation: pulse 1s infinite; }
-}
-@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+/* 拓扑图封顶 + 内部滚动：拓扑再大也不会把下方配置挤掉 */
+.topo-card { flex-shrink: 0; }
+.topo-wrap { max-height: min(380px, 46vh); overflow: auto; }
 
 .cfg-card { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.detail-empty { flex: 1; }
+.detail-empty { flex: 1; padding: 40px 0; }
 .w-full { width: 100%; }
 .cfg-form :deep(.el-form-item) { margin-bottom: 16px; }
 
