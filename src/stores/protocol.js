@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
+import { protocols as seedProtocols, interfaces as seedInterfaces } from '@/mock/seed-data'
 
-let seq = 1000
+let seq = 2000
 const uid = () => ++seq
 
 // 5 种字段数据类型
@@ -41,107 +42,8 @@ export const makeParam = (o = {}) => ({
 
 export const useProtocolStore = defineStore('protocol', {
   state: () => ({
-    protocols: [
-      {
-        id: uid(),
-        name: '帧控制字节协议',
-        endian: 'big',
-        systemId: 'sys-weapon',
-        moduleId: 101,
-        desc: '1 字节帧控制位标志（bit7 → bit0），适用于压缩/加密等按位场景',
-        fields: [
-          makeField({ name: '加密标志', startBit: 7, endBit: 7, constraint: range(0, 1), desc: '1=加密，0=明文' }),
-          makeField({ name: '压缩标志', startBit: 6, endBit: 6, constraint: range(0, 1), desc: '1=压缩，0=未压缩' }),
-          makeField({ name: '分片标志', startBit: 5, endBit: 5, constraint: range(0, 1), desc: '1=分片包，0=完整包' }),
-          makeField({ name: '应答标志', startBit: 4, endBit: 4, constraint: range(0, 1), desc: '1=应答包，0=业务包' }),
-          makeField({ name: '保留位1', startBit: 3, endBit: 3, constraint: fixed(0), desc: '固定填 0，预留协议扩展' }),
-          makeField({ name: '保留位2', startBit: 2, endBit: 2, constraint: fixed(0), desc: '固定填 0，预留协议扩展' }),
-          makeField({ name: '数据类型', startBit: 0, endBit: 1, constraint: range(0, 3), desc: '00=JSON 01=二进制 10=字符串 11=XML' })
-        ]
-      },
-      {
-        id: uid(),
-        name: '遥测帧协议',
-        endian: 'big',
-        systemId: 'sys-fire-control',
-        moduleId: 103,
-        desc: '遥测下行帧（按位定义，可跨字节）',
-        fields: [
-          makeField({ name: '帧头', startBit: 0, endBit: 15, constraint: fixed(0xeb90), desc: '固定 0xEB90' }),
-          makeField({ name: '设备ID', startBit: 16, endBit: 23, constraint: range(0, 255), desc: '分系统编号' }),
-          makeField({ name: '温度', startBit: 24, endBit: 55, constraint: range(-5000, 15000), desc: '摄氏度 ×100' })
-        ]
-      }
-    ],
-    interfaces: [
-      {
-        id: uid(),
-        name: '查询设备状态',
-        path: '/device/status',
-        systemId: 'sys-weapon',
-        moduleId: 101,
-        desc: '请求设备状态，返回遥测帧',
-        request: [
-          makeParam({ name: 'deviceId', type: '常量', dataType: 'uint8', desc: '目标设备' }),
-          makeParam({
-            name: 'options', type: '共识体', desc: '查询选项',
-            children: [
-              makeParam({ name: 'verbose', type: '常量', dataType: 'uint8' }),
-              makeParam({ name: 'timeoutMs', type: '常量', dataType: 'uint16' })
-            ]
-          })
-        ],
-        response: [
-          makeParam({ name: 'code', type: '常量', dataType: 'int32', desc: '状态码' }),
-          makeParam({ name: 'payload', type: '位组序流', desc: '遥测帧载荷' })
-        ]
-      },
-      {
-        id: uid(),
-        name: '上报弹药余量',
-        path: '/ammo/report',
-        systemId: 'sys-weapon',
-        moduleId: 102,
-        desc: '查询并上报各类弹药余量',
-        request: [
-          makeParam({ name: 'queryType', type: '常量', dataType: 'uint8', desc: '查询类型' })
-        ],
-        response: [
-          makeParam({ name: 'total', type: '常量', dataType: 'uint16', desc: '弹药总量' }),
-          makeParam({ name: 'available', type: '常量', dataType: 'uint16', desc: '可用量' }),
-          makeParam({
-            name: 'detail', type: '共识体', desc: '余量明细',
-            children: [
-              makeParam({ name: 'typeA', type: '常量', dataType: 'uint16', desc: 'A 型余量' }),
-              makeParam({ name: 'typeB', type: '常量', dataType: 'uint16', desc: 'B 型余量' })
-            ]
-          })
-        ]
-      },
-      {
-        id: uid(),
-        name: '目标分配解算',
-        path: '/fire/solve',
-        systemId: 'sys-fire-control',
-        moduleId: 103,
-        desc: '提交目标列表，返回火力分配方案',
-        request: [
-          makeParam({
-            name: 'targets', type: '共识体', desc: '目标列表',
-            children: [
-              makeParam({ name: 'targetId', type: '常量', dataType: 'uint16', desc: '目标编号' }),
-              makeParam({ name: 'priority', type: '常量', dataType: 'uint8', desc: '优先级' })
-            ]
-          }),
-          makeParam({ name: 'unitCount', type: '常量', dataType: 'uint8', desc: '火力单元数' })
-        ],
-        response: [
-          makeParam({ name: 'result', type: '常量', dataType: 'int32', desc: '解算结果码' }),
-          makeParam({ name: 'plan', type: '流文件', desc: '分配方案文件' }),
-          makeParam({ name: 'raw', type: '位组序流', desc: '原始解算帧' })
-        ]
-      }
-    ],
+    protocols: JSON.parse(JSON.stringify(seedProtocols)),
+    interfaces: JSON.parse(JSON.stringify(seedInterfaces)),
     selectedProtocolId: null,
     selectedInterfaceId: null
   }),
