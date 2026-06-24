@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { useSystemStore } from '@/stores/system'
+import { nodes as seedNodes } from '@/mock/seed-data'
 
-let seq = 100
+let seq = 200
 const rnd = (a, b) => Math.round(a + Math.random() * (b - a))
 const delay = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -24,13 +25,8 @@ const makeNode = (o = {}) => ({
 
 export const useConnectionStore = defineStore('connection', {
   state: () => ({
-    nodes: [
-      makeNode({ systemId: 'sys-weapon', name: '武器管理模块', ip: '192.168.10.21', port: 9001, desc: '武器装订与发射控制主链路', reachable: true, status: 'online', latency: 12 }),
-      makeNode({ systemId: 'sys-weapon', name: '弹药状态模块', ip: '192.168.10.32', port: 9100, desc: '弹药余量与装填状态上报链路', reachable: true, status: 'online', latency: 23 }),
-      makeNode({ systemId: 'sys-fire-control', name: '火控解算模块', ip: '192.168.20.45', port: 8080, desc: '火控解算与目标分配数据链路', reachable: true, status: 'offline' }),
-      makeNode({ systemId: 'sys-fire-control', name: '指挥链路模块', ip: '192.168.20.46', port: 7070, desc: '指挥所指令下行链路（当前不通）', reachable: false, status: 'offline' })
-    ],
-    selectedId: 101
+    nodes: JSON.parse(JSON.stringify(seedNodes)),
+    selectedId: seedNodes[0]?.id ?? null
   }),
 
   getters: {

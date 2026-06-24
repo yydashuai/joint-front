@@ -1,33 +1,36 @@
 import { defineStore } from 'pinia'
+import { systems as seedSystems } from '@/mock/seed-data'
+import { useAuthStore } from '@/stores/auth'
 
-let seq = 2
+let seq = 100
 
 export const useSystemStore = defineStore('system', {
   state: () => ({
-    systems: [
-      {
-        id: 'sys-weapon',
-        name: '综合武器管理系统',
-        desc: '覆盖武器挂载、状态监测与装控指令接口的被测系统',
-        owner: '装备联试组'
-      },
-      {
-        id: 'sys-fire-control',
-        name: '火控指挥联试系统',
-        desc: '覆盖目标分配、火控解算与指挥链路接口的被测系统',
-        owner: '火控联试组'
-      }
-    ],
+    systems: JSON.parse(JSON.stringify(seedSystems)),
     currentId: null
   }),
 
   getters: {
     current: (state) => state.systems.find((system) => system.id === state.currentId) || null,
     isAll: (state) => state.currentId === null,
-    options: (state) => [
-      { label: '全部系统（总体）', value: null },
-      ...state.systems.map((system) => ({ label: system.name, value: system.id }))
-    ]
+
+    /** 当前用户可见的系统列表（admin 看全部，tester 看授权列表） */
+    visibleSystems(state) {
+      const auth = useAuthStore()
+      if (!auth.currentUser) return state.systems
+      if (auth.currentUser.role === 'admin') return state.systems
+      const allowed = auth.getSystemIds(auth.currentUser.id)
+      return state.systems.filter(s => allowed.includes(s.id))
+    },
+
+    /** 下拉选项（受权限过滤） */
+    options(state) {
+      const visible = this.visibleSystems
+      return [
+        { label: `全部系统（${visible.length}）`, value: null },
+        ...visible.map((system) => ({ label: system.name, value: system.id }))
+      ]
+    }
   },
 
   actions: {

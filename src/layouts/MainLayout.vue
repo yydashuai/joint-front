@@ -38,7 +38,7 @@
               :value="option.value ?? ALL_SYSTEM_KEY"
             />
           </el-select>
-          <el-button :icon="Setting" size="small" @click="systemManagerVisible = true">管理</el-button>
+          <el-button v-if="isAdmin" :icon="Setting" size="small" @click="systemManagerVisible = true">管理</el-button>
         </div>
         <el-menu
           class="topbar__menu"
@@ -53,12 +53,20 @@
         </el-menu>
         <div class="topbar__user">
           <el-tag size="small" type="success" effect="plain">在线</el-tag>
-          <el-dropdown>
-            <span class="topbar__avatar">测试员<el-icon><ArrowDown /></el-icon></span>
+          <el-dropdown @command="onUserCommand">
+            <span class="topbar__avatar">
+              <span class="topbar__avatar-circle">{{ avatarText }}</span>
+              {{ authStore.currentUser?.realName || '未知' }}
+              <el-icon><ArrowDown /></el-icon>
+            </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item>个人设置</el-dropdown-item>
-                <el-dropdown-item divided>退出登录</el-dropdown-item>
+                <el-dropdown-item command="settings" :icon="Setting">个人设置</el-dropdown-item>
+                <template v-if="isAdmin">
+                  <el-dropdown-item divided command="admin-users" :icon="User">用户管理</el-dropdown-item>
+                  <el-dropdown-item command="admin-permissions" :icon="Lock">权限管理</el-dropdown-item>
+                </template>
+                <el-dropdown-item divided command="logout" :icon="SwitchButton">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -81,21 +89,52 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import { Setting } from '@element-plus/icons-vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Setting, User, Lock, SwitchButton } from '@element-plus/icons-vue'
 import SystemManager from '@/components/SystemManager.vue'
 import { navRoutes } from '@/router'
 import { useSystemStore } from '@/stores/system'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
+const router = useRouter()
 const systemStore = useSystemStore()
+const authStore = useAuthStore()
 const systemManagerVisible = ref(false)
 const ALL_SYSTEM_KEY = '__all__'
+
 const isActive = (item) => route.path === item.path
+const isAdmin = computed(() => authStore.currentUser?.role === 'admin')
+
+/** 用户头像首字母 */
+const avatarText = computed(() => {
+  const name = authStore.currentUser?.realName || ''
+  return name.charAt(name.length - 1) || '?'
+})
+
 const currentSystemKey = computed({
   get: () => systemStore.currentId ?? ALL_SYSTEM_KEY,
   set: (id) => systemStore.setCurrent(id === ALL_SYSTEM_KEY ? null : id)
 })
+
+/** 用户下拉菜单命令处理 */
+const onUserCommand = (cmd) => {
+  switch (cmd) {
+    case 'settings':
+      router.push('/settings')
+      break
+    case 'admin-users':
+      router.push('/admin/users')
+      break
+    case 'admin-permissions':
+      router.push('/admin/permissions')
+      break
+    case 'logout':
+      authStore.logout()
+      router.push('/login')
+      break
+  }
+}
 </script>
 
 <style scoped lang="scss">
@@ -197,7 +236,26 @@ const currentSystemKey = computed({
     overflow: hidden;
   }
   &__user { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-  &__avatar { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; font-size: 14px; }
+  &__avatar {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  &__avatar-circle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--el-color-primary);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
 }
 
 .workspace {
