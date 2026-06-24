@@ -25,6 +25,7 @@
           <div class="tnode" :class="`tnode--${data.kind}`" @dblclick="startRename(data)">
             <el-icon class="tnode__icon"><component :is="data.icon" /></el-icon>
             <span class="tnode__label">{{ data.label }}</span>
+            <span v-if="data.badge" class="tnode__badge">{{ data.badge }}</span>
             <span v-if="data.count !== undefined" class="tnode__count">{{ data.count }}</span>
             <span v-if="data.kind === 'system'" class="tnode__ops">
               <el-button link type="primary" size="small" @click.stop="newModule(data)">+模块</el-button>
@@ -57,10 +58,22 @@
           </template>
           <template v-else-if="ctx.data?.kind === 'module'">
             <li v-for="a in ctx.data.addActions" :key="a.groupKind" @click="ctxAddLeaf(a.groupKind)">{{ a.label }}</li>
+            <template v-if="moduleContextActions">
+              <li v-if="(ctx.data.addActions?.length)" class="ctx-sep"></li>
+              <template v-for="act in moduleContextActions(ctx.data)" :key="act.action">
+                <li :class="{ danger: act.danger }" @click="emitModuleAction(act.action)">{{ act.label }}</li>
+              </template>
+            </template>
             <li v-if="showEditJump" @click="ctxEdit">在链路连接管理中编辑</li>
             <li class="danger" @click="ctxDelete">删除模块</li>
           </template>
           <template v-else>
+            <template v-if="leafContextActions">
+              <template v-for="act in leafContextActions(ctx.data)" :key="act.action">
+                <li :class="{ danger: act.danger }" @click="emitLeafAction(act.action)">{{ act.label }}</li>
+              </template>
+              <li v-if="leafContextActions(ctx.data).length" class="ctx-sep"></li>
+            </template>
             <li class="danger" @click="ctxDelete">删除</li>
           </template>
         </ul>
@@ -93,12 +106,14 @@ const props = defineProps({
   leafGroups: { type: Function, default: null }, // (module) => groups[]
   showEditJump: { type: Boolean, default: false }, // 右键是否含「在链路连接管理中编辑」
   emptyText: { type: String, default: '暂无系统/模块，请先在链路连接管理添加' },
+  leafContextActions: { type: Function, default: null }, // (leafData) => [{ label, action, danger? }]
+  moduleContextActions: { type: Function, default: null }, // (moduleData) => [{ label, action, danger? }]
   bodyStyle: {
     type: Object,
     default: () => ({ padding: '0', flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' })
   }
 })
-const emit = defineEmits(['update:modelValue', 'select', 'add-leaf', 'delete-leaf'])
+const emit = defineEmits(['update:modelValue', 'select', 'add-leaf', 'delete-leaf', 'leaf-action', 'module-action'])
 
 const systemStore = useSystemStore()
 const connStore = useConnectionStore()
@@ -128,15 +143,19 @@ const treeData = computed(() => {
           ref: mod,
           sys,
           addActions: groups.map((g) => ({ groupKind: g.kind, label: g.addLabel, type: g.addType })),
-          children: groups.map((g) => ({
-            key: g.key,
-            kind: g.kind,
-            icon: g.icon,
-            label: g.label,
-            count: g.count,
-            module: mod,
-            children: g.items || []
-          }))
+          children: groups.flatMap((g) =>
+            g.flat
+              ? (g.items || []).map((item) => ({ ...item, module: mod }))
+              : [{
+                  key: g.key,
+                  kind: g.kind,
+                  icon: g.icon,
+                  label: g.label,
+                  count: g.count,
+                  module: mod,
+                  children: (g.items || []).map((item) => ({ ...item }))
+                }]
+          )
         }
       })
   }))
@@ -173,6 +192,8 @@ const startRename = (data) => { if (data?.ref) promptName(data.ref, data.kind, '
 const newSystem = () => { systemStore.add({ name: DEFAULT_NAME.system }) }
 const newModule = (sysNode) => { connStore.add({ name: DEFAULT_NAME.module, systemId: sysNode.ref.id, ip: '192.168.1.1', port: 8080 }) }
 const addLeaf = (groupKind, modNode) => { emit('add-leaf', { groupKind, module: modNode.ref }) }
+const emitLeafAction = (action) => { emit('leaf-action', { action, data: ctx.data }); closeCtx() }
+const emitModuleAction = (action) => { emit('module-action', { action, data: ctx.data }); closeCtx() }
 const clearFilter = () => systemStore.setCurrent(null)
 
 /* ---- 右键菜单 ---- */
@@ -224,6 +245,11 @@ const ctxEdit = () => {
     font-size: 11px; color: var(--el-text-color-placeholder);
     background: var(--el-fill-color); border-radius: 8px; padding: 0 6px;
   }
+  &__badge {
+    font-size: 11px; color: var(--el-text-color-secondary);
+    background: var(--el-fill-color-light); border-radius: 4px; padding: 0 4px;
+    font-family: 'Consolas', 'Monaco', monospace;
+  }
   &__ops { display: none; gap: 2px; }
   &:hover &__ops { display: inline-flex; }
 
@@ -252,6 +278,7 @@ const ctxEdit = () => {
     color: var(--el-text-color-primary);
     &:hover { background: var(--el-fill-color-light); }
     &.danger { color: var(--el-color-danger); }
+    &.ctx-sep { height: 1px; padding: 0; margin: 4px 8px; background: var(--el-border-color-lighter); cursor: default; pointer-events: none; }
   }
 }
 </style>
