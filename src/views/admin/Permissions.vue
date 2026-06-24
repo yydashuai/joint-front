@@ -71,7 +71,7 @@
           >
             <template #header>
               <el-tooltip :content="sys.name" placement="top">
-                <span class="sys-col-header">{{ sys.name | truncate(8) }}</span>
+                <span class="sys-col-header">{{ truncate(sys.name, 8) }}</span>
               </el-tooltip>
             </template>
             <template #default="{ row }">
