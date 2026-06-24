@@ -1,6 +1,6 @@
 <template>
-  <div class="fnode">
-    <div class="fnode__card" :class="[`type--${typeClass}`, { 'has-children': hasChildren }]">
+  <div class="fnode" ref="rootEl">
+    <div class="fnode__card" :class="[`type--${typeClass}`, { 'has-children': hasChildren }]" ref="cardEl">
       <div class="fnode__head">
         <span class="fnode__name">{{ node.name || '(未命名)' }}</span>
         <el-tag size="small" :type="tagType" effect="light" disable-transitions>{{ node.type }}</el-tag>
@@ -25,13 +25,16 @@
 </template>
 
 <script setup>
-import { computed, inject } from 'vue'
+import { computed, inject, ref } from 'vue'
 import { Edit, Plus, Delete } from '@element-plus/icons-vue'
 import { useProtocolStore } from '@/stores/protocol'
 
 const props = defineProps({ node: { type: Object, required: true } })
 const actions = inject('treeActions')
 const store = useProtocolStore()
+
+const rootEl = ref(null)
+const cardEl = ref(null)
 
 const hasChildren = computed(() => props.node.type === '共识体' && props.node.children.length > 0)
 

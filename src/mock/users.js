@@ -3,9 +3,6 @@
  * 仅管理员可创建账号，无开放注册
  */
 
-let _userSeq = 100
-const uid = () => `u-${++_userSeq}`
-
 /* ========== 用户列表 ========== */
 export const users = [
   {
@@ -87,5 +84,5 @@ export const systemConfig = {
 }
 
 /* ========== 工具函数 ========== */
-let _seq = _userSeq
+let _seq = 100
 export const nextUserId = () => `u-${++_seq}`

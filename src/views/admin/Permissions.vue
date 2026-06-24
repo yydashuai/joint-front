@@ -38,7 +38,7 @@
       </template>
 
       <div class="matrix-wrapper">
-        <el-table :data="matrixData" size="small" border style="width: 100%;">
+        <el-table :data="matrixData" size="small" border show-summary :summary-method="getSummary" style="width: 100%;">
           <!-- 用户名列 -->
           <el-table-column label="用户" min-width="160" fixed>
             <template #default="{ row }">
@@ -98,18 +98,6 @@
             </template>
           </el-table-column>
         </el-table>
-      </div>
-
-      <!-- 列底部统计 -->
-      <div v-if="testerUsers.length > 0" class="matrix-footer">
-        <div class="footer-label">已授权人数</div>
-        <div
-          v-for="sys in systemStore.systems"
-          :key="sys.id"
-          class="footer-cell"
-        >
-          {{ getSystemUserCount(sys.id) }} / {{ testerUsers.length }} 人
-        </div>
       </div>
     </el-card>
   </div>
@@ -181,6 +169,36 @@ const togglePermission = (userId, systemId, checked) => {
   if (!checked && newIds.length === 0) {
     ElMessage.warning(`${user?.realName} 当前没有任何系统权限，登录后将无法看到任何系统`)
   }
+}
+
+/* ========== 表格内置合计行（完美对齐列宽） ========== */
+const getSummary = ({ columns, data }) => {
+  const sums = []
+  columns.forEach((col, index) => {
+    if (index === 0) {
+      sums[index] = '已授权人数'
+      return
+    }
+    if (index === 1) {
+      sums[index] = ''
+      return
+    }
+    // 最后一个固定列"已授权"
+    if (index === columns.length - 1) {
+      sums[index] = ''
+      return
+    }
+    // 系统列：统计测试员中有多少人被授权
+    const sysIndex = index - 2
+    if (sysIndex >= 0 && sysIndex < systemStore.systems.length) {
+      const sys = systemStore.systems[sysIndex]
+      const count = getSystemUserCount(sys.id)
+      sums[index] = `${count} / ${testerUsers.value.length} 人`
+    } else {
+      sums[index] = ''
+    }
+  })
+  return sums
 }
 
 /* ========== 工具 ========== */
@@ -317,31 +335,5 @@ const truncate = (value, length) => {
     font-weight: 400;
     color: var(--el-text-color-secondary);
   }
-}
-
-/* 底部统计 */
-.matrix-footer {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  padding: 10px 0 0;
-  border-top: 1px solid var(--el-border-color-lighter);
-  margin-top: 8px;
-}
-
-.footer-label {
-  min-width: 160px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--el-text-color-secondary);
-  padding-left: 8px;
-}
-
-.footer-cell {
-  width: 150px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--el-text-color-regular);
-  flex-shrink: 0;
 }
 </style>
