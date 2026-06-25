@@ -307,6 +307,11 @@ const alertTree = computed(() =>
 /* ========== 叶子点击跳转 ========== */
 const onLeafClick = (data, route) => {
   if (data.kind !== 'item') return
+  // 任务叶子：携带 id 跳转，TestTask 页面自动选中
+  if (route === '/task' && data.ref?.id) {
+    router.push({ path: '/task', query: { id: data.ref.id } })
+    return
+  }
   router.push(route)
 }
 
