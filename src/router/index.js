@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, createWebHashHistory } from 'vue-router'
 import MainLayout from '@/layouts/MainLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -17,7 +17,8 @@ export const navRoutes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  // 打包产物用 hash 模式，保证 file:// 双击打开可正常路由；开发仍用 history 模式
+  history: import.meta.env.PROD ? createWebHashHistory() : createWebHistory(),
   routes: [
     // 登录页（不在 MainLayout 内，无需认证）
     {

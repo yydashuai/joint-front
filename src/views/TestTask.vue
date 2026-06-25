@@ -427,7 +427,9 @@ watch(currentTask, (t) => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .header-actions {
@@ -446,17 +448,26 @@ watch(currentTask, (t) => {
 .tree-panel {
   width: 300px;
   flex-shrink: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow: hidden;
 }
 .tree-search { flex-shrink: 0; }
 
 :deep(.smt) {
   flex: 1;
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+:deep(.smt > .el-card__body) {
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* 右侧主区 */
