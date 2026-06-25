@@ -57,6 +57,12 @@ const router = createRouter({
           name: 'admin-permissions',
           meta: { title: '权限管理', role: 'admin', hidden: true },
           component: () => import('@/views/admin/Permissions.vue')
+        },
+        {
+          path: '/admin/system-settings',
+          name: 'admin-system-settings',
+          meta: { title: '系统设置', role: 'admin', hidden: true },
+          component: () => import('@/views/SystemSettings.vue')
         }
       ]
     },

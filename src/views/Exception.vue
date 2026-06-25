@@ -193,6 +193,10 @@ const openDetail = (row) => {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  padding-right: 16px;
 }
 .system-select { width: 220px; }
 .split {

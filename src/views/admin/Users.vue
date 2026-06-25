@@ -72,7 +72,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="状态" width="100" align="center">
+        <el-table-column label="启用账号" width="100" align="center">
           <template #default="{ row }">
             <el-switch
               :model-value="row.status === 'active'"
@@ -89,7 +89,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="180" align="center">
+        <el-table-column label="操作" width="300" align="center">
           <template #default="{ row }">
             <el-button size="small" text type="primary" @click="openDialog(row)">编辑</el-button>
             <el-button size="small" text type="warning" @click="openResetPwd(row)">重置密码</el-button>

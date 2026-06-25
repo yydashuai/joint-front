@@ -62,6 +62,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="settings" :icon="Setting">个人设置</el-dropdown-item>
+                <el-dropdown-item v-if="isAdmin" command="system-settings" :icon="Setting">系统设置</el-dropdown-item>
                 <template v-if="isAdmin">
                   <el-dropdown-item divided command="admin-users" :icon="User">用户管理</el-dropdown-item>
                   <el-dropdown-item command="admin-permissions" :icon="Lock">权限管理</el-dropdown-item>
@@ -122,6 +123,9 @@ const onUserCommand = (cmd) => {
   switch (cmd) {
     case 'settings':
       router.push('/settings')
+      break
+    case 'system-settings':
+      router.push('/admin/system-settings')
       break
     case 'admin-users':
       router.push('/admin/users')

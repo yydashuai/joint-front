@@ -8,7 +8,6 @@
         </div>
       </div>
       <div class="header-actions">
-        <el-tag type="info" effect="plain" round>角色：管理员 / 测试员</el-tag>
         <el-button :icon="Setting" @click="systemManagerVisible = true">管理系统</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreate">新建模块</el-button>
       </div>

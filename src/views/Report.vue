@@ -5,11 +5,6 @@
         <h2>联试报告管理</h2>
         <div class="page__desc">RAG 增强的智能报告生成 · 知识库 / 模板 / 素材 按模块分类管理</div>
       </div>
-      <div class="header-actions">
-        <el-tag type="info" effect="plain" round>
-          当前模块：{{ selectedModule ? `${systemName(selectedModule.systemId)} / ${selectedModule.name}` : '未选择' }}
-        </el-tag>
-      </div>
     </div>
 
     <div class="split">
