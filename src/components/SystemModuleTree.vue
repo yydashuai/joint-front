@@ -333,7 +333,7 @@ const ctxEdit = () => {
 <style scoped lang="scss">
 /* 不设 height:100%（父高为 auto 时会塌回内容高）；靠父级 align-items:stretch 撑高 */
 .smt { display: flex; flex-direction: column; min-height: 0; }
-.smt__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.smt__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .smt__title { display: flex; flex-direction: column; min-width: 0; font-size: 14px; font-weight: 600; line-height: 1.35; }
 .smt__title-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .smt__head-actions { display: flex; align-items: center; gap: 4px; }
