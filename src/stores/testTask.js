@@ -53,10 +53,10 @@ const expandTask = (raw) => ({
   status: STATUS_MAP[raw.status] || 'draft',
   priority: 'medium',
   bindings: defaultBindings(),
-  strategy: defaultStrategy(),
   createdAt: raw.time || new Date().toISOString().slice(0, 10),
   updatedAt: raw.time || '',
   runs: [],
+  strategy: { ...defaultStrategy(), ruleSetId: raw.ruleSetId || null },
 })
 
 export const useTestTaskStore = defineStore('testTask', {

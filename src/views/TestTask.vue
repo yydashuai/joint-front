@@ -368,6 +368,7 @@ const onSubmitExecution = () => {
   }
   taskStore.submitForExecution(currentTask.value.id)
   ElMessage.success('任务已提交执行')
+  router.push({ path: '/execution', query: { taskId: currentTask.value.id } })
 }
 
 /* ========== 复制 / 删除 ========== */
@@ -393,7 +394,10 @@ const onDelete = () => {
 
 /* ========== 跳转执行调度 ========== */
 const goExecution = () => {
-  router.push('/execution')
+  router.push({
+    path: '/execution',
+    query: currentTask.value ? { taskId: currentTask.value.id } : {}
+  })
 }
 
 /* ========== 状态 / 优先级映射 ========== */

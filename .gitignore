@@ -16,3 +16,7 @@ AGENTS.md
 
 # 项目需求/设计文档（本地保留，不上传）
 CLAUDE.md
+docs/exception-management-plan.md
+docs/execution-plan.md
+docs/rule-management-plan.md
+docs/statistics-visualization-plan.md

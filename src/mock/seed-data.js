@@ -1108,7 +1108,7 @@ export const interfaces = [
  * ──────────────────────────────────────────── */
 export const tasks = [
   // 武器管理
-  { id: 't01', name: '武器状态接口连通性测试', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'), status: '执行中', time: '2026-06-24 10:31:00', remark: '验证 WM-001 接口在标准帧格式下的握手与应答流程' },
+  { id: 't01', name: '武器状态接口连通性测试', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'), ruleSetId: 'rs-weapon-status', status: '执行中', time: '2026-06-24 10:31:00', remark: '验证 WM-001 接口在标准帧格式下的握手与应答流程' },
   { id: 't02', name: '弹药余量边界值检测', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '弹药状态模块'), status: '已完成', time: '2026-06-24 09:45:00', remark: '覆盖 0%/100% 边界值，已生成测试报告' },
   { id: 't03', name: '武器挂载自检流程验证', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'), status: '已完成', time: '2026-06-24 09:10:00', remark: '' },
   { id: 't04', name: '挂载识别协议字段校验', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), status: '执行中', time: '2026-06-24 10:50:00', remark: '逐字段对比协议 v1.3 与实物载荷数据' },
@@ -1144,7 +1144,31 @@ export const tasks = [
 ]
 
 /* ────────────────────────────────────────────
- *  六、异常告警 (Alerts)
+ *  六、规则集 (Rule Sets)
+ * ──────────────────────────────────────────── */
+export const ruleSets = [
+  {
+    id: 'rs-weapon-status',
+    name: '设备状态响应基础规则集',
+    systemId: 'sys-weapon',
+    moduleId: byName('sys-weapon', '武器管理模块'),
+    status: 'enabled',
+    desc: '由查询设备状态接口自动生成，覆盖类型、范围、边界、越界、超时与格式判定。',
+    createdAt: '2026-06-24',
+    updatedAt: '2026-06-24 10:30',
+    rules: [
+      { id: 'r-type-code', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32' }, desc: '状态码必须为 int32' },
+      { id: 'r-range-code', type: 'range', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32', min: -2147483648, max: 2147483647 }, desc: '状态码取值不得超出 int32 范围' },
+      { id: 'r-boundary-code', type: 'boundary', enabled: true, level: 'warning', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32', min: -2147483648, max: 2147483647, boundaryMode: 'inclusive' }, desc: '命中上下边界时给出提醒' },
+      { id: 'r-overflow-payload', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.payload', fieldName: 'payload' }, params: { required: true, maxLength: 256 }, desc: '响应载荷字段必须存在且长度受控' },
+      { id: 'r-timeout-status', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '查询设备状态', fieldPath: '', fieldName: '' }, params: { timeoutMs: 500 }, desc: '接口响应时延不得超过 500ms' },
+      { id: 'r-format-status', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: '', fieldName: '' }, params: { sampleType: 'json' }, desc: '响应结构必须是合法 JSON / 结构体对象' },
+    ]
+  }
+]
+
+/* ────────────────────────────────────────────
+ *  七、异常告警 (Alerts)
  * ──────────────────────────────────────────── */
 export const alerts = [
   // 武器管理
@@ -1180,3 +1204,65 @@ export const alerts = [
   { id: 'a23', type: '帧头校验失败', iface: 'ORD-005', level: '高', state: '待处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '指令下发模块'), resolvedTime: '', remark: '指令帧 CRC 校验失败率 5%，排查链路质量' },
   { id: 'a24', type: '数据帧丢失', iface: 'LOG-012', level: '中', state: '已处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '2026-06-24 11:00:00', remark: '日志写入高并发时偶发丢失，增加缓冲队列后恢复' },
 ]
+
+/* ────────────────────────────────────────────
+ *  六、执行历史 (Run History) —— 统计与可视化数据底座
+ *  说明：执行编排的 store.history 为会话级且字段薄；此处提供一份数值化、
+ *  可复算的历史执行记录，供【统计与可视化】聚合（请求量/时延/通过率/接口覆盖等）。
+ *  全部为可客观度量的字段，不含被测系统内部资源等无法获取的指标。
+ * ──────────────────────────────────────────── */
+const _stClamp = (n, min, max) => Math.max(min, Math.min(max, n))
+// 确定性伪随机（固定种子，保证每次加载数据一致）
+const _stRng = (() => {
+  let s = 20260625
+  return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff }
+})()
+const _sr = (a, b) => Math.round(a + _stRng() * (b - a))
+const _pad2 = (n) => String(n).padStart(2, '0')
+const _stDays = ['2026-06-19', '2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25']
+
+export const runHistory = []
+let _runSeq = 0
+interfaces.forEach((iface) => {
+  // 留出部分接口"未测"，让接口覆盖率有意义（非 100%）
+  if (_stRng() < 0.22) return
+  const mod = nodes.find((n) => n.id === iface.moduleId)
+  const runCount = 2 + (iface.systemId === 'sys-weapon' ? 2 : (_stRng() < 0.4 ? 1 : 0))
+  for (let k = 0; k < runCount; k++) {
+    const day = _stDays[_sr(0, _stDays.length - 1)]
+    const hh = _pad2(_sr(8, 18))
+    const mm = _pad2(_sr(0, 59))
+    const total = _sr(12, 140)
+    const error = Math.round(total * (_stRng() * 0.06))
+    const failed = Math.round(total * (_stRng() * 0.1))
+    const success = Math.max(0, total - error - failed)
+    const baseLat = _sr(20, 180)
+    const durations = Array.from({ length: 12 }, () =>
+      _stClamp(Math.round(baseLat + (_stRng() - 0.5) * baseLat * 1.2 + (_stRng() < 0.1 ? _sr(150, 420) : 0)), 4, 820)
+    )
+    const avgMs = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+    const executionTime = _sr(6, 90)
+    runHistory.push({
+      id: `seedrun-${++_runSeq}`,
+      systemId: iface.systemId,
+      moduleId: iface.moduleId,
+      moduleName: mod?.name || '',
+      taskId: '',
+      taskName: `${iface.name} 联试`,
+      interfaceId: iface.id,
+      iface: iface.name,
+      proto: (iface.path || '').startsWith('/') ? 'HTTP' : 'TCP',
+      startedAt: `${day} ${hh}:${mm}:00`,
+      finishedAt: `${day} ${hh}:${_pad2(_sr(0, 59))}:30`,
+      dateKey: day,
+      total,
+      success,
+      failed,
+      error,
+      avgMs,
+      durations,
+      executionTime,
+      rps: Number((total / executionTime).toFixed(1)),
+    })
+  }
+})

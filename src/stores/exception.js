@@ -1,0 +1,254 @@
+import { defineStore } from 'pinia'
+import { alerts } from '@/mock/seed-data'
+
+const nowText = () => new Date().toLocaleString('zh-CN', { hour12: false })
+const uid = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`
+
+export const EXC_LEVELS = [
+  { value: '高', label: '高', tag: 'danger' },
+  { value: '中', label: '中', tag: 'warning' },
+  { value: '低', label: '低', tag: 'info' },
+]
+
+export const EXC_STATES = [
+  { value: '待处理', label: '待处理', tag: 'danger' },
+  { value: '处理中', label: '处理中', tag: 'warning' },
+  { value: '已处理', label: '已处理', tag: 'success' },
+  { value: '已修复', label: '已修复', tag: 'success' },
+  { value: '已忽略', label: '已忽略', tag: 'info' },
+  { value: '已转派', label: '已转派', tag: 'warning' },
+  { value: '自动恢复', label: '自动恢复', tag: 'primary' },
+  { value: '已记录', label: '已记录', tag: 'info' },
+]
+
+export const EXC_SOURCES = [
+  { value: 'execution', label: '执行编排' },
+  { value: 'rule', label: '规则判定' },
+  { value: 'link', label: '链路连接' },
+  { value: 'manual', label: '手动录入' },
+  { value: 'system', label: '系统事件' },
+]
+
+const defaultTypes = [
+  { id: 'type', name: '类型校验', source: 'rule', defaultLevel: '高', suggestion: '核对协议字段类型与响应解析器配置。' },
+  { id: 'range', name: '取值范围', source: 'rule', defaultLevel: '高', suggestion: '检查字段上下限、单位换算与现场传感器标定。' },
+  { id: 'boundary', name: '边界值检测', source: 'rule', defaultLevel: '中', suggestion: '复核边界条件，确认被测系统在临界值附近的处理策略。' },
+  { id: 'overflow', name: '字段越界', source: 'rule', defaultLevel: '高', suggestion: '确认报文字段长度、字节偏移与端序定义。' },
+  { id: 'timeout', name: '响应超时', source: 'rule', defaultLevel: '中', suggestion: '排查链路时延、任务负载与被测模块响应能力。' },
+  { id: 'format', name: '格式错误', source: 'rule', defaultLevel: '高', suggestion: '检查帧头、校验码、JSON/结构体格式与协议版本。' },
+  { id: 'frame-head', name: '帧头校验失败', source: 'system', defaultLevel: '高', suggestion: '检查帧同步头、CRC 与传输过程中的错位。' },
+  { id: 'heartbeat-lost', name: '心跳丢失', source: 'link', defaultLevel: '中', suggestion: '先复测链路连通性，再确认模块进程与网络配置。' },
+  { id: 'frame-lost', name: '数据帧丢失', source: 'system', defaultLevel: '中', suggestion: '检查重传机制、缓存队列和收发节拍。' },
+  { id: 'link-down', name: '链路中断', source: 'link', defaultLevel: '高', suggestion: '确认网口、IP/端口、防火墙和被测模块在线状态。' },
+  { id: 'manual', name: '人工登记', source: 'manual', defaultLevel: '中', suggestion: '补充现场现象、复现步骤与处置结论。' },
+].map((item) => ({ ...item, captureEnabled: true, desc: item.suggestion }))
+
+const typeIdOf = (typeName) => {
+  const hit = defaultTypes.find((item) => item.name === typeName)
+  return hit?.id || `custom-${typeName}`
+}
+
+const sourceOf = (typeName) => {
+  if (['心跳丢失', '链路中断'].includes(typeName)) return 'link'
+  if (typeName === '人工登记') return 'manual'
+  return 'execution'
+}
+
+const normalizeSeed = (alert, index) => ({
+  id: alert.id || uid('ex'),
+  type: alert.type,
+  typeId: typeIdOf(alert.type),
+  level: alert.level || '中',
+  state: alert.state || '待处理',
+  systemId: alert.systemId,
+  moduleId: alert.moduleId,
+  interfaceId: '',
+  iface: alert.iface || '未命名接口',
+  source: sourceOf(alert.type),
+  runId: '',
+  taskId: '',
+  detail: {
+    reqHex: '',
+    respHex: '',
+    ruleMessage: alert.remark || '',
+    fieldPath: '',
+    recvMs: null,
+  },
+  capturedTime: alert.resolvedTime || `2026-06-24 ${String(9 + (index % 3)).padStart(2, '0')}:${String(10 + index).padStart(2, '0')}:00`,
+  resolvedTime: alert.resolvedTime || '',
+  handler: '',
+  trace: [
+    {
+      time: alert.resolvedTime || `2026-06-24 ${String(9 + (index % 3)).padStart(2, '0')}:${String(10 + index).padStart(2, '0')}:00`,
+      user: '系统',
+      action: '捕捉异常',
+      note: alert.remark || '由历史告警数据导入。',
+    },
+  ],
+  remark: alert.remark || '',
+})
+
+const resolvedStates = ['已处理', '已修复', '已忽略', '自动恢复', '已记录']
+const stateMeta = (state) => EXC_STATES.find((item) => item.value === state) || { value: state, label: state, tag: 'info' }
+const levelMeta = (level) => EXC_LEVELS.find((item) => item.value === level) || { value: level, label: level, tag: 'info' }
+
+export const useExceptionStore = defineStore('exception', {
+  state: () => ({
+    exceptions: alerts.map(normalizeSeed),
+    types: defaultTypes,
+    selectedId: null,
+  }),
+
+  getters: {
+    selected(state) {
+      return state.exceptions.find((item) => item.id === state.selectedId) || state.exceptions[0] || null
+    },
+    pendingCount: (state) => state.exceptions.filter((item) => item.state === '待处理' || item.state === '处理中').length,
+    exceptionsOfModule: (state) => (moduleId) => state.exceptions.filter((item) => item.moduleId === moduleId),
+    exceptionsOfSystem: (state) => (systemId) => state.exceptions.filter((item) => !systemId || item.systemId === systemId),
+    typeByName: (state) => (name) => state.types.find((item) => item.name === name),
+    typeMeta: (state) => (name) => state.types.find((item) => item.name === name) || defaultTypes.find((item) => item.name === name),
+    stateMeta: () => stateMeta,
+    levelMeta: () => levelMeta,
+    stats: () => (items = []) => {
+      const total = items.length
+      const pending = items.filter((item) => item.state === '待处理' || item.state === '处理中').length
+      const high = items.filter((item) => item.level === '高').length
+      const middle = items.filter((item) => item.level === '中').length
+      const low = items.filter((item) => item.level === '低').length
+      const resolved = total - pending
+      return {
+        total,
+        pending,
+        high,
+        middle,
+        low,
+        resolved,
+        resolvedRate: total ? Math.round((resolved / total) * 100) : 0,
+      }
+    },
+    filtered: (state) => (filters = {}) => state.exceptions.filter((item) => {
+      if (filters.systemId && item.systemId !== filters.systemId) return false
+      if (filters.moduleId && item.moduleId !== filters.moduleId) return false
+      if (filters.type && item.type !== filters.type) return false
+      if (filters.level && item.level !== filters.level) return false
+      if (filters.state && item.state !== filters.state) return false
+      if (filters.source && item.source !== filters.source) return false
+      if (filters.keyword) {
+        const kw = filters.keyword.toLowerCase()
+        const hay = [item.type, item.iface, item.remark, item.detail?.ruleMessage, item.detail?.fieldPath].join(' ').toLowerCase()
+        if (!hay.includes(kw)) return false
+      }
+      return true
+    }),
+  },
+
+  actions: {
+    select(id) {
+      this.selectedId = id
+    },
+    capture(payload = {}) {
+      const typeName = payload.type || payload.ruleLabel || '人工登记'
+      const typeDef = this.types.find((item) => item.name === typeName || item.id === payload.typeId) || {
+        id: typeIdOf(typeName),
+        name: typeName,
+        defaultLevel: payload.level || '中',
+        captureEnabled: true,
+      }
+      if (typeDef.captureEnabled === false) return null
+
+      const item = {
+        id: payload.id || uid('ex'),
+        type: typeDef.name,
+        typeId: typeDef.id,
+        level: payload.level || typeDef.defaultLevel || '中',
+        state: payload.state || '待处理',
+        systemId: payload.systemId || '',
+        moduleId: payload.moduleId || '',
+        interfaceId: payload.interfaceId || '',
+        iface: payload.iface || payload.interfaceName || '未命名接口',
+        source: payload.source || typeDef.source || 'execution',
+        runId: payload.runId || '',
+        taskId: payload.taskId || '',
+        detail: {
+          reqHex: payload.detail?.reqHex || '',
+          respHex: payload.detail?.respHex || '',
+          ruleMessage: payload.detail?.ruleMessage || payload.message || payload.remark || '',
+          fieldPath: payload.detail?.fieldPath || '',
+          recvMs: payload.detail?.recvMs ?? null,
+        },
+        capturedTime: payload.capturedTime || nowText(),
+        resolvedTime: payload.resolvedTime || '',
+        handler: payload.handler || '',
+        trace: [
+          {
+            time: payload.capturedTime || nowText(),
+            user: payload.handler || '系统',
+            action: '捕捉异常',
+            note: payload.detail?.ruleMessage || payload.message || payload.remark || '执行过程中自动捕捉。',
+          },
+        ],
+        remark: payload.remark || payload.detail?.ruleMessage || '',
+      }
+      this.exceptions.unshift(item)
+      this.selectedId = item.id
+      return item
+    },
+    addManual(payload) {
+      return this.capture({ ...payload, type: payload.type || '人工登记', source: 'manual', state: '待处理' })
+    },
+    updateState(id, state, note = '', handler = '测试员') {
+      const item = this.exceptions.find((ex) => ex.id === id)
+      if (!item) return false
+      item.state = state
+      item.handler = handler
+      if (resolvedStates.includes(state)) item.resolvedTime = nowText()
+      item.trace.unshift({
+        time: nowText(),
+        user: handler,
+        action: `状态变更为${state}`,
+        note,
+      })
+      return true
+    },
+    addTrace(id, note, handler = '测试员') {
+      const item = this.exceptions.find((ex) => ex.id === id)
+      if (!item || !note) return false
+      item.trace.unshift({ time: nowText(), user: handler, action: '追加留痕', note })
+      item.remark = note
+      return true
+    },
+    batchUpdate(ids, patch, note = '') {
+      ids.forEach((id) => {
+        if (patch.state) this.updateState(id, patch.state, note)
+        else {
+          const item = this.exceptions.find((ex) => ex.id === id)
+          if (item) Object.assign(item, patch)
+        }
+      })
+    },
+    toggleType(id, enabled) {
+      const item = this.types.find((type) => type.id === id)
+      if (item) item.captureEnabled = enabled
+    },
+    updateType(id, patch) {
+      const item = this.types.find((type) => type.id === id)
+      if (item) Object.assign(item, patch)
+    },
+    addType(payload) {
+      const name = payload.name?.trim()
+      if (!name) return null
+      const item = {
+        id: payload.id || uid('etype'),
+        name,
+        source: payload.source || 'manual',
+        defaultLevel: payload.defaultLevel || '中',
+        captureEnabled: payload.captureEnabled ?? true,
+        suggestion: payload.suggestion || '按现场处置经验补充建议。',
+        desc: payload.desc || '',
+      }
+      this.types.push(item)
+      return item
+    },
+  },
+})

@@ -215,17 +215,25 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, markRaw, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus, Upload, WarningFilled, Tickets, Back, Cpu, Connection, Document, Warning } from '@element-plus/icons-vue'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
-import { tasks, alerts } from '@/mock/seed-data'
+import { useExceptionStore } from '@/stores/exception'
+import { tasks } from '@/mock/seed-data'
 import RemarkCell from '@/components/RemarkCell.vue'
 
 const router = useRouter()
 const systemStore = useSystemStore()
 const connStore = useConnectionStore()
+const exceptionStore = useExceptionStore()
+const treeIcons = {
+  cpu: markRaw(Cpu),
+  connection: markRaw(Connection),
+  document: markRaw(Document),
+  warning: markRaw(Warning),
+}
 
 /* ========== 核心状态 ========== */
 const isAll = computed(() => systemStore.isAll)
@@ -245,12 +253,12 @@ const visibleTasks = computed(() =>
   isAll.value ? tasks : tasks.filter(t => t.systemId === currentId.value)
 )
 const visibleAlerts = computed(() =>
-  isAll.value ? alerts : alerts.filter(a => a.systemId === currentId.value)
+  isAll.value ? exceptionStore.exceptions : exceptionStore.exceptions.filter(a => a.systemId === currentId.value)
 )
 
 const totalPending = computed(() => {
-  const pool = isAll.value ? alerts : alerts.filter(a => a.systemId === currentId.value)
-  return pool.filter(a => a.state === '待处理').length
+  const pool = isAll.value ? exceptionStore.exceptions : exceptionStore.exceptions.filter(a => a.systemId === currentId.value)
+  return pool.filter(a => a.state === '待处理' || a.state === '处理中').length
 })
 
 /* ========== 树构建：系统 → 模块 → 条目（复用于任务 / 告警） ========== */
@@ -263,7 +271,7 @@ const buildTree = (items, itemMapper) => {
     return {
       key: `s-${sys.id}`,
       kind: 'system',
-      icon: Cpu,
+      icon: treeIcons.cpu,
       label: sys.name,
       children: modules.map(mod => {
         const leaves = items.filter(it => it.moduleId === mod.id).map(itemMapper)
@@ -271,7 +279,7 @@ const buildTree = (items, itemMapper) => {
         return {
           key: `m-${mod.id}`,
           kind: 'module',
-          icon: Connection,
+          icon: treeIcons.connection,
           label: mod.name,
           children: leaves
         }
@@ -284,7 +292,7 @@ const taskTree = computed(() =>
   buildTree(visibleTasks.value, t => ({
     key: `t-${t.id}`,
     kind: 'item',
-    icon: Document,
+    icon: treeIcons.document,
     label: t.name,
     status: t.status,
     time: t.time,
@@ -296,7 +304,7 @@ const alertTree = computed(() =>
   buildTree(visibleAlerts.value, a => ({
     key: `a-${a.id}`,
     kind: 'item',
-    icon: Warning,
+    icon: treeIcons.warning,
     label: `${a.type} · ${a.iface}`,
     level: a.level,
     state: a.state,
@@ -310,6 +318,10 @@ const onLeafClick = (data, route) => {
   // 任务叶子：携带 id 跳转，TestTask 页面自动选中
   if (route === '/task' && data.ref?.id) {
     router.push({ path: '/task', query: { id: data.ref.id } })
+    return
+  }
+  if (route === '/exception' && data.ref?.id) {
+    router.push({ path: '/exception', query: { id: data.ref.id } })
     return
   }
   router.push(route)
@@ -326,7 +338,7 @@ const systemCards = computed(() =>
       moduleCount: mods.length,
       onlineCount: mods.filter(m => m.status === 'online').length,
       taskCount: tasks.filter(t => t.systemId === sys.id).length,
-      alertCount: alerts.filter(a => a.systemId === sys.id).length
+      alertCount: exceptionStore.exceptions.filter(a => a.systemId === sys.id).length
     }
   })
 )

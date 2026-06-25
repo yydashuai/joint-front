@@ -103,24 +103,36 @@
       </el-form>
     </el-card>
 
-    <!-- 规则集（预留） -->
+    <!-- 规则集 -->
     <el-card shadow="never" class="strat-card">
       <template #header>
         <div class="strat-card__head">
           <span class="strat-card__title">规则集</span>
-          <el-tag type="info" size="small" effect="plain">待实现</el-tag>
+          <el-tag :type="moduleRuleSets.length ? 'success' : 'info'" size="small" effect="plain">
+            {{ moduleRuleSets.length }} 个可选
+          </el-tag>
         </div>
       </template>
       <el-form label-width="90px">
         <el-form-item label="关联规则">
           <el-select
             v-model="localStrategy.ruleSetId"
-            placeholder="暂无可用规则集"
-            disabled
+            clearable
+            filterable
+            placeholder="选择当前模块下的规则集"
             style="width: 100%;"
+            @change="emitChange"
           >
-            <el-option label="（待规则管理页面实现后可用）" value="" />
+            <el-option
+              v-for="ruleSet in moduleRuleSets"
+              :key="ruleSet.id"
+              :label="`${ruleSet.name}（${ruleSet.rules.filter(r => r.enabled).length}条启用）`"
+              :value="ruleSet.id"
+            />
           </el-select>
+          <div v-if="!moduleRuleSets.length" class="strat-hint">
+            当前模块暂无规则集，可先到规则管理中从接口自动生成。
+          </div>
         </el-form-item>
       </el-form>
     </el-card>
@@ -128,12 +140,14 @@
 </template>
 
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { useRuleStore } from '@/stores/rule'
 
 const props = defineProps({
   task: { type: Object, required: true },
 })
 const emit = defineEmits(['change'])
+const ruleStore = useRuleStore()
 
 const localStrategy = reactive({
   trigger: 'manual',
@@ -149,6 +163,7 @@ const localStrategy = reactive({
 
 /** 周期触发次数模式：permanent / custom */
 const periodicMode = ref('permanent')
+const moduleRuleSets = computed(() => ruleStore.ruleSetsOfModule(props.task.moduleId))
 
 watch(() => props.task, (t) => {
   if (t?.strategy) {
@@ -201,6 +216,12 @@ const emitChange = () => {
 .strat-unit {
   margin-left: 6px;
   font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+.strat-hint {
+  width: 100%;
+  margin-top: 6px;
+  font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 </style>
