@@ -24,11 +24,35 @@
       </el-form-item>
 
       <template v-if="form.type === 'type'">
-        <el-form-item label="数据类型"><el-input v-model="form.params.dataType" /></el-form-item>
+        <el-form-item label="数据类型">
+          <el-select v-model="form.params.dataType" filterable style="width: 100%;">
+            <el-option-group v-for="group in ['字节数据类型', '接口参数类型']" :key="group" :label="group">
+              <el-option
+                v-for="opt in dataTypeOptions.filter((o) => o.group === group)"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-option-group>
+          </el-select>
+        </el-form-item>
       </template>
       <template v-if="form.type === 'range' || form.type === 'boundary'">
-        <el-form-item label="最小值"><el-input-number v-model="form.params.min" style="width: 180px;" /></el-form-item>
-        <el-form-item label="最大值"><el-input-number v-model="form.params.max" style="width: 180px;" /></el-form-item>
+        <el-form-item v-if="protoRange" label="协议范围">
+          <el-alert
+            :title="`协议定义范围：${protoRange.min} ~ ${protoRange.max}，规则范围不得超过此区间`"
+            type="info"
+            :closable="false"
+            show-icon
+            style="width: 100%;"
+          />
+        </el-form-item>
+        <el-form-item label="最小值">
+          <el-input-number v-model="form.params.min" :min="protoRange?.min" :max="protoRange?.max" style="width: 180px;" />
+        </el-form-item>
+        <el-form-item label="最大值">
+          <el-input-number v-model="form.params.max" :min="protoRange?.min" :max="protoRange?.max" style="width: 180px;" />
+        </el-form-item>
       </template>
       <template v-if="form.type === 'overflow'">
         <el-form-item label="最大长度"><el-input-number v-model="form.params.maxLength" :min="1" style="width: 180px;" /></el-form-item>
@@ -57,8 +81,9 @@
 
 <script setup>
 import { computed, reactive, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { RULE_TYPES, useRuleStore } from '@/stores/rule'
-import { useProtocolStore } from '@/stores/protocol'
+import { useProtocolStore, BYTE_DATA_TYPES, FIELD_TYPES } from '@/stores/protocol'
 import { flattenInterfaceFields, inferConstraint } from '@/utils/ruleEngine'
 
 const props = defineProps({
@@ -80,6 +105,22 @@ const moduleInterfaces = computed(() => protoStore.interfaces.filter((iface) => 
 const currentInterface = computed(() => protoStore.interfaces.find((iface) => iface.id === form.target.interfaceId))
 const fields = computed(() => flattenInterfaceFields(currentInterface.value).filter((field) => field.fieldPath.startsWith('response.')))
 const isInterfaceRule = computed(() => form.type === 'timeout' || form.type === 'format')
+const currentField = computed(() => {
+  if (isInterfaceRule.value || !form.target.fieldPath) return null
+  return fields.value.find((f) => f.fieldPath === form.target.fieldPath) || null
+})
+const protoRange = computed(() => {
+  if (!currentField.value) return null
+  const constraint = inferConstraint(currentField.value)
+  if (!constraint || constraint.min == null || constraint.max == null) return null
+  return { min: constraint.min, max: constraint.max }
+})
+
+const dataTypeOptions = computed(() => {
+  const byteTypes = BYTE_DATA_TYPES.map((t) => ({ value: t.value, label: t.label, group: '字节数据类型' }))
+  const fieldTypes = FIELD_TYPES.map((t) => ({ value: t, label: t, group: '接口参数类型' }))
+  return [...byteTypes, ...fieldTypes]
+})
 
 watch(() => props.modelValue, (open) => {
   if (!open) return
@@ -144,6 +185,15 @@ const applyTypeDefaults = () => {
 }
 
 const save = () => {
+  // Validate range/boundary rules are within protocol-defined range
+  if ((form.type === 'range' || form.type === 'boundary') && protoRange.value) {
+    const { min: ruleMin, max: ruleMax } = form.params
+    const { min: pMin, max: pMax } = protoRange.value
+    if (ruleMin < pMin || ruleMax > pMax) {
+      ElMessage.warning(`规则范围 [${ruleMin}, ${ruleMax}] 超出协议定义范围 [${pMin}, ${pMax}]，请调整`)
+      return
+    }
+  }
   if (form.id) store.updateRule(props.ruleSet.id, form.id, JSON.parse(JSON.stringify(form)))
   else store.addRule(props.ruleSet.id, JSON.parse(JSON.stringify({ ...form, id: undefined })))
   visible.value = false

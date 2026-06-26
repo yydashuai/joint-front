@@ -13,11 +13,13 @@
         :model-value="currentKey"
         title="系统 · 模块 · 协议/接口"
         :leaf-groups="protocolLeafGroups"
+        :leaf-context-actions="leafContextActions"
         show-edit-jump
         empty-text="暂无系统/模块，请先在链路连接管理添加"
         @select="onTreeSelect"
         @add-leaf="onTreeAddLeaf"
         @delete-leaf="onTreeDeleteLeaf"
+        @leaf-action="onLeafAction"
       />
 
       <ByteFieldTree
@@ -89,7 +91,8 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useProtocolStore, isByteStream } from '@/stores/protocol'
 import { useSystemStore } from '@/stores/system'
@@ -105,6 +108,8 @@ import InterfaceEditor from '@/components/protocol/InterfaceEditor.vue'
 const store = useProtocolStore()
 const systemStore = useSystemStore()
 const connStore = useConnectionStore()
+const router = useRouter()
+const route = useRoute()
 
 const selectedKind = ref('protocol')
 if (!store.selectedProtocolId) store.selectedProtocolId = store.protocols[0]?.id ?? null
@@ -192,6 +197,27 @@ const onTreeDeleteLeaf = (node) => {
   if (node.kind === 'protocol') store.removeProtocol(node.ref.id)
   if (node.kind === 'interface') store.removeInterface(node.ref.id)
 }
+
+/* ---- 接口右键菜单：跳转到规则管理 ---- */
+const leafContextActions = (nodeData) => {
+  if (nodeData?.kind !== 'interface') return []
+  return [{ label: '生成校验规则', action: 'generateRules' }]
+}
+const onLeafAction = ({ action, data }) => {
+  if (action === 'generateRules' && data?.ref) {
+    router.push({ path: '/rule', query: { interfaceId: String(data.ref.id), action: 'generate' } })
+  }
+}
+
+// 从规则页跳转过来时，自动选中对应接口
+watch(() => route.query.interfaceId, (ifaceId) => {
+  if (!ifaceId) return
+  const iface = store.interfaces.find((i) => String(i.id) === String(ifaceId))
+  if (iface) {
+    selectedKind.value = 'interface'
+    store.selectedInterfaceId = iface.id
+  }
+}, { immediate: true })
 
 const onTypeDropdown = (newType) => {
   if (!curProto.value || newType === curProto.value.type) return

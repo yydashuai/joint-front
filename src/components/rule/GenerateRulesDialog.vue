@@ -28,7 +28,12 @@
           <el-checkbox :value="rule.id" />
           <el-tag :type="typeMeta(rule.type).tag" size="small" effect="plain">{{ typeMeta(rule.type).label }}</el-tag>
           <span class="preview-target">{{ rule.target.fieldPath || rule.target.interfaceName }}</span>
-          <span class="preview-desc">{{ rule.desc }}</span>
+          <span class="preview-desc">
+            {{ rule.desc }}
+            <template v-if="getProtoRange(rule)">
+              <span class="proto-range">（协议范围：{{ getProtoRange(rule) }}）</span>
+            </template>
+          </span>
         </label>
       </el-checkbox-group>
       <el-empty v-if="!preview.length" :image-size="80" description="请选择接口与规则类型" />
@@ -46,11 +51,12 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { RULE_TYPES, useRuleStore } from '@/stores/rule'
 import { useProtocolStore } from '@/stores/protocol'
-import { RULE_TYPE_MAP } from '@/utils/ruleEngine'
+import { RULE_TYPE_MAP, flattenInterfaceFields, inferConstraint } from '@/utils/ruleEngine'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   ruleSet: { type: Object, default: null },
+  initialInterfaceId: { type: [String, Number], default: null },
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -70,10 +76,24 @@ const checkedRules = computed(() => preview.value.filter((rule) => checkedIds.va
 
 watch(preview, (items) => { checkedIds.value = items.map((rule) => rule.id) })
 watch(() => props.modelValue, (open) => {
-  if (open) interfaceId.value = moduleInterfaces.value[0]?.id || null
+  if (open) {
+    const preselect = props.initialInterfaceId
+      ? moduleInterfaces.value.find((i) => String(i.id) === String(props.initialInterfaceId))
+      : null
+    interfaceId.value = preselect?.id || moduleInterfaces.value[0]?.id || null
+  }
 })
 
 const typeMeta = (type) => RULE_TYPE_MAP[type] || { label: type, tag: 'info' }
+const getProtoRange = (rule) => {
+  if (rule.type !== 'range' || !rule.target?.fieldPath) return null
+  const iface = protoStore.interfaces.find((i) => i.id === rule.target.interfaceId)
+  if (!iface) return null
+  const field = flattenInterfaceFields(iface).find((f) => f.fieldPath === rule.target.fieldPath)
+  if (!field) return null
+  const c = inferConstraint(field)
+  return c ? `${c.min} ~ ${c.max}` : null
+}
 const confirm = () => {
   const result = store.mergeGeneratedRules(props.ruleSet.id, checkedRules.value)
   ElMessage.success(`已生成 ${result.added} 条规则，跳过 ${result.skipped} 条重复`)
@@ -89,4 +109,5 @@ const confirm = () => {
 .preview-row:hover { background: var(--el-fill-color-light); }
 .preview-target { font-family: Consolas, Monaco, monospace; font-size: 12px; }
 .preview-desc { color: var(--el-text-color-secondary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proto-range { color: var(--el-color-primary); font-weight: 500; }
 </style>
