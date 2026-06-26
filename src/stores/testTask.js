@@ -37,7 +37,6 @@ const defaultStrategy = () => ({
   execution: 'serial',    // serial | parallel
   timeout: 30,            // 秒
   retries: 0,
-  ruleSetId: null,        // 预留：关联规则集
 })
 
 /** 默认绑定 */
@@ -45,6 +44,7 @@ const defaultBindings = () => ({
   interfaceId: null,      // 单选：关联的接口（接口是对模块的可测试入口）
   datasetIds: [],         // 多选：关联的数据集（自动按所选接口过滤）
   fileIds: [],            // 多选：关联的资源文件
+  ruleSetId: null,        // 单选：关联的规则集
 })
 
 /** 扩展种子任务：映射状态 + 补充 bindings/strategy/runs */
@@ -52,11 +52,11 @@ const expandTask = (raw) => ({
   ...raw,
   status: STATUS_MAP[raw.status] || 'draft',
   priority: 'medium',
-  bindings: defaultBindings(),
+  bindings: { ...defaultBindings(), ruleSetId: raw.ruleSetId || null },
   createdAt: raw.time || new Date().toISOString().slice(0, 10),
   updatedAt: raw.time || '',
   runs: [],
-  strategy: { ...defaultStrategy(), ruleSetId: raw.ruleSetId || null },
+  strategy: defaultStrategy(),
 })
 
 export const useTestTaskStore = defineStore('testTask', {

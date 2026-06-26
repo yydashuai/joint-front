@@ -126,14 +126,6 @@
                 />
               </el-tab-pane>
 
-              <!-- 策略配置 -->
-              <el-tab-pane label="策略配置" name="strategy">
-                <TaskStrategy
-                  :task="currentTask"
-                  @change="onStrategyChange"
-                />
-              </el-tab-pane>
-
               <!-- 执行记录 -->
               <el-tab-pane label="执行记录" name="runs">
                 <el-table
@@ -199,7 +191,6 @@ import {
 } from '@element-plus/icons-vue'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import TaskBindings from '@/components/testtask/TaskBindings.vue'
-import TaskStrategy from '@/components/testtask/TaskStrategy.vue'
 import CreateTaskDialog from '@/components/testtask/CreateTaskDialog.vue'
 import { useTestTaskStore, TASK_STATUS, PRIORITY_OPTIONS } from '@/stores/testTask'
 import { useSystemStore } from '@/stores/system'
@@ -342,15 +333,10 @@ const onPriorityChange = (val) => {
   taskStore.updateTask(currentTask.value.id, { priority: val })
 }
 
-/* ========== 资源绑定 / 策略 变更 ========== */
+/* ========== 资源绑定变更 ========== */
 const onBindingsChange = (bindings) => {
   if (!currentTask.value) return
   taskStore.updateBindings(currentTask.value.id, bindings)
-}
-
-const onStrategyChange = (strategy) => {
-  if (!currentTask.value) return
-  taskStore.updateStrategy(currentTask.value.id, strategy)
 }
 
 /* ========== 提交执行 ========== */

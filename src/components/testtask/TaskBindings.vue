@@ -23,6 +23,13 @@
           <span class="summary-item__label">文件</span>
         </div>
       </div>
+      <div class="summary-item" :class="{ 'summary-item--empty': !localBindings.ruleSetId }">
+        <el-icon class="summary-item__icon"><SetUp /></el-icon>
+        <div class="summary-item__body">
+          <span class="summary-item__count">{{ localBindings.ruleSetId ? 1 : 0 }}</span>
+          <span class="summary-item__label">规则集</span>
+        </div>
+      </div>
     </div>
 
     <!-- 目标接口 -->
@@ -128,15 +135,47 @@
         中上传
       </div>
     </el-card>
+
+    <!-- 关联规则集 -->
+    <el-card shadow="never" class="bind-card">
+      <template #header>
+        <div class="bind-card__head">
+          <span class="bind-card__title">校验规则集</span>
+          <el-tag v-if="localBindings.ruleSetId" type="success" size="small" effect="plain">已关联</el-tag>
+          <el-tag v-else type="info" size="small" effect="plain">未选择</el-tag>
+        </div>
+      </template>
+      <el-select
+        v-model="localBindings.ruleSetId"
+        clearable
+        filterable
+        placeholder="选择当前模块下的规则集"
+        style="width: 100%;"
+        @change="emitChange"
+      >
+        <el-option
+          v-for="ruleSet in moduleRuleSets"
+          :key="ruleSet.id"
+          :label="`${ruleSet.name}（${ruleSet.rules.filter(r => r.enabled).length}条启用）`"
+          :value="ruleSet.id"
+        />
+      </el-select>
+      <div v-if="!moduleRuleSets.length" class="bind-hint">
+        当前模块暂无规则集，可先到
+        <el-link type="primary" :underline="false" @click="$router.push('/rule')">规则管理</el-link>
+        中从接口自动生成
+      </div>
+    </el-card>
   </div>
 </template>
 
 <script setup>
 import { computed, reactive, watch } from 'vue'
-import { Connection, Document, Files } from '@element-plus/icons-vue'
+import { Connection, Document, Files, SetUp } from '@element-plus/icons-vue'
 import { useProtocolStore } from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
 import { useConnectionStore } from '@/stores/connection'
+import { useRuleStore } from '@/stores/rule'
 
 const props = defineProps({
   task: { type: Object, required: true },
@@ -146,12 +185,14 @@ const emit = defineEmits(['change'])
 const protoStore = useProtocolStore()
 const tdStore = useTestDataStore()
 const connStore = useConnectionStore()
+const ruleStore = useRuleStore()
 
 /** 本地副本 */
 const localBindings = reactive({
   interfaceId: null,
   datasetIds: [],
   fileIds: [],
+  ruleSetId: null,
 })
 
 /** 同步 props.task.bindings → localBindings */
@@ -160,6 +201,7 @@ watch(() => props.task, (t) => {
     localBindings.interfaceId = t.bindings.interfaceId ?? null
     localBindings.datasetIds = [...(t.bindings.datasetIds || [])]
     localBindings.fileIds = [...(t.bindings.fileIds || [])]
+    localBindings.ruleSetId = t.bindings.ruleSetId ?? null
   }
 }, { immediate: true })
 
@@ -200,11 +242,14 @@ const onInterfaceChange = () => {
   emitChange()
 }
 
+const moduleRuleSets = computed(() => ruleStore.ruleSetsOfModule(props.task.moduleId))
+
 const emitChange = () => {
   emit('change', {
     interfaceId: localBindings.interfaceId,
     datasetIds: [...localBindings.datasetIds],
     fileIds: [...localBindings.fileIds],
+    ruleSetId: localBindings.ruleSetId,
   })
 }
 </script>

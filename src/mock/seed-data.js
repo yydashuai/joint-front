@@ -1147,6 +1147,7 @@ export const tasks = [
  *  六、规则集 (Rule Sets)
  * ──────────────────────────────────────────── */
 export const ruleSets = [
+  // ── 1. 武器管理 · 查询设备状态 ──
   {
     id: 'rs-weapon-status',
     name: '设备状态响应基础规则集',
@@ -1164,7 +1165,201 @@ export const ruleSets = [
       { id: 'r-timeout-status', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '查询设备状态', fieldPath: '', fieldName: '' }, params: { timeoutMs: 500 }, desc: '接口响应时延不得超过 500ms' },
       { id: 'r-format-status', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: '', fieldName: '' }, params: { sampleType: 'json' }, desc: '响应结构必须是合法 JSON / 结构体对象' },
     ]
-  }
+  },
+
+  // ── 2. 弹药状态 · 上报弹药余量 ──
+  {
+    id: 'rs-ammo-report',
+    name: '弹药余量上报校验规则集',
+    systemId: 'sys-weapon',
+    moduleId: byName('sys-weapon', '弹药状态模块'),
+    status: 'enabled',
+    desc: '覆盖弹药余量响应各字段的类型、范围、一致性与超时校验。',
+    createdAt: '2026-06-24',
+    updatedAt: '2026-06-24 11:00',
+    rules: [
+      { id: 'r-ammo-type-total', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '上报弹药余量', fieldPath: 'response.total', fieldName: 'total' }, params: { dataType: 'uint16' }, desc: '弹药总量字段必须为 uint16' },
+      { id: 'r-ammo-range-total', type: 'range', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '上报弹药余量', fieldPath: 'response.total', fieldName: 'total' }, params: { dataType: 'uint16', min: 0, max: 65535 }, desc: '弹药总量不得超出 uint16 范围' },
+      { id: 'r-ammo-range-avail', type: 'range', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '上报弹药余量', fieldPath: 'response.available', fieldName: 'available' }, params: { dataType: 'uint16', min: 0, max: 65535 }, desc: '可用量不得超出 uint16 范围' },
+      { id: 'r-ammo-range-typeA', type: 'range', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '上报弹药余量', fieldPath: 'response.detail.typeA', fieldName: 'typeA' }, params: { dataType: 'uint16', min: 0, max: 9999 }, desc: 'A 型弹药余量合理范围 0~9999' },
+      { id: 'r-ammo-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '上报弹药余量', fieldPath: '', fieldName: '' }, params: { timeoutMs: 800 }, desc: '弹药余量上报响应时延不得超过 800ms' },
+    ]
+  },
+
+  // ── 3. 挂载检测 · 挂载状态查询 ──
+  {
+    id: 'rs-pylon-status',
+    name: '挂载状态查询校验规则集',
+    systemId: 'sys-weapon',
+    moduleId: byName('sys-weapon', '挂载检测模块'),
+    status: 'enabled',
+    desc: '校验挂载状态响应中挂点编号、载荷类型、锁定状态等字段。',
+    createdAt: '2026-06-25',
+    updatedAt: '2026-06-25 09:15',
+    rules: [
+      { id: 'r-pylon-type-pylonNo', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '挂载状态查询', fieldPath: 'response.pylonList.pylonNo', fieldName: 'pylonNo' }, params: { dataType: 'uint8' }, desc: '挂点号必须为 uint8' },
+      { id: 'r-pylon-range-loadType', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '挂载状态查询', fieldPath: 'response.pylonList.loadType', fieldName: 'loadType' }, params: { dataType: 'uint8', min: 0, max: 15 }, desc: '载荷类型编码范围 0~15' },
+      { id: 'r-pylon-range-locked', type: 'range', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '挂载状态查询', fieldPath: 'response.pylonList.locked', fieldName: 'locked' }, params: { dataType: 'uint8', min: 0, max: 1 }, desc: '锁定状态仅允许 0（未锁定）或 1（已锁定）' },
+      { id: 'r-pylon-overflow-raw', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '挂载状态查询', fieldPath: 'response.rawFrame', fieldName: 'rawFrame' }, params: { required: true, maxLength: 512 }, desc: '原始识别帧必须存在且长度不超过 512 字节' },
+      { id: 'r-pylon-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '挂载状态查询', fieldPath: '', fieldName: '' }, params: { timeoutMs: 600 }, desc: '挂载状态查询响应时延不得超过 600ms' },
+    ]
+  },
+
+  // ── 4. 火控解算 · 目标分配解算 ──
+  {
+    id: 'rs-fire-solve',
+    name: '目标分配解算校验规则集',
+    systemId: 'sys-fire',
+    moduleId: byName('sys-fire', '火控解算模块'),
+    status: 'enabled',
+    desc: '覆盖火控解算响应结果码、方案文件与原始帧的完整性校验。',
+    createdAt: '2026-06-24',
+    updatedAt: '2026-06-24 14:20',
+    rules: [
+      { id: 'r-fire-type-result', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '目标分配解算', fieldPath: 'response.result', fieldName: 'result' }, params: { dataType: 'int32' }, desc: '解算结果码必须为 int32' },
+      { id: 'r-fire-range-result', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '目标分配解算', fieldPath: 'response.result', fieldName: 'result' }, params: { dataType: 'int32', min: 0, max: 255 }, desc: '解算结果码合法取值 0~255' },
+      { id: 'r-fire-boundary-result', type: 'boundary', enabled: true, level: 'warning', source: 'auto', target: { interfaceName: '目标分配解算', fieldPath: 'response.result', fieldName: 'result' }, params: { dataType: 'int32', min: 0, max: 255, boundaryMode: 'inclusive' }, desc: '解算结果码命中边界值时提醒' },
+      { id: 'r-fire-overflow-plan', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '目标分配解算', fieldPath: 'response.plan', fieldName: 'plan' }, params: { required: true, maxLength: 4096 }, desc: '分配方案文件必须存在且不超过 4096 字节' },
+      { id: 'r-fire-overflow-raw', type: 'overflow', enabled: true, level: 'warning', source: 'auto', target: { interfaceName: '目标分配解算', fieldPath: 'response.raw', fieldName: 'raw' }, params: { required: false, maxLength: 1024 }, desc: '原始解算帧长度不超过 1024 字节' },
+      { id: 'r-fire-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '目标分配解算', fieldPath: '', fieldName: '' }, params: { timeoutMs: 300 }, desc: '火控解算响应时延不得超过 300ms（实时性要求高）' },
+    ]
+  },
+
+  // ── 5. 目标跟踪 · 航迹订阅 ──
+  {
+    id: 'rs-track-sub',
+    name: '航迹订阅响应校验规则集',
+    systemId: 'sys-fire',
+    moduleId: byName('sys-fire', '目标跟踪模块'),
+    status: 'enabled',
+    desc: '校验航迹订阅成功数与会话标识字段的类型和范围。',
+    createdAt: '2026-06-25',
+    updatedAt: '2026-06-25 08:30',
+    rules: [
+      { id: 'r-track-type-sub', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '航迹订阅', fieldPath: 'response.subscribed', fieldName: 'subscribed' }, params: { dataType: 'uint8' }, desc: '成功订阅数必须为 uint8' },
+      { id: 'r-track-range-sub', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹订阅', fieldPath: 'response.subscribed', fieldName: 'subscribed' }, params: { dataType: 'uint8', min: 0, max: 64 }, desc: '单次最多订阅 64 条航迹' },
+      { id: 'r-track-type-sid', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '航迹订阅', fieldPath: 'response.sessionId', fieldName: 'sessionId' }, params: { dataType: 'uint32' }, desc: '会话标识必须为 uint32' },
+      { id: 'r-track-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹订阅', fieldPath: '', fieldName: '' }, params: { timeoutMs: 400 }, desc: '航迹订阅响应时延不得超过 400ms' },
+    ]
+  },
+
+  // ── 6. 天线控制 · 天线指向控制 ──
+  {
+    id: 'rs-antenna-point',
+    name: '天线指向控制校验规则集',
+    systemId: 'sys-radar',
+    moduleId: byName('sys-radar', '天线控制模块'),
+    status: 'enabled',
+    desc: '覆盖天线方位角、俯仰角范围约束及响应完整性校验。',
+    createdAt: '2026-06-24',
+    updatedAt: '2026-06-25 10:00',
+    rules: [
+      { id: 'r-ant-type-code', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '天线指向控制', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32' }, desc: '响应状态码必须为 int32' },
+      { id: 'r-ant-range-az', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '天线指向控制', fieldPath: 'response.actualAz', fieldName: 'actualAz' }, params: { dataType: 'float', min: 0, max: 360 }, desc: '实际方位角范围 0°~360°' },
+      { id: 'r-ant-range-el', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '天线指向控制', fieldPath: 'response.actualEl', fieldName: 'actualEl' }, params: { dataType: 'float', min: -90, max: 90 }, desc: '实际俯仰角范围 -90°~90°' },
+      { id: 'r-ant-boundary-az', type: 'boundary', enabled: true, level: 'warning', source: 'auto', target: { interfaceName: '天线指向控制', fieldPath: 'response.actualAz', fieldName: 'actualAz' }, params: { dataType: 'float', min: 0, max: 360, boundaryMode: 'inclusive' }, desc: '方位角到达 0°/360° 边界时提醒' },
+      { id: 'r-ant-overflow-code', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '天线指向控制', fieldPath: 'response.code', fieldName: 'code' }, params: { required: true, maxLength: 4 }, desc: '状态码字段必须存在' },
+      { id: 'r-ant-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '天线指向控制', fieldPath: '', fieldName: '' }, params: { timeoutMs: 200 }, desc: '天线伺服响应时延不得超过 200ms（阶跃响应要求）' },
+    ]
+  },
+
+  // ── 7. 目标识别 · 目标识别请求 ──
+  {
+    id: 'rs-target-identify',
+    name: '目标识别响应校验规则集',
+    systemId: 'sys-radar',
+    moduleId: byName('sys-radar', '目标识别模块'),
+    status: 'draft',
+    desc: '覆盖目标类别、置信度、RCS 等字段的完整校验。',
+    createdAt: '2026-06-25',
+    updatedAt: '2026-06-25 14:30',
+    rules: [
+      { id: 'r-tgt-type-cat', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '目标识别请求', fieldPath: 'response.category', fieldName: 'category' }, params: { dataType: 'uint8' }, desc: '目标类别必须为 uint8' },
+      { id: 'r-tgt-range-cat', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '目标识别请求', fieldPath: 'response.category', fieldName: 'category' }, params: { dataType: 'uint8', min: 0, max: 10 }, desc: '目标类别编码 0~10（含未知/战斗机/运输机等）' },
+      { id: 'r-tgt-range-conf', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '目标识别请求', fieldPath: 'response.confidence', fieldName: 'confidence' }, params: { dataType: 'uint8', min: 0, max: 100 }, desc: '置信度百分比范围 0~100' },
+      { id: 'r-tgt-boundary-conf', type: 'boundary', enabled: true, level: 'warning', source: 'auto', target: { interfaceName: '目标识别请求', fieldPath: 'response.confidence', fieldName: 'confidence' }, params: { dataType: 'uint8', min: 0, max: 100, boundaryMode: 'inclusive' }, desc: '置信度为 0 或 100 时提醒' },
+      { id: 'r-tgt-range-rcs', type: 'range', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '目标识别请求', fieldPath: 'response.rcsDb', fieldName: 'rcsDb' }, params: { dataType: 'float', min: -50, max: 50 }, desc: 'RCS dBsm 合理范围 -50~50' },
+      { id: 'r-tgt-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '目标识别请求', fieldPath: '', fieldName: '' }, params: { timeoutMs: 1000 }, desc: '目标识别响应时延不得超过 1000ms' },
+      { id: 'r-tgt-format', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '目标识别请求', fieldPath: '', fieldName: '' }, params: { sampleType: 'json' }, desc: '响应结构必须是合法 JSON' },
+    ]
+  },
+
+  // ── 8. 卫星通信 · 卫通建链 ──
+  {
+    id: 'rs-sat-link',
+    name: '卫通建链响应校验规则集',
+    systemId: 'sys-comm',
+    moduleId: byName('sys-comm', '卫星通信模块'),
+    status: 'enabled',
+    desc: '校验卫通建链响应的状态码、信号强度与链路速率。',
+    createdAt: '2026-06-25',
+    updatedAt: '2026-06-25 16:00',
+    rules: [
+      { id: 'r-sat-type-code', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '卫通建链', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32' }, desc: '状态码必须为 int32' },
+      { id: 'r-sat-range-signal', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '卫通建链', fieldPath: 'response.signalStrength', fieldName: 'signalStrength' }, params: { dataType: 'int16', min: -120, max: 0 }, desc: '信号强度范围 -120~0 dBm' },
+      { id: 'r-sat-range-rate', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '卫通建链', fieldPath: 'response.linkRate', fieldName: 'linkRate' }, params: { dataType: 'uint32', min: 0, max: 100000000 }, desc: '链路速率 0~100Mbps' },
+      { id: 'r-sat-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '卫通建链', fieldPath: '', fieldName: '' }, params: { timeoutMs: 5000 }, desc: '卫通建链响应时延不得超过 5000ms（卫星链路延迟容忍度高）' },
+      { id: 'r-sat-format', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '卫通建链', fieldPath: '', fieldName: '' }, params: { sampleType: 'hex' }, desc: '卫通响应帧格式必须合法' },
+    ]
+  },
+
+  // ── 9. 惯性导航 · 惯导校准 ──
+  {
+    id: 'rs-ins-calibrate',
+    name: '惯导校准响应校验规则集',
+    systemId: 'sys-nav',
+    moduleId: byName('sys-nav', '惯性导航模块'),
+    status: 'enabled',
+    desc: '校验惯导校准响应的状态码、预计就绪时间与零偏漂移。',
+    createdAt: '2026-06-24',
+    updatedAt: '2026-06-24 16:45',
+    rules: [
+      { id: 'r-ins-type-code', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '惯导校准', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32' }, desc: '状态码必须为 int32' },
+      { id: 'r-ins-range-ready', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '惯导校准', fieldPath: 'response.readyTime', fieldName: 'readyTime' }, params: { dataType: 'uint16', min: 0, max: 600 }, desc: '预计就绪时间 0~600s（10分钟内）' },
+      { id: 'r-ins-range-drift', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '惯导校准', fieldPath: 'response.drift', fieldName: 'drift' }, params: { dataType: 'float', min: -10, max: 10 }, desc: '零偏漂移合理范围 -10~10' },
+      { id: 'r-ins-boundary-drift', type: 'boundary', enabled: true, level: 'warning', source: 'auto', target: { interfaceName: '惯导校准', fieldPath: 'response.drift', fieldName: 'drift' }, params: { dataType: 'float', min: -10, max: 10, boundaryMode: 'inclusive' }, desc: '零偏漂移接近边界时提醒' },
+      { id: 'r-ins-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '惯导校准', fieldPath: '', fieldName: '' }, params: { timeoutMs: 2000 }, desc: '惯导校准响应时延不得超过 2000ms' },
+      { id: 'r-ins-format', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '惯导校准', fieldPath: '', fieldName: '' }, params: { sampleType: 'json' }, desc: '响应结构必须是合法 JSON' },
+    ]
+  },
+
+  // ── 10. 卫星定位 · 定位数据查询 ──
+  {
+    id: 'rs-position-query',
+    name: '定位数据查询校验规则集',
+    systemId: 'sys-nav',
+    moduleId: byName('sys-nav', '卫星定位模块'),
+    status: 'enabled',
+    desc: '校验定位响应中经纬度、海拔、定位状态等字段的合理性。',
+    createdAt: '2026-06-25',
+    updatedAt: '2026-06-25 11:20',
+    rules: [
+      { id: 'r-pos-range-lat', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '定位数据查询', fieldPath: 'response.lat', fieldName: 'lat' }, params: { dataType: 'double', min: -90, max: 90 }, desc: '纬度范围 -90°~90°' },
+      { id: 'r-pos-range-lon', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '定位数据查询', fieldPath: 'response.lon', fieldName: 'lon' }, params: { dataType: 'double', min: -180, max: 180 }, desc: '经度范围 -180°~180°' },
+      { id: 'r-pos-range-alt', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '定位数据查询', fieldPath: 'response.alt', fieldName: 'alt' }, params: { dataType: 'float', min: -500, max: 50000 }, desc: '海拔范围 -500m~50000m' },
+      { id: 'r-pos-range-fix', type: 'range', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '定位数据查询', fieldPath: 'response.fixStatus', fieldName: 'fixStatus' }, params: { dataType: 'uint8', min: 0, max: 5 }, desc: '定位状态枚举值 0~5' },
+      { id: 'r-pos-range-sat', type: 'range', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '定位数据查询', fieldPath: 'response.satCount', fieldName: 'satCount' }, params: { dataType: 'uint8', min: 0, max: 64 }, desc: '可见星数 0~64（GPS+BDS）' },
+      { id: 'r-pos-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '定位数据查询', fieldPath: '', fieldName: '' }, params: { timeoutMs: 1000 }, desc: '定位数据查询响应时延不得超过 1000ms' },
+    ]
+  },
+
+  // ── 11. 干扰执行 · 干扰任务下发 ──
+  {
+    id: 'rs-jam-task',
+    name: '干扰任务下发校验规则集',
+    systemId: 'sys-ew',
+    moduleId: byName('sys-ew', '干扰执行模块'),
+    status: 'draft',
+    desc: '校验干扰任务下发响应的状态码与任务编号。',
+    createdAt: '2026-06-25',
+    updatedAt: '2026-06-25 15:00',
+    rules: [
+      { id: 'r-jam-type-code', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '干扰任务下发', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32' }, desc: '状态码必须为 int32' },
+      { id: 'r-jam-overflow-taskId', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '干扰任务下发', fieldPath: 'response.taskId', fieldName: 'taskId' }, params: { required: true, maxLength: 4 }, desc: '干扰任务编号必须存在' },
+      { id: 'r-jam-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '干扰任务下发', fieldPath: '', fieldName: '' }, params: { timeoutMs: 500 }, desc: '干扰任务下发响应时延不得超过 500ms' },
+      { id: 'r-jam-format', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '干扰任务下发', fieldPath: '', fieldName: '' }, params: { sampleType: 'hex' }, desc: '干扰指令响应帧格式必须合法' },
+    ]
+  },
 ]
 
 /* ────────────────────────────────────────────

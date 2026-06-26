@@ -80,7 +80,7 @@ export const useRuleStore = defineStore('rule', {
     enabledRuleSets: (state) => state.ruleSets.filter((item) => item.status === 'enabled'),
     refCountOf: () => (ruleSetId) => {
       const taskStore = useTestTaskStore()
-      return taskStore.tasks.filter((task) => task.strategy?.ruleSetId === ruleSetId).length
+      return taskStore.tasks.filter((task) => task.bindings?.ruleSetId === ruleSetId).length
     },
     statsByType: () => (ruleSet) => {
       const rules = ruleSet?.rules || []
