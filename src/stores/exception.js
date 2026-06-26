@@ -85,7 +85,7 @@ const normalizeSeed = (alert, index) => ({
     fieldPath: '',
     recvMs: null,
   },
-  capturedTime: alert.resolvedTime || `2026-06-24 ${String(9 + (index % 3)).padStart(2, '0')}:${String(10 + index).padStart(2, '0')}:00`,
+  capturedTime: alert.capturedTime || `2026-06-${19 + (index % 7)} ${String(8 + (index % 16)).padStart(2, '0')}:${String(10 + index).padStart(2, '0')}:00`,
   resolvedTime: alert.resolvedTime || '',
   handler: '',
   trace: [
@@ -127,6 +127,20 @@ export const useExceptionStore = defineStore('exception', {
     tagOptions: (state) => cleanTags([...state.tagHistory, ...state.exceptions.flatMap((item) => item.tags || [])]).sort((a, b) => a.localeCompare(b, 'zh-CN')),
     stateMeta: () => stateMeta,
     levelMeta: () => levelMeta,
+    overdueItems: (state) => {
+      const slaHours = { '高': 4, '中': 8, '低': 24 }
+      const now = Date.now()
+      return state.exceptions
+        .filter((item) => item.state === '待处理' || item.state === '处理中')
+        .map((item) => {
+          const captured = new Date(item.capturedTime.replace(/\//g, '-')).getTime()
+          const elapsed = now - captured
+          const slaMs = (slaHours[item.level] || 8) * 3600000
+          return { ...item, elapsedHours: Math.round(elapsed / 3600000), slaHours: slaHours[item.level] || 8, overdue: elapsed > slaMs }
+        })
+        .filter((item) => item.overdue)
+        .sort((a, b) => b.elapsedHours - a.elapsedHours)
+    },
     stats: () => (items = []) => {
       const total = items.length
       const pending = items.filter((item) => item.state === '待处理' || item.state === '处理中').length

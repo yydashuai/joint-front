@@ -71,21 +71,8 @@
                 @view="openDetail"
               />
             </el-tab-pane>
-            <el-tab-pane label="异常接口" name="fault">
-              <div class="fault-placeholder">
-                <el-tag type="warning" effect="plain">待确认</el-tag>
-                <h3>异常接口 / 负向用例生成</h3>
-                <p>本轮先保留入口：后续确认边界后，可按接口生成越界、错类型、缺字段、坏帧头、截断或超时不回应等负向用例，并回流到执行编排。</p>
-                <div class="fault-flow">
-                  <span>选择接口</span>
-                  <i />
-                  <span>选择注入方式</span>
-                  <i />
-                  <span>生成异常用例</span>
-                  <i />
-                  <span>执行回流台账</span>
-                </div>
-              </div>
+            <el-tab-pane label="处置效率" name="efficiency">
+              <ExceptionEfficiency />
             </el-tab-pane>
           </el-tabs>
         </el-card>
@@ -107,6 +94,7 @@ import { useRoute } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import ExceptionTable from '@/components/exception/ExceptionTable.vue'
+import ExceptionEfficiency from '@/components/exception/ExceptionEfficiency.vue'
 import ExceptionDetailDrawer from '@/components/exception/ExceptionDetailDrawer.vue'
 import ManualExceptionDialog from '@/components/exception/ManualExceptionDialog.vue'
 import { useConnectionStore } from '@/stores/connection'
@@ -273,43 +261,6 @@ const openDetail = (row) => {
     padding: 12px;
     overflow: auto;
   }
-}
-.fault-placeholder {
-  min-height: 360px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 12px;
-  padding: 28px;
-  border: 1px dashed var(--el-border-color);
-  border-radius: 8px;
-  background: var(--el-fill-color-extra-light);
-}
-.fault-placeholder h3 { margin: 0; font-size: 18px; }
-.fault-placeholder p {
-  max-width: 780px;
-  margin: 0;
-  color: var(--el-text-color-secondary);
-  line-height: 1.7;
-}
-.fault-flow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-}
-.fault-flow span {
-  padding: 8px 12px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  background: var(--el-bg-color);
-}
-.fault-flow i {
-  width: 28px;
-  height: 1px;
-  background: var(--el-border-color);
 }
 @media (max-width: 1180px) {
   .split { flex-direction: column; }
