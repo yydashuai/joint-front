@@ -1,13 +1,10 @@
 <template>
-  <div v-if="!props.module" class="empty-pick">
-    <el-empty description="请在左侧选择一个模块，管理该模块的知识库" :image-size="90" />
-  </div>
-  <div v-else class="kb">
+  <div class="kb">
     <!-- 左：知识文档 -->
     <el-card class="kb__docs" shadow="never" :body-style="{ padding: '0', flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }">
       <template #header>
         <div class="card-head">
-          <span>知识文档 <span class="muted">· {{ props.module.name }}</span></span>
+          <span>知识文档 <span class="muted">· 全工具统一</span></span>
           <div class="head-stat">
             <el-tag size="small" effect="plain">{{ docs.length }} 篇</el-tag>
             <el-tag size="small" effect="plain" type="success">已向量化 {{ vectorizedCount }}</el-tag>
@@ -61,13 +58,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-empty v-if="!docs.length" description="该模块暂无知识文档，点「导入文档」添加" :image-size="70" />
+        <el-empty v-if="!docs.length" description="暂无知识文档，所有用户均可导入" :image-size="70" />
       </el-scrollbar>
     </el-card>
 
-    <!-- 右：混合检索测试（限定在本模块知识库内） -->
+    <!-- 右：混合检索测试（统一知识库内） -->
     <el-card class="kb__search" shadow="never" :body-style="{ padding: '14px 16px', flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }">
-      <template #header><div class="card-head"><span>混合检索测试</span><span class="muted">本模块 · 关键词 + 向量融合</span></div></template>
+      <template #header><div class="card-head"><span>混合检索测试</span><span class="muted">统一知识库 · 关键词 + 向量融合</span></div></template>
       <el-input v-model="query" placeholder="输入查询，如 武器载荷 超时" :prefix-icon="Search" clearable @input="onSearch" @keyup.enter="onSearch" />
       <el-scrollbar class="kb__hits">
         <div v-if="hits.length" class="hits">
@@ -91,16 +88,14 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Document, Refresh, Delete, Search, Loading } from '@element-plus/icons-vue'
 import { useReportStore } from '@/stores/report'
 
-const props = defineProps({ module: { type: Object, default: null } })
 const store = useReportStore()
-const moduleId = computed(() => props.module?.id ?? null)
 
-const docs = computed(() => (props.module ? store.docsOfModule(moduleId.value) : []))
+const docs = computed(() => store.knowledgeDocs)
 const vectorizedCount = computed(() => docs.value.filter((d) => d.vectorized === 'done').length)
 const chunkCount = computed(() => docs.value.reduce((n, d) => n + d.chunks.length, 0))
 
@@ -120,13 +115,13 @@ const vectorize = async (row) => {
 }
 
 const importDoc = () => {
-  ElMessageBox.prompt(`导入到「${props.module.name}」的知识库（演示用，实际为上传 MD/CSV/TXT）`, '导入知识文档', {
+  ElMessageBox.prompt('导入到统一知识库（演示用，实际为上传 MD/CSV/TXT）', '导入知识文档', {
     inputValue: '新知识文档.md', confirmButtonText: '导入', cancelButtonText: '取消'
   }).then(({ value }) => {
     const name = (value || '').trim() || '新知识文档.md'
     const type = name.split('.').pop().toLowerCase()
     store.addKnowledgeDoc({
-      title: name, type, moduleId: moduleId.value,
+      title: name, type,
       chunks: [
         { idx: 1, text: '（导入后自动分块）该文档第 1 个知识片段示例内容。' },
         { idx: 2, text: '（导入后自动分块）该文档第 2 个知识片段示例内容。' }
@@ -142,14 +137,12 @@ let timer = null
 const onSearch = () => {
   clearTimeout(timer)
   timer = setTimeout(() => {
-    hits.value = query.value.trim() ? store.searchKnowledge(query.value, moduleId.value, 8) : []
+    hits.value = query.value.trim() ? store.searchKnowledge(query.value, null, 8) : []
   }, 200)
 }
-watch(moduleId, () => { hits.value = []; query.value = '' })
 </script>
 
 <style scoped lang="scss">
-.empty-pick { height: 100%; display: flex; align-items: center; justify-content: center; }
 .kb { display: flex; gap: 16px; height: 100%; min-height: 0; }
 .kb__docs { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .kb__search { width: 380px; flex-shrink: 0; display: flex; flex-direction: column; }

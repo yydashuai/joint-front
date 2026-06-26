@@ -19,6 +19,17 @@
           </router-link>
         </el-tooltip>
       </nav>
+      <div v-if="isAdmin" class="rail__admin">
+        <el-tooltip content="系统配置" placement="right">
+          <router-link
+            to="/admin/system-settings"
+            class="rail__item rail__item--icon rail__item--admin"
+            :class="{ 'is-active': route.path === '/admin/system-settings' }"
+          >
+            <el-icon><Setting /></el-icon>
+          </router-link>
+        </el-tooltip>
+      </div>
     </aside>
 
     <div class="app-main">
@@ -62,7 +73,6 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="settings" :icon="Setting">个人设置</el-dropdown-item>
-                <el-dropdown-item v-if="isAdmin" command="system-settings" :icon="Setting">系统设置</el-dropdown-item>
                 <template v-if="isAdmin">
                   <el-dropdown-item divided command="admin-users" :icon="User">用户管理</el-dropdown-item>
                   <el-dropdown-item command="admin-permissions" :icon="Lock">权限管理</el-dropdown-item>
@@ -124,9 +134,6 @@ const onUserCommand = (cmd) => {
     case 'settings':
       router.push('/settings')
       break
-    case 'system-settings':
-      router.push('/admin/system-settings')
-      break
     case 'admin-users':
       router.push('/admin/users')
       break
@@ -175,6 +182,15 @@ const onUserCommand = (cmd) => {
     align-items: center;
   }
 
+  &__admin {
+    margin-top: auto;
+    width: 100%;
+    padding: 8px 0 12px;
+    display: flex;
+    justify-content: center;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
   &__item {
     width: 48px;
     height: 48px;
@@ -193,6 +209,17 @@ const onUserCommand = (cmd) => {
   }
 
   &__label { font-size: 16px; font-weight: 600; line-height: 1; }
+  &__item--icon {
+    font-size: 20px;
+  }
+
+  &__item--admin {
+    &:hover,
+    &.is-active {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+    }
+  }
 }
 
 /* 主区 */

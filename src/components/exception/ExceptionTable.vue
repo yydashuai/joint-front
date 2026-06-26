@@ -16,6 +16,9 @@
       <el-select v-model="local.source" placeholder="来源" clearable>
         <el-option v-for="source in EXC_SOURCES" :key="source.value" :label="source.label" :value="source.value" />
       </el-select>
+      <el-select v-model="local.tag" placeholder="标签" clearable filterable>
+        <el-option v-for="tag in tagOptions" :key="tag" :label="tag" :value="tag" />
+      </el-select>
       <el-segmented v-model="groupBy" :options="groupOptions" />
     </div>
 
@@ -32,44 +35,51 @@
         <span>{{ group.label }}</span>
         <el-tag size="small" effect="plain">{{ group.items.length }}</el-tag>
       </div>
-      <el-table
-        :data="group.items"
-        size="small"
-        row-key="id"
-        empty-text="暂无异常"
-        @selection-change="onSelectionChange"
-        @row-click="$emit('view', $event)"
-      >
-        <el-table-column type="selection" width="42" />
-        <el-table-column label="时间" prop="capturedTime" width="170" />
-        <el-table-column label="系统 / 模块" min-width="190">
-          <template #default="{ row }">
-            <div class="stack">
-              <strong>{{ systemName(row.systemId) }}</strong>
-              <span>{{ moduleName(row.moduleId) }}</span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="接口" prop="iface" min-width="130" />
-        <el-table-column label="类型" min-width="128">
-          <template #default="{ row }"><el-tag effect="plain">{{ row.type }}</el-tag></template>
-        </el-table-column>
-        <el-table-column label="级别" width="80" align="center">
-          <template #default="{ row }"><el-tag :type="levelMeta(row.level).tag" effect="dark" size="small">{{ row.level }}</el-tag></template>
-        </el-table-column>
-        <el-table-column label="来源" width="100" align="center">
-          <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="104" align="center">
-          <template #default="{ row }"><el-tag :type="stateMeta(row.state).tag" size="small">{{ row.state }}</el-tag></template>
-        </el-table-column>
-        <el-table-column label="操作" width="132" fixed="right" align="center">
-          <template #default="{ row }">
-            <el-button link type="primary" @click.stop="$emit('view', row)">详情</el-button>
-            <el-button link type="success" @click.stop="quickResolve(row)">处理</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <div class="table-scroll">
+        <el-table
+          :data="group.items"
+          size="small"
+          row-key="id"
+          empty-text="暂无异常"
+          class="ledger-table"
+          @selection-change="onSelectionChange"
+          @row-click="$emit('view', $event)"
+        >
+          <el-table-column type="selection" width="42" />
+          <el-table-column label="时间" prop="capturedTime" width="170" />
+          <el-table-column label="系统 / 模块" min-width="190">
+            <template #default="{ row }">
+              <div class="stack">
+                <strong>{{ systemName(row.systemId) }}</strong>
+                <span>{{ moduleName(row.moduleId) }}</span>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="接口" prop="iface" min-width="130" />
+          <el-table-column label="类型" min-width="128">
+            <template #default="{ row }"><el-tag effect="plain">{{ row.type }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="级别" width="80" align="center">
+            <template #default="{ row }"><el-tag :type="levelMeta(row.level).tag" effect="dark" size="small">{{ row.level }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="来源" width="100" align="center">
+            <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="104" align="center">
+            <template #default="{ row }"><el-tag :type="stateMeta(row.state).tag" size="small">{{ row.state }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="标签" min-width="160">
+            <template #default="{ row }">
+              <span class="tag-text" :title="tagText(row.tags)">{{ tagText(row.tags) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="82" fixed="right" align="center">
+            <template #default="{ row }">
+              <el-button link type="primary" @click.stop="$emit('view', row)">详情</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
     </div>
   </div>
 </template>
@@ -93,23 +103,26 @@ const systemStore = useSystemStore()
 const connStore = useConnectionStore()
 const selected = ref([])
 const groupBy = ref('none')
-const local = reactive({ keyword: '', type: '', level: '', state: '', source: '' })
+const local = reactive({ keyword: '', type: '', level: '', state: '', source: '', tag: '' })
 const groupOptions = [
   { label: '不分组', value: 'none' },
   { label: '按类型', value: 'type' },
   { label: '按模块', value: 'moduleId' },
   { label: '按状态', value: 'state' },
+  { label: '按标签', value: 'tag' },
 ]
 
 watch(() => props.filters, (value) => Object.assign(local, value), { immediate: true, deep: true })
 watch(local, () => emit('filters-change', { ...local }), { deep: true })
 
 const typeOptions = computed(() => store.types)
+const tagOptions = computed(() => store.tagOptions)
 const levelMeta = (level) => store.levelMeta(level)
 const stateMeta = (state) => store.stateMeta(state)
 const sourceLabel = (source) => EXC_SOURCES.find((item) => item.value === source)?.label || source
 const systemName = (id) => systemStore.systems.find((item) => item.id === id)?.name || '未归属系统'
 const moduleName = (id) => connStore.nodes.find((item) => item.id === id)?.name || '未归属模块'
+const tagText = (tags = []) => tags.length ? tags.join(', ') : '未打标签'
 
 const sortedRows = computed(() => [...props.rows].sort((a, b) => {
   const pendingRank = (item) => item.state === '待处理' ? 0 : (item.state === '处理中' ? 1 : 2)
@@ -122,9 +135,11 @@ const groupedRows = computed(() => {
   if (groupBy.value === 'none') return [{ key: 'all', label: '全部异常', items: sortedRows.value }]
   const map = new Map()
   sortedRows.value.forEach((item) => {
-    const key = item[groupBy.value] || 'unknown'
-    if (!map.has(key)) map.set(key, [])
-    map.get(key).push(item)
+    const keys = groupBy.value === 'tag' ? (item.tags?.length ? item.tags : ['untagged']) : [item[groupBy.value] || 'unknown']
+    keys.forEach((key) => {
+      if (!map.has(key)) map.set(key, [])
+      map.get(key).push(item)
+    })
   })
   return [...map.entries()].map(([key, items]) => ({
     key,
@@ -137,6 +152,7 @@ const groupLabel = (key) => {
   if (groupBy.value === 'type') return key
   if (groupBy.value === 'state') return key
   if (groupBy.value === 'moduleId') return moduleName(key)
+  if (groupBy.value === 'tag') return key === 'untagged' ? '未打标签' : key
   return key
 }
 
@@ -144,15 +160,13 @@ const onSelectionChange = (items) => {
   selected.value = items
 }
 const batchState = (state) => {
-  store.batchUpdate(selected.value.map((item) => item.id), { state }, '批量处置')
+  const ids = [...new Set(selected.value.map((item) => item.id))]
+  store.batchUpdate(ids, { state }, '批量处置')
   ElMessage.success(`已更新 ${selected.value.length} 条异常`)
   selected.value = []
 }
-const quickResolve = (row) => {
-  store.updateState(row.id, row.state === '待处理' ? '处理中' : '已处理', '快捷处置')
-}
 const exportCsv = () => {
-  const header = '时间,系统,模块,接口,类型,级别,来源,状态,备注'
+  const header = '时间,系统,模块,接口,类型,级别,来源,状态,标签,备注'
   const lines = sortedRows.value.map((row) => [
     row.capturedTime,
     systemName(row.systemId),
@@ -162,6 +176,7 @@ const exportCsv = () => {
     row.level,
     sourceLabel(row.source),
     row.state,
+    (row.tags || []).join(' / '),
     row.remark || row.detail?.ruleMessage || '',
   ].map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(','))
   const blob = new Blob([[header, ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
@@ -178,7 +193,7 @@ const exportCsv = () => {
 .exception-table { display: flex; flex-direction: column; gap: 12px; }
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) repeat(4, 128px) 260px;
+  grid-template-columns: minmax(180px, 1fr) repeat(5, minmax(110px, 128px)) 260px;
   gap: 8px;
   align-items: center;
 }
@@ -186,6 +201,14 @@ const exportCsv = () => {
 .batch-row { display: flex; align-items: center; gap: 8px; }
 .muted { color: var(--el-text-color-secondary); font-size: 12px; margin-right: auto; }
 .group-block { display: flex; flex-direction: column; gap: 8px; }
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.ledger-table {
+  min-width: 1180px;
+}
 .group-title {
   display: flex;
   align-items: center;
@@ -196,6 +219,13 @@ const exportCsv = () => {
 }
 .stack { display: flex; flex-direction: column; gap: 2px; }
 .stack span { color: var(--el-text-color-secondary); font-size: 12px; }
+.tag-text {
+  display: block;
+  overflow: hidden;
+  color: var(--el-text-color-regular);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 @media (max-width: 1220px) {
   .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

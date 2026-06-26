@@ -3,7 +3,7 @@
     <div class="page__header">
       <div>
         <h2>异常管理</h2>
-        <div class="page__desc">集中接收执行判定、链路事件与人工登记异常，完成归类、处置和留痕</div>
+        <div class="page__desc">集中接收执行判定、链路事件与人工登记异常，完成归类、处置和记录</div>
       </div>
       <div class="header-actions">
         <el-select v-model="systemSelectValue" class="system-select">
@@ -71,9 +71,6 @@
                 @view="openDetail"
               />
             </el-tab-pane>
-            <el-tab-pane label="类型定义" name="types">
-              <ExceptionTypeDict />
-            </el-tab-pane>
             <el-tab-pane label="异常接口" name="fault">
               <div class="fault-placeholder">
                 <el-tag type="warning" effect="plain">待确认</el-tag>
@@ -111,7 +108,6 @@ import { Plus } from '@element-plus/icons-vue'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import ExceptionTable from '@/components/exception/ExceptionTable.vue'
 import ExceptionDetailDrawer from '@/components/exception/ExceptionDetailDrawer.vue'
-import ExceptionTypeDict from '@/components/exception/ExceptionTypeDict.vue'
 import ManualExceptionDialog from '@/components/exception/ManualExceptionDialog.vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useExceptionStore } from '@/stores/exception'
@@ -126,7 +122,7 @@ const ALL_SYSTEM_VALUE = '__all__'
 const selectedKey = ref('')
 const selectedModuleId = ref('')
 const activeTab = ref('ledger')
-const tableFilters = ref({ keyword: '', type: '', level: '', state: '', source: '' })
+const tableFilters = ref({ keyword: '', type: '', level: '', state: '', source: '', tag: '' })
 const detailVisible = ref(false)
 const activeException = ref(null)
 const showManual = ref(false)
@@ -157,7 +153,7 @@ const scopeTitle = computed(() => {
 })
 const scopeSub = computed(() => {
   if (selectedModule.value) return '仅显示该模块下的异常台账'
-  return '按左侧模块可快速聚焦，类型定义保持全局生效'
+  return '按左侧模块可快速聚焦，异常台账按当前系统范围汇总'
 })
 
 watch(() => route.query.id, (id) => {

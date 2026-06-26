@@ -54,6 +54,17 @@ const sourceOf = (typeName) => {
   return 'execution'
 }
 
+const seedTagsOf = (alert) => {
+  const tags = []
+  if (['响应超时', '心跳丢失', '链路中断', '数据帧丢失'].includes(alert.type)) tags.push('链路问题')
+  if (['类型校验', '取值范围', '边界值检测', '字段越界', '格式错误', '帧头校验失败'].includes(alert.type)) tags.push('协议字段')
+  if (alert.level === '高') tags.push('高优先级')
+  if (alert.state === '待处理' || alert.state === '处理中') tags.push('需跟进')
+  return [...new Set(tags)]
+}
+
+const cleanTags = (tags = []) => [...new Set(tags.map((tag) => String(tag).trim()).filter(Boolean))]
+
 const normalizeSeed = (alert, index) => ({
   id: alert.id || uid('ex'),
   type: alert.type,
@@ -86,6 +97,7 @@ const normalizeSeed = (alert, index) => ({
     },
   ],
   remark: alert.remark || '',
+  tags: seedTagsOf(alert),
 })
 
 const resolvedStates = ['已处理', '已修复', '已忽略', '自动恢复', '已记录']
@@ -93,11 +105,15 @@ const stateMeta = (state) => EXC_STATES.find((item) => item.value === state) || 
 const levelMeta = (level) => EXC_LEVELS.find((item) => item.value === level) || { value: level, label: level, tag: 'info' }
 
 export const useExceptionStore = defineStore('exception', {
-  state: () => ({
-    exceptions: alerts.map(normalizeSeed),
-    types: defaultTypes,
-    selectedId: null,
-  }),
+  state: () => {
+    const exceptions = alerts.map(normalizeSeed)
+    return {
+      exceptions,
+      types: defaultTypes,
+      selectedId: null,
+      tagHistory: cleanTags(exceptions.flatMap((item) => item.tags || [])),
+    }
+  },
 
   getters: {
     selected(state) {
@@ -108,6 +124,7 @@ export const useExceptionStore = defineStore('exception', {
     exceptionsOfSystem: (state) => (systemId) => state.exceptions.filter((item) => !systemId || item.systemId === systemId),
     typeByName: (state) => (name) => state.types.find((item) => item.name === name),
     typeMeta: (state) => (name) => state.types.find((item) => item.name === name) || defaultTypes.find((item) => item.name === name),
+    tagOptions: (state) => cleanTags([...state.tagHistory, ...state.exceptions.flatMap((item) => item.tags || [])]).sort((a, b) => a.localeCompare(b, 'zh-CN')),
     stateMeta: () => stateMeta,
     levelMeta: () => levelMeta,
     stats: () => (items = []) => {
@@ -134,9 +151,10 @@ export const useExceptionStore = defineStore('exception', {
       if (filters.level && item.level !== filters.level) return false
       if (filters.state && item.state !== filters.state) return false
       if (filters.source && item.source !== filters.source) return false
+      if (filters.tag && !(item.tags || []).includes(filters.tag)) return false
       if (filters.keyword) {
         const kw = filters.keyword.toLowerCase()
-        const hay = [item.type, item.iface, item.remark, item.detail?.ruleMessage, item.detail?.fieldPath].join(' ').toLowerCase()
+        const hay = [item.type, item.iface, item.remark, item.detail?.ruleMessage, item.detail?.fieldPath, ...(item.tags || [])].join(' ').toLowerCase()
         if (!hay.includes(kw)) return false
       }
       return true
@@ -180,6 +198,7 @@ export const useExceptionStore = defineStore('exception', {
         capturedTime: payload.capturedTime || nowText(),
         resolvedTime: payload.resolvedTime || '',
         handler: payload.handler || '',
+        tags: cleanTags(payload.tags),
         trace: [
           {
             time: payload.capturedTime || nowText(),
@@ -190,6 +209,7 @@ export const useExceptionStore = defineStore('exception', {
         ],
         remark: payload.remark || payload.detail?.ruleMessage || '',
       }
+      this.tagHistory = cleanTags([...this.tagHistory, ...item.tags])
       this.exceptions.unshift(item)
       this.selectedId = item.id
       return item
@@ -214,8 +234,24 @@ export const useExceptionStore = defineStore('exception', {
     addTrace(id, note, handler = '测试员') {
       const item = this.exceptions.find((ex) => ex.id === id)
       if (!item || !note) return false
-      item.trace.unshift({ time: nowText(), user: handler, action: '追加留痕', note })
+      item.trace.unshift({ time: nowText(), user: handler, action: '添加处理记录', note })
       item.remark = note
+      return true
+    },
+    setTags(id, tags = []) {
+      const item = this.exceptions.find((ex) => ex.id === id)
+      if (!item) return false
+      item.tags = cleanTags(tags)
+      this.tagHistory = cleanTags([...this.tagHistory, ...item.tags])
+      return true
+    },
+    deleteTag(tag) {
+      const name = String(tag || '').trim()
+      if (!name) return false
+      this.tagHistory = this.tagHistory.filter((item) => item !== name)
+      this.exceptions.forEach((item) => {
+        item.tags = (item.tags || []).filter((tagName) => tagName !== name)
+      })
       return true
     },
     batchUpdate(ids, patch, note = '') {

@@ -13,6 +13,7 @@ export const navRoutes = [
   { path: '/rule', name: 'rule', short: '则', title: '规则管理', icon: 'SetUp', component: () => import('@/views/Rule.vue') },
   { path: '/exception', name: 'exception', short: '异', title: '异常管理', icon: 'Warning', component: () => import('@/views/Exception.vue') },
   { path: '/statistics', name: 'statistics', short: '计', title: '统计与可视化', icon: 'TrendCharts', component: () => import('@/views/Statistics.vue') },
+  { path: '/knowledge-model', name: 'knowledge-model', short: '知', title: '知识库管理', icon: 'Collection', component: () => import('@/views/KnowledgeModel.vue') },
   { path: '/report', name: 'report', short: '报', title: '联试报告管理', icon: 'Tickets', component: () => import('@/views/Report.vue') }
 ]
 
@@ -61,7 +62,7 @@ const router = createRouter({
         {
           path: '/admin/system-settings',
           name: 'admin-system-settings',
-          meta: { title: '系统设置', role: 'admin', hidden: true },
+          meta: { title: '系统配置', role: 'admin', hidden: true },
           component: () => import('@/views/SystemSettings.vue')
         }
       ]
