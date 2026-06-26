@@ -1,13 +1,32 @@
 <template>
   <div class="plan-stack">
-    <el-card shadow="never" class="exec-card plan-table-card">
+    <el-card
+      shadow="never"
+      class="exec-card plan-table-card"
+      :class="{ 'plan-table-card--dragover': dragOver }"
+      @dragover.prevent="onDragOver"
+      @dragleave="onDragLeave"
+      @drop.prevent="onDrop"
+    >
       <template #header>
         <div class="card-head">
           <div>
             <span class="card-title">执行计划</span>
-            <span class="card-sub">按顺序调度任务，拖动手柄可调整发送次序</span>
+            <span class="card-sub">按顺序调度任务，拖动手柄可调整发送次序；也可从左侧任务树拖入</span>
           </div>
-          <el-tag type="info" effect="plain">{{ items.length }} 项</el-tag>
+          <div class="plan-actions">
+            <el-tag type="info" effect="plain">{{ items.length }} 项 · {{ totalEstimatedRequests }} 请求</el-tag>
+            <el-button
+              type="primary"
+              plain
+              :icon="Plus"
+              :disabled="!selectedTask || selectedInPlan"
+              @click="$emit('add-selected')"
+            >
+              {{ selectedInPlan ? '已在计划中' : '添加测试任务' }}
+            </el-button>
+            <el-button :icon="RefreshRight" @click="$emit('reset-run')">重置本次运行</el-button>
+          </div>
         </div>
       </template>
 
@@ -60,14 +79,15 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="80" align="center">
+        <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="router.push({ path: '/task', query: { id: row.task.id } })">编辑</el-button>
             <el-button link type="danger" size="small" @click="store.removeFromPlan(row.id)">移除</el-button>
           </template>
         </el-table-column>
       </el-table>
 
-      <el-empty v-if="!items.length" class="plan-empty" :image-size="88" description="从左侧任务树加入执行计划，或先去测试任务管理组建任务">
+      <el-empty v-if="!items.length" class="plan-empty" :image-size="88" description="从左侧任务树拖入或添加到执行计划，也可先去测试任务管理组建任务">
         <el-button type="primary" plain @click="router.push('/task')">去组建任务</el-button>
       </el-empty>
     </el-card>
@@ -119,14 +139,39 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Sortable from 'sortablejs'
-import { CircleCheck, Rank, Warning } from '@element-plus/icons-vue'
+import { CircleCheck, Plus, Rank, RefreshRight, Warning } from '@element-plus/icons-vue'
 import { useExecutionStore } from '@/stores/execution'
+
+defineProps({
+  selectedTask: { type: Object, default: null },
+  selectedInPlan: { type: Boolean, default: false },
+  totalEstimatedRequests: { type: Number, default: 0 },
+})
+const emit = defineEmits(['add-selected', 'drop-task', 'reset-run'])
 
 const store = useExecutionStore()
 const router = useRouter()
 const tableRef = ref()
 const items = computed(() => store.planItems)
+const dragOver = ref(false)
 let sortable = null
+
+const onDragOver = (event) => {
+  event.dataTransfer.dropEffect = 'copy'
+  dragOver.value = true
+}
+const onDragLeave = (event) => {
+  if (!event.currentTarget.contains(event.relatedTarget)) dragOver.value = false
+}
+const onDrop = (event) => {
+  dragOver.value = false
+  const raw = event.dataTransfer.getData('application/json')
+  const fallback = event.dataTransfer.getData('text/plain')
+  let payload = null
+  try { payload = raw ? JSON.parse(raw) : null } catch { payload = null }
+  const taskId = payload?.kind === 'task' ? payload.id : fallback
+  if (taskId) emit('drop-task', taskId)
+}
 
 const setupSortable = () => {
   sortable?.destroy()
@@ -156,6 +201,22 @@ onBeforeUnmount(() => sortable?.destroy())
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .card-title { font-weight: 650; font-size: 14px; margin-right: 8px; }
 .card-sub { color: var(--el-text-color-secondary); font-size: 12px; }
+.plan-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.plan-table-card {
+  border: 1px solid var(--el-border-color-lighter);
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+.plan-table-card--dragover {
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 3px var(--el-color-primary-light-9);
+  background: linear-gradient(0deg, rgba(47, 111, 235, .04), rgba(47, 111, 235, .04)), var(--el-bg-color);
+}
 .strong { font-weight: 600; }
 .muted { color: var(--el-text-color-secondary); font-size: 12px; }
 .mono { font-family: Consolas, Monaco, monospace; }

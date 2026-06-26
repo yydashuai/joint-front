@@ -13,6 +13,32 @@ const nextRuleSetId = () => `rs-${++ruleSetSeq}`
 const nextRuleId = () => `rule-${++ruleSeq}`
 
 const clone = (value) => JSON.parse(JSON.stringify(value))
+const norm = (value) => String(value ?? '').trim().toLowerCase()
+const ruleUniqueKeys = (rule = {}) => {
+  const target = rule.target || {}
+  const interfaceKeys = [
+    norm(target.interfaceId),
+    norm(target.interfaceName),
+  ].filter(Boolean)
+  const identities = interfaceKeys.length ? interfaceKeys : ['__interface__']
+  const fieldKey = norm(target.fieldPath || target.fieldName || '__interface__')
+  return identities.map((identity) => [norm(rule.type), identity, fieldKey].join('|'))
+}
+const uniqueRules = (rules = []) => {
+  const seen = new Set()
+  const result = []
+  let skipped = 0
+  rules.forEach((rule) => {
+    const keys = ruleUniqueKeys(rule)
+    if (keys.some((key) => seen.has(key))) {
+      skipped += 1
+      return
+    }
+    keys.forEach((key) => seen.add(key))
+    result.push(rule)
+  })
+  return { rules: result, skipped }
+}
 
 export { RULE_TYPES }
 
@@ -204,24 +230,25 @@ export const useRuleStore = defineStore('rule', {
           desc: `${iface.name} 响应格式必须合法`,
         }))
       }
-      return preview
+      return uniqueRules(preview).rules
     },
 
     mergeGeneratedRules(ruleSetId, rules = []) {
       const rs = this.ruleSets.find((item) => item.id === ruleSetId)
       if (!rs) return { added: 0, skipped: 0 }
+      const current = uniqueRules(rs.rules || [])
+      if (current.skipped) rs.rules = current.rules
+      const existingKeys = new Set(rs.rules.flatMap((rule) => ruleUniqueKeys(rule)))
+      const incoming = uniqueRules(rules)
       let added = 0
-      let skipped = 0
-      rules.forEach((rule) => {
-        const exists = rs.rules.some((item) =>
-          item.type === rule.type &&
-          item.target?.interfaceId === rule.target?.interfaceId &&
-          item.target?.fieldPath === rule.target?.fieldPath
-        )
-        if (exists) {
+      let skipped = current.skipped + incoming.skipped
+      incoming.rules.forEach((rule) => {
+        const keys = ruleUniqueKeys(rule)
+        if (keys.some((key) => existingKeys.has(key))) {
           skipped += 1
         } else {
           rs.rules.push({ ...clone(rule), id: nextRuleId() })
+          keys.forEach((key) => existingKeys.add(key))
           added += 1
         }
       })

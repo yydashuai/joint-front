@@ -86,7 +86,6 @@
       </el-button>
       <el-button :icon="TrendCharts" @click="router.push({ path: '/statistics', query: { runId: store.currentRunId } })">查看统计可视化</el-button>
       <el-button :icon="Tickets" @click="router.push({ path: '/report', query: { runId: store.currentRunId } })">生成联试报告</el-button>
-      <el-button :icon="RefreshRight" @click="$emit('rerun')">重新执行</el-button>
       <el-button :icon="Download" @click="exportCsv">导出结果 CSV</el-button>
     </el-card>
   </div>
@@ -96,10 +95,8 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DocumentChecked, Download, RefreshRight, Tickets, TrendCharts } from '@element-plus/icons-vue'
+import { DocumentChecked, Download, Tickets, TrendCharts } from '@element-plus/icons-vue'
 import { useExecutionStore } from '@/stores/execution'
-
-defineEmits(['rerun'])
 
 const store = useExecutionStore()
 const router = useRouter()

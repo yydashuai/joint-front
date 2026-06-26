@@ -232,7 +232,15 @@ watch(() => store.logLines.length, () => {
 .feed-item { display: flex; flex-direction: column; gap: 4px; padding: 9px; border-radius: 7px; background: var(--el-fill-color-extra-light); border: 1px solid var(--el-border-color-lighter); }
 .feed-item small { color: var(--el-text-color-secondary); }
 .trace-hex { margin-top: 12px; display: grid; gap: 6px; }
-.trace-hex pre, .trace-log { padding: 8px; border-radius: 6px; background: #101923; color: #d7e1ea; white-space: pre-wrap; }
+.trace-hex pre, .trace-log {
+  padding: 8px;
+  border-radius: 6px;
+  background: #101923;
+  color: #d7e1ea;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
 .span-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .span-item { display: grid; grid-template-columns: 130px 1fr 54px; gap: 10px; align-items: center; }
 .span-bar { height: 8px; border-radius: 999px; background: var(--el-fill-color); overflow: hidden; }

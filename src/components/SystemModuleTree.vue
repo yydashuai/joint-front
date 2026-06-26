@@ -38,7 +38,13 @@
         @node-contextmenu="onContextMenu"
       >
         <template #default="{ data }">
-          <div class="tnode" :class="`tnode--${data.kind}`" @dblclick="startRename(data)">
+          <div
+            class="tnode"
+            :class="[`tnode--${data.kind}`, { 'tnode--draggable': draggableLeaves && isSelectableLeaf(data) }]"
+            :draggable="draggableLeaves && isSelectableLeaf(data)"
+            @dragstart="onDragStart($event, data)"
+            @dblclick="startRename(data)"
+          >
             <el-icon class="tnode__icon"><component :is="data.icon" /></el-icon>
             <span class="tnode__label">{{ data.label }}</span>
             <span v-if="data.badge" class="tnode__badge">{{ data.badge }}</span>
@@ -124,12 +130,13 @@ const props = defineProps({
   emptyText: { type: String, default: '暂无系统/模块，请先在链路连接管理添加' },
   leafContextActions: { type: Function, default: null }, // (leafData) => [{ label, action, danger? }]
   moduleContextActions: { type: Function, default: null }, // (moduleData) => [{ label, action, danger? }]
+  draggableLeaves: { type: Boolean, default: false },
   bodyStyle: {
     type: Object,
     default: () => ({ padding: '0', flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' })
   }
 })
-const emit = defineEmits(['update:modelValue', 'select', 'add-leaf', 'delete-leaf', 'leaf-action', 'module-action'])
+const emit = defineEmits(['update:modelValue', 'select', 'add-leaf', 'delete-leaf', 'leaf-action', 'module-action', 'node-drag-start'])
 
 const systemStore = useSystemStore()
 const connStore = useConnectionStore()
@@ -298,6 +305,17 @@ const onNodeClick = (d) => {
     emit('select', d)
   }
 }
+const onDragStart = (event, data) => {
+  if (!props.draggableLeaves || !isSelectableLeaf(data)) return
+  event.dataTransfer.effectAllowed = 'copy'
+  event.dataTransfer.setData('application/json', JSON.stringify({
+    key: data.key,
+    kind: data.kind,
+    id: data.ref?.id || '',
+  }))
+  event.dataTransfer.setData('text/plain', data.ref?.id || data.key)
+  emit('node-drag-start', data)
+}
 
 /* ---- 命名（弹窗输入，留空用默认名；IDE 式：新建后立即可命名） ---- */
 const DEFAULT_NAME = { system: '新建系统', module: '新建模块' }
@@ -353,7 +371,13 @@ const ctxEdit = () => {
 
 <style scoped lang="scss">
 /* 不设 height:100%（父高为 auto 时会塌回内容高）；靠父级 align-items:stretch 撑高 */
-.smt { display: flex; flex-direction: column; min-height: 0; }
+.smt {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 .smt__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .smt__title { display: flex; flex-direction: column; min-width: 0; font-size: 14px; font-weight: 600; line-height: 1.35; }
 .smt__title-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -386,6 +410,8 @@ const ctxEdit = () => {
   &--module { font-weight: 500; }
   &--protocol .tnode__icon { color: var(--el-color-warning); }
   &--interface .tnode__icon { color: var(--el-color-success); }
+  &--draggable { cursor: grab; }
+  &--draggable:active { cursor: grabbing; }
 }
 
 /* 右键菜单 */

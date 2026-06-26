@@ -162,7 +162,7 @@ export function aggregateOverview(filters = {}) {
     composition: [
       { label: '通过', value: success, color: 'var(--el-color-success)' },
       { label: '失败', value: failed, color: 'var(--el-color-danger)' },
-      { label: '异常', value: error, color: 'var(--el-color-warning)' },
+      { label: '超时', value: error, color: 'var(--el-color-warning)' },
     ],
     passRateTrend: dayBuckets(runs, (rs) => pct(sum(rs, (r) => r.success), sum(rs, (r) => r.total))),
   }
@@ -174,18 +174,19 @@ export function aggregateExecution(filters = {}) {
   const failed = sum(runs, (r) => r.failed)
   const error = sum(runs, (r) => r.error)
   const total = success + failed + error
+  const durations = runs.flatMap((r) => r.durations || []).filter((d) => d > 0)
   const ifaceGroup = groupBy(runs, (r) => r.iface)
   return {
     kpis: {
       runCount: runs.length,
       ifaceCount: new Set(runs.map((r) => r.interfaceId)).size,
       passRate: pct(success, total),
-      avgRunTime: runs.length ? round(sum(runs, (r) => r.executionTime) / runs.length) : 0,
+      avgRunTime: durations.length ? round(sum(durations) / durations.length) : 0,
     },
     composition: [
       { label: '通过', value: success, color: 'var(--el-color-success)' },
       { label: '失败', value: failed, color: 'var(--el-color-danger)' },
-      { label: '异常', value: error, color: 'var(--el-color-warning)' },
+      { label: '超时', value: error, color: 'var(--el-color-warning)' },
     ],
     runsPerDay: dayBuckets(runs, (rs) => rs.length),
     passRateTrend: dayBuckets(runs, (rs) => pct(sum(rs, (r) => r.success), sum(rs, (r) => r.total))),

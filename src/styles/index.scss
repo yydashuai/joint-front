@@ -16,6 +16,17 @@ html, body, #app {
   font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
 }
 
+.el-descriptions--small .el-descriptions__body .el-descriptions__table .el-descriptions__cell {
+  font-size: 14px !important;
+}
+
+.el-descriptions--small .el-descriptions__body .el-descriptions__table .el-descriptions__label,
+.el-descriptions--small .el-descriptions__body .el-descriptions__table .el-descriptions__content,
+.el-descriptions--small .el-descriptions__body .el-descriptions__table .is-bordered-label,
+.el-descriptions--small .el-descriptions__body .el-descriptions__table .is-bordered-content {
+  font-size: 14px !important;
+}
+
 /* 通用页面容器 */
 .page {
   display: flex;

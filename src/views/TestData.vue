@@ -342,10 +342,15 @@ const onUploadFile = (data) => {
 }
 
 .tree-search {
+  width: 100%;
+  min-width: 0;
   flex-shrink: 0;
+  :deep(.el-input) { width: 100%; }
 }
 
 :deep(.smt) {
+  width: 100%;
+  min-width: 0;
   flex: 1;
   height: 100%;
   min-height: 0;

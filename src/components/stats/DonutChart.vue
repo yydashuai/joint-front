@@ -81,14 +81,22 @@ const segments = computed(() => {
   gap: 6px;
 }
 .legend-row {
-  display: grid;
-  grid-template-columns: 12px 1fr auto auto;
+  display: flex;
   align-items: center;
   gap: 8px;
   font-size: 12px;
+  min-width: 0;
 }
 .dot { width: 10px; height: 10px; border-radius: 3px; }
-.legend-label { color: var(--el-text-color-regular); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 120px;
+  color: var(--el-text-color-regular);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .legend-val { font-variant-numeric: tabular-nums; font-weight: 600; }
 .legend-pct { color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
 .legend-empty { color: var(--el-text-color-placeholder); font-size: 12px; }

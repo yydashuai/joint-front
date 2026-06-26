@@ -135,6 +135,8 @@ const addTrace = () => {
   padding: 8px;
   border-radius: 6px;
   background: var(--el-fill-color-extra-light);
+  font-size: 14px;
+  line-height: 1.5;
 }
 .evidence pre {
   white-space: pre-wrap;

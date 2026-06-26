@@ -87,7 +87,7 @@
             <StatCard label="执行次数" :value="ex.kpis.runCount" tone="primary" />
             <StatCard label="覆盖接口数" :value="ex.kpis.ifaceCount" />
             <StatCard label="整体通过率" :value="ex.kpis.passRate" suffix="%" :tone="ex.kpis.passRate >= 90 ? 'success' : 'warning'" />
-            <StatCard label="平均单次时长" :value="ex.kpis.avgRunTime" suffix="s" />
+            <StatCard label="平均单次耗时" :value="ex.kpis.avgRunTime" suffix="ms" />
           </div>
           <div class="chart-grid">
             <ChartCard title="执行结果构成"><DonutChart :data="ex.composition" center-label="请求" /></ChartCard>
@@ -102,7 +102,7 @@
           <div class="kpi-grid">
             <StatCard label="总请求数" :value="rq.kpis.total" tone="primary" />
             <StatCard label="成功请求" :value="rq.kpis.success" tone="success" />
-            <StatCard label="失败/异常请求" :value="rq.kpis.failed" tone="danger" />
+            <StatCard label="失败/超时请求" :value="rq.kpis.failed" tone="danger" />
             <StatCard label="请求成功率" :value="rq.kpis.successRate" suffix="%" :tone="rq.kpis.successRate >= 90 ? 'success' : 'warning'" />
           </div>
           <div class="chart-grid">
@@ -329,9 +329,15 @@ const onExport = (cmd) => {
 
 .chart-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 14px;
+}
+
+@media (max-width: 1100px) {
+  .chart-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .ok { color: var(--el-color-success); font-variant-numeric: tabular-nums; }
