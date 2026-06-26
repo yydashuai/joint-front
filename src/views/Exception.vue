@@ -2,7 +2,7 @@
   <div class="page exception-page">
     <div class="page__header">
       <div>
-        <h2>异常管理</h2>
+        <h2>故障异常管理</h2>
         <div class="page__desc">集中接收执行判定、链路事件与人工登记异常，完成归类、处置和记录</div>
       </div>
       <div class="header-actions">

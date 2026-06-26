@@ -60,7 +60,7 @@
       <template #header>
         <div class="card-head">
           <span class="card-title">本次异常清单</span>
-          <el-button type="warning" plain size="small" :disabled="!store.exceptions.length" @click="router.push('/exception')">全部转入异常管理</el-button>
+          <el-button type="warning" plain size="small" :disabled="!store.exceptions.length" @click="router.push('/exception')">全部转入故障异常管理</el-button>
         </div>
       </template>
       <el-table :data="store.exceptions" size="small" empty-text="本次无异常">

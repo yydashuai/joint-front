@@ -3,7 +3,7 @@
     <!-- ======== 页面头部 ======== -->
     <div class="page__header">
       <div>
-        <h2>{{ isAll ? '系统首页 / 工作台' : `${current.name} / 工作台` }}</h2>
+        <h2>{{ isAll ? '联试系统首页 / 工作台' : `${current.name} / 工作台` }}</h2>
         <div class="page__desc">
           {{ isAll ? '便携式智能联试工具 · 联试全流程概览' : (current.desc || `负责人：${current.owner}`) }}
         </div>

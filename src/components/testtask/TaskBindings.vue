@@ -162,7 +162,7 @@
       </el-select>
       <div v-if="!moduleRuleSets.length" class="bind-hint">
         当前模块暂无规则集，可先到
-        <el-link type="primary" :underline="false" @click="$router.push('/rule')">规则管理</el-link>
+        <el-link type="primary" :underline="false" @click="$router.push('/rule')">校验规则管理</el-link>
         中从接口自动生成
       </div>
     </el-card>

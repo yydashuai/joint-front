@@ -2,7 +2,7 @@
   <div class="page rule-page">
     <div class="page__header">
       <div>
-        <h2>规则管理</h2>
+        <h2>校验规则管理</h2>
         <div class="page__desc">从接口字段生成黑盒校验规则，绑定到任务后用于执行时实时判定</div>
       </div>
       <div class="header-actions">

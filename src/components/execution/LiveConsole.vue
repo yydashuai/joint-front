@@ -64,7 +64,7 @@
       <template #header>
         <div class="card-head">
           <span class="card-title">现场异常</span>
-          <el-button link type="primary" size="small" :disabled="!store.exceptions.length" @click="router.push('/exception')">转异常管理</el-button>
+          <el-button link type="primary" size="small" :disabled="!store.exceptions.length" @click="router.push('/exception')">转故障异常管理</el-button>
         </div>
       </template>
       <div v-if="!store.exceptions.length" class="muted">本轮暂无异常。</div>

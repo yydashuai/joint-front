@@ -2,7 +2,7 @@
   <div class="page knowledge-model">
     <div class="page__header">
       <div>
-        <h2>知识库管理</h2>
+        <h2>知识模型管理</h2>
         <div class="page__desc">统一维护联试知识库，所有用户均可上传知识文档</div>
       </div>
     </div>
