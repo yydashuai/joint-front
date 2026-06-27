@@ -136,7 +136,7 @@ const props = defineProps({
     default: () => ({ padding: '0', flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' })
   }
 })
-const emit = defineEmits(['update:modelValue', 'select', 'add-leaf', 'delete-leaf', 'leaf-action', 'module-action', 'node-drag-start'])
+const emit = defineEmits(['update:modelValue', 'select', 'clear', 'add-leaf', 'delete-leaf', 'leaf-action', 'module-action', 'node-drag-start'])
 
 const systemStore = useSystemStore()
 const connStore = useConnectionStore()
@@ -339,7 +339,10 @@ const newModule = (sysNode) => { connStore.add({ name: DEFAULT_NAME.module, syst
 const addLeaf = (groupKind, modNode) => { emit('add-leaf', { groupKind, module: modNode.ref }) }
 const emitLeafAction = (action) => { emit('leaf-action', { action, data: ctx.data }); closeCtx() }
 const emitModuleAction = (action) => { emit('module-action', { action, data: ctx.data }); closeCtx() }
-const clearFilter = () => systemStore.setCurrent(null)
+const clearFilter = () => {
+  systemStore.setCurrent(null)
+  emit('clear')
+}
 
 /* ---- 右键菜单 ---- */
 const ctx = reactive({ visible: false, x: 0, y: 0, data: null })

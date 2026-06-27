@@ -1,46 +1,42 @@
 <template>
   <div class="efficiency-dashboard">
-    <!-- 核心指标卡 -->
     <div class="kpi-row">
       <div class="kpi">
-        <span class="kpi__val">{{ avgResolutionHours }}<small>h</small></span>
-        <span class="kpi__label">平均处置时长</span>
+        <span class="kpi__val">{{ avgWaitDisplay }}</span>
+        <span class="kpi__label">平均等待时长</span>
       </div>
       <div class="kpi">
         <span class="kpi__val">{{ slaRate }}<small>%</small></span>
-        <span class="kpi__label">SLA 达标率</span>
+        <span class="kpi__label">异常达标率</span>
       </div>
       <div class="kpi kpi--danger">
         <span class="kpi__val">{{ overdueCount }}</span>
         <span class="kpi__label">超期未处理</span>
       </div>
-      <div class="kpi">
-        <span class="kpi__val">{{ fastestMinutes }}<small>min</small></span>
-        <span class="kpi__label">最快处置</span>
-      </div>
     </div>
 
-    <!-- SLA 标准说明 -->
     <div class="sla-note">
-      SLA 标准：高级别 ≤ 4h、中级别 ≤ 8h、低级别 ≤ 24h（从捕捉到状态变更为非待处理）
+      达标率目标 {{ store.settings.targetSlaRate }}%；高级别 ≤ {{ store.settings.highSlaHours }}h、中级别 ≤ {{ store.settings.mediumSlaHours }}h、低级别 ≤ {{ store.settings.lowSlaHours }}h。
     </div>
 
-    <!-- 按类型分组效率 -->
     <div class="panel">
-      <div class="panel-head"><strong>按类型处置效率</strong></div>
-      <el-table :data="byTypeStats" size="small" empty-text="暂无已处置数据">
+      <div class="panel-head"><strong>按类型达标情况</strong></div>
+      <el-table :data="byTypeStats" size="small" empty-text="暂无异常数据">
         <el-table-column label="异常类型" prop="type" min-width="120" />
-        <el-table-column label="已处置数" width="90" align="center">
-          <template #default="{ row }">{{ row.resolvedCount }}</template>
+        <el-table-column label="待处理" width="90" align="center">
+          <template #default="{ row }">{{ row.pendingCount }}</template>
         </el-table-column>
-        <el-table-column label="平均时长" width="110" align="center">
+        <el-table-column label="已处理" width="90" align="center">
+          <template #default="{ row }">{{ row.processedCount }}</template>
+        </el-table-column>
+        <el-table-column label="平均等待" width="110" align="center">
           <template #default="{ row }">
             <span class="mono">{{ row.avgDisplay }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="SLA 达标" width="100" align="center">
+        <el-table-column label="达标率" width="100" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.slaPass >= 80 ? 'success' : row.slaPass >= 50 ? 'warning' : 'danger'" size="small">
+            <el-tag :type="row.slaPass >= store.settings.targetSlaRate ? 'success' : row.slaPass >= 80 ? 'warning' : 'danger'" size="small">
               {{ row.slaPass }}%
             </el-tag>
           </template>
@@ -53,7 +49,6 @@
       </el-table>
     </div>
 
-    <!-- 超期预警列表 -->
     <div class="panel">
       <div class="panel-head">
         <strong>超期预警</strong>
@@ -73,9 +68,6 @@
           <div class="overdue-meta">
             <span class="overdue-time">已等待 {{ formatElapsed(item.elapsedHours) }}</span>
             <span class="overdue-sla">SLA {{ item.slaHours }}h</span>
-            <span class="overdue-state">
-              <el-tag size="small" :type="item.state === '待处理' ? 'danger' : 'warning'">{{ item.state }}</el-tag>
-            </span>
           </div>
         </div>
       </div>
@@ -88,79 +80,70 @@ import { computed } from 'vue'
 import { useExceptionStore } from '@/stores/exception'
 
 const store = useExceptionStore()
-const resolvedStates = ['已处理', '已修复', '已忽略', '自动恢复', '已记录']
-const slaHoursMap = { '高': 4, '中': 8, '低': 24 }
 
 const parseTime = (s) => s ? new Date(s.replace(/\//g, '-')).getTime() : 0
 
-/* 已处置项的处置时长(小时) */
-const resolvedDurations = computed(() => {
+const activeDurations = computed(() => {
+  const now = Date.now()
   return store.exceptions
-    .filter((item) => resolvedStates.includes(item.state) && item.resolvedTime && item.capturedTime)
+    .filter((item) => item.state === '待处理')
     .map((item) => {
       const captured = parseTime(item.capturedTime)
-      const resolved = parseTime(item.resolvedTime)
-      const hours = Math.max(0, (resolved - captured) / 3600000)
-      return { ...item, hours }
+      const hours = Math.max(0, (now - captured) / 3600000)
+      const slaHours = store.slaHours(item.level)
+      return { ...item, hours, slaHours, compliant: hours <= slaHours }
     })
 })
 
-/* 平均处置时长 */
 const avgHours = computed(() => {
-  if (!resolvedDurations.value.length) return 0
-  const sum = resolvedDurations.value.reduce((a, b) => a + b.hours, 0)
-  return sum / resolvedDurations.value.length
+  if (!activeDurations.value.length) return 0
+  const sum = activeDurations.value.reduce((a, b) => a + b.hours, 0)
+  return sum / activeDurations.value.length
 })
-const avgResolutionHours = computed(() => {
+const avgWaitDisplay = computed(() => {
   const h = avgHours.value
-  if (h < 1) return Math.round(h * 60) + 'min'
-  return Math.round(h)
+  if (h < 1) return `${Math.round(h * 60)}min`
+  return `${Math.round(h)}h`
 })
 
-/* 最快处置 */
-const fastestMinutes = computed(() => {
-  if (!resolvedDurations.value.length) return '-'
-  const min = Math.min(...resolvedDurations.value.map((d) => d.hours))
-  return Math.max(1, Math.round(min * 60))
-})
-
-/* SLA 达标率 */
 const slaCompliant = computed(() => {
-  return resolvedDurations.value.filter((d) => {
-    const sla = slaHoursMap[d.level] || 8
-    return d.hours <= sla
-  }).length
+  return activeDurations.value.filter((d) => d.compliant).length
 })
 const slaRate = computed(() => {
-  if (!resolvedDurations.value.length) return 100
-  return Math.round((slaCompliant.value / resolvedDurations.value.length) * 100)
+  if (!activeDurations.value.length) return 100
+  return Math.round((slaCompliant.value / activeDurations.value.length) * 100)
 })
 
-/* 超期项 */
 const overdueItems = computed(() => store.overdueItems)
 const overdueCount = computed(() => overdueItems.value.length)
 
-/* 按类型统计 */
 const byTypeStats = computed(() => {
   const map = new Map()
-  resolvedDurations.value.forEach((item) => {
-    if (!map.has(item.type)) map.set(item.type, [])
-    map.get(item.type).push(item)
+  store.exceptions.forEach((item) => {
+    if (!map.has(item.type)) map.set(item.type, { pending: [], processed: 0 })
+    const group = map.get(item.type)
+    if (item.state === '待处理') {
+      const duration = activeDurations.value.find((active) => active.id === item.id)
+      if (duration) group.pending.push(duration)
+    } else {
+      group.processed += 1
+    }
   })
-  return [...map.entries()].map(([type, items]) => {
-    const avg = items.reduce((a, b) => a + b.hours, 0) / items.length
-    const level = items[0]?.level || '中'
-    const sla = slaHoursMap[level] || 8
-    const pass = Math.round((items.filter((d) => d.hours <= sla).length / items.length) * 100)
+  return [...map.entries()].map(([type, group]) => {
+    const avg = group.pending.length ? group.pending.reduce((a, b) => a + b.hours, 0) / group.pending.length : 0
+    const level = group.pending[0]?.level || '中'
+    const sla = store.slaHours(level)
+    const pass = group.pending.length ? Math.round((group.pending.filter((d) => d.compliant).length / group.pending.length) * 100) : 100
     return {
       type,
-      resolvedCount: items.length,
+      pendingCount: group.pending.length,
+      processedCount: group.processed,
       avgHours: avg,
-      avgDisplay: avg < 1 ? `${Math.round(avg * 60)}min` : `${Math.round(avg)}h`,
+      avgDisplay: group.pending.length ? (avg < 1 ? `${Math.round(avg * 60)}min` : `${Math.round(avg)}h`) : '-',
       slaPass: pass,
       slaHours: sla,
     }
-  }).sort((a, b) => b.resolvedCount - a.resolvedCount)
+  }).sort((a, b) => (b.pendingCount + b.processedCount) - (a.pendingCount + a.processedCount))
 })
 
 const levelTag = (level) => {
@@ -184,7 +167,7 @@ const formatElapsed = (hours) => {
 /* KPI 卡片 */
 .kpi-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
 .kpi {

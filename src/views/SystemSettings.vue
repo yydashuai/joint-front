@@ -83,6 +83,41 @@
       <el-tab-pane label="模型配置" name="model">
         <ModelConfig />
       </el-tab-pane>
+
+      <el-tab-pane label="异常设置" name="exception">
+        <div class="settings-section">
+          <el-card shadow="never" class="settings-card">
+            <template #header>
+              <span class="card-title">达标率指标</span>
+            </template>
+            <el-form :model="exceptionConfig" label-width="150px" class="settings-form">
+              <el-form-item label="异常达标率目标">
+                <el-input-number v-model="exceptionConfig.targetSlaRate" :min="0" :max="100" :step="1" />
+                <span class="form-unit">%</span>
+              </el-form-item>
+              <el-form-item label="高级别 SLA">
+                <el-input-number v-model="exceptionConfig.highSlaHours" :min="1" :max="168" />
+                <span class="form-unit">h</span>
+              </el-form-item>
+              <el-form-item label="中级别 SLA">
+                <el-input-number v-model="exceptionConfig.mediumSlaHours" :min="1" :max="168" />
+                <span class="form-unit">h</span>
+              </el-form-item>
+              <el-form-item label="低级别 SLA">
+                <el-input-number v-model="exceptionConfig.lowSlaHours" :min="1" :max="168" />
+                <span class="form-unit">h</span>
+              </el-form-item>
+              <el-form-item label="临期提醒提前量">
+                <el-input-number v-model="exceptionConfig.warningLeadHours" :min="0" :max="72" />
+                <span class="form-unit">h</span>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" @click="onSaveConfig('exception')">保存</el-button>
+              </el-form-item>
+            </el-form>
+          </el-card>
+        </div>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -91,17 +126,21 @@
 import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import ModelConfig from '@/components/report/ModelConfig.vue'
+import { useExceptionStore } from '@/stores/exception'
 import { systemConfig as seedConfig } from '@/mock/users'
 
 const activeTab = ref('system')
+const exceptionStore = useExceptionStore()
 const netConfig = reactive({ ...seedConfig.network })
 const logConfig = reactive({ ...seedConfig.log })
 const notifConfig = reactive({ ...seedConfig.notification })
+const exceptionConfig = reactive({ ...exceptionStore.settings })
 
 const onSaveConfig = (group) => {
   if (group === 'network') Object.assign(seedConfig.network, netConfig)
   if (group === 'log') Object.assign(seedConfig.log, logConfig)
   if (group === 'notification') Object.assign(seedConfig.notification, notifConfig)
+  if (group === 'exception') exceptionStore.updateExceptionSettings(exceptionConfig)
   ElMessage.success('配置已保存')
 }
 </script>

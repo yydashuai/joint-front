@@ -9,7 +9,7 @@
             <el-tag size="small" effect="plain">{{ docs.length }} 篇</el-tag>
             <el-tag size="small" effect="plain" type="success">已向量化 {{ vectorizedCount }}</el-tag>
             <el-tag size="small" effect="plain" type="info">{{ chunkCount }} 片段</el-tag>
-            <el-button type="primary" size="small" :icon="Upload" @click="importDoc">导入文档</el-button>
+            <el-button type="primary" size="small" :icon="Upload" @click="openImport">导入文档</el-button>
           </div>
         </div>
       </template>
@@ -26,10 +26,15 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="文档" min-width="200">
+          <el-table-column label="文档" min-width="220">
             <template #default="{ row }">
-              <el-icon class="doc-icon"><Document /></el-icon>
+              <el-icon class="doc-icon" :class="{ 'is-image': row.kind === 'image' }">
+                <Picture v-if="row.kind === 'image'" /><Document v-else />
+              </el-icon>
               <span class="doc-name">{{ row.title }}</span>
+              <el-tag size="small" effect="plain" :type="row.kind === 'image' ? 'warning' : 'info'" class="kind-tag">
+                {{ row.kind === 'image' ? '图片型' : '文件型' }}
+              </el-tag>
             </template>
           </el-table-column>
           <el-table-column label="片段" width="64" align="center">
@@ -84,13 +89,83 @@
         <el-empty v-else :description="query ? '无命中片段' : '输入查询测试检索效果'" :image-size="56" />
       </el-scrollbar>
     </el-card>
+
+    <!-- 导入文档对话框（支持批量） -->
+    <el-dialog v-model="importVisible" title="导入知识文档" width="600px" @closed="resetImport">
+      <!-- 隐藏的原生文件选择器（呼出资源管理器，多选） -->
+      <input
+        ref="fileInput" type="file" multiple class="kb-hidden-input"
+        accept=".pdf,.doc,.docx,.md,.markdown,.csv,.txt,.png,.jpg,.jpeg,.bmp,.tiff"
+        @change="onFileChange"
+      />
+
+      <!-- 空态：拾取区 -->
+      <div v-if="!files.length" class="picker" @click="openFilePicker">
+        <el-icon class="picker__icon"><UploadFilled /></el-icon>
+        <div class="picker__title">点击此处选择文件（可多选）</div>
+        <div class="picker__hint">支持 PDF / Word / Markdown / CSV / TXT / 图片</div>
+        <el-button type="primary" :icon="FolderOpened" @click.stop="openFilePicker">浏览文件…</el-button>
+      </div>
+
+      <!-- 已选文件：逐个设置导入类型 -->
+      <template v-else>
+        <div class="import-bar">
+          <span>已选 <b>{{ files.length }}</b> 个文件</span>
+          <div class="import-bar__right">
+            <template v-if="pdfCount > 1">
+              <span class="muted">PDF 批量设为</span>
+              <el-button-group>
+                <el-button size="small" @click="bulkSetPdf('file')">文件型</el-button>
+                <el-button size="small" @click="bulkSetPdf('image')">图片型</el-button>
+              </el-button-group>
+            </template>
+            <el-button size="small" :icon="FolderOpened" @click="openFilePicker">继续添加</el-button>
+            <el-button size="small" text type="danger" @click="clearFiles">清空</el-button>
+          </div>
+        </div>
+
+        <el-scrollbar max-height="320px">
+          <div class="file-list">
+            <div v-for="(f, i) in files" :key="f.uid" class="file-row">
+              <el-icon class="file-row__icon" :class="{ 'is-image': f.kind === 'image' }">
+                <component :is="f.kind === 'image' ? Picture : Document" />
+              </el-icon>
+              <div class="file-row__info">
+                <div class="file-row__name" :title="f.name">{{ f.name }}</div>
+                <div class="file-row__sub">{{ prettySize(f.size) }} · {{ f.ext.toUpperCase() || '未知' }}</div>
+              </div>
+              <el-radio-group v-model="f.kind" size="small" class="file-row__kind">
+                <el-radio-button value="file" :disabled="f.locked && f.kind !== 'file'">文件型</el-radio-button>
+                <el-radio-button value="image" :disabled="f.locked && f.kind !== 'image'">图片型</el-radio-button>
+              </el-radio-group>
+              <el-button class="file-row__del" text :icon="Delete" @click="removeFile(i)" />
+            </div>
+          </div>
+        </el-scrollbar>
+
+        <div class="kind-hint">
+          <el-icon><InfoFilled /></el-icon>
+          <span>文件型：提取文字后分块向量化；图片型：先 OCR 识别再向量化。PDF 默认文件型，扫描件请改为图片型。</span>
+        </div>
+      </template>
+
+      <template #footer>
+        <el-button @click="importVisible = false">取消</el-button>
+        <el-button type="primary" :disabled="!files.length" @click="confirmImport">
+          导入{{ files.length ? `（${files.length}）` : '' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Document, Refresh, Delete, Search, Loading } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import {
+  Upload, Document, Refresh, Delete, Search, Loading,
+  Picture, UploadFilled, FolderOpened, InfoFilled
+} from '@element-plus/icons-vue'
 import { useReportStore } from '@/stores/report'
 
 const store = useReportStore()
@@ -114,21 +189,65 @@ const vectorize = async (row) => {
   ok ? ElMessage.success(`「${row.title}」向量化完成`) : ElMessage.error('向量化失败，请重试')
 }
 
-const importDoc = () => {
-  ElMessageBox.prompt('导入到统一知识库（演示用，实际为上传 MD/CSV/TXT）', '导入知识文档', {
-    inputValue: '新知识文档.md', confirmButtonText: '导入', cancelButtonText: '取消'
-  }).then(({ value }) => {
-    const name = (value || '').trim() || '新知识文档.md'
-    const type = name.split('.').pop().toLowerCase()
-    store.addKnowledgeDoc({
-      title: name, type,
-      chunks: [
-        { idx: 1, text: '（导入后自动分块）该文档第 1 个知识片段示例内容。' },
-        { idx: 2, text: '（导入后自动分块）该文档第 2 个知识片段示例内容。' }
-      ]
-    })
-    ElMessage.success(`已导入「${name}」，待向量化`)
-  }).catch(() => {})
+/* —— 导入文档（支持批量，逐文件设类型） —— */
+const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'bmp', 'tiff']
+const TEXT_EXTS = ['md', 'markdown', 'csv', 'txt', 'doc', 'docx']
+
+const importVisible = ref(false)
+const fileInput = ref(null)
+const files = ref([])
+let fileSeq = 0
+
+const extOf = (name = '') => (name.includes('.') ? name.split('.').pop().toLowerCase() : '')
+const prettySize = (bytes = 0) => {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+// 纯图片 / 纯文本格式可直接判定并锁定；PDF 需用户确认（可能是文本，也可能是扫描件）
+const wrapFile = (raw) => {
+  const ext = extOf(raw.name)
+  const locked = IMAGE_EXTS.includes(ext) || TEXT_EXTS.includes(ext)
+  return { uid: ++fileSeq, name: raw.name, size: raw.size, ext, locked, kind: IMAGE_EXTS.includes(ext) ? 'image' : 'file' }
+}
+const pdfCount = computed(() => files.value.filter((f) => f.ext === 'pdf').length)
+
+const openImport = () => { importVisible.value = true }
+const openFilePicker = () => fileInput.value?.click()
+
+const onFileChange = (e) => {
+  const picked = Array.from(e.target.files || [])
+  if (picked.length) files.value.push(...picked.map(wrapFile))
+  if (fileInput.value) fileInput.value.value = '' // 允许再次选择同名文件
+}
+const removeFile = (i) => files.value.splice(i, 1)
+const clearFiles = () => { files.value = [] }
+// PDF 批量设置类型（仅作用于未锁定的 PDF）
+const bulkSetPdf = (kind) => files.value.forEach((f) => { if (f.ext === 'pdf') f.kind = kind })
+
+const buildChunks = (isImage) => isImage
+  ? [
+      { idx: 1, text: '（OCR 识别后自动分块）已从图片 / 扫描件提取的第 1 个知识片段。' },
+      { idx: 2, text: '（OCR 识别后自动分块）已从图片 / 扫描件提取的第 2 个知识片段。' }
+    ]
+  : [
+      { idx: 1, text: '（提取文字后自动分块）该文档第 1 个知识片段示例内容。' },
+      { idx: 2, text: '（提取文字后自动分块）该文档第 2 个知识片段示例内容。' }
+    ]
+
+const confirmImport = () => {
+  if (!files.value.length) return
+  const imageCount = files.value.filter((f) => f.kind === 'image').length
+  files.value.forEach((f) => {
+    store.addKnowledgeDoc({ title: f.name, type: f.ext, kind: f.kind, chunks: buildChunks(f.kind === 'image') })
+  })
+  ElMessage.success(`已导入 ${files.value.length} 个文档（文件型 ${files.value.length - imageCount} · 图片型 ${imageCount}）`)
+  importVisible.value = false
+}
+
+const resetImport = () => {
+  files.value = []
+  if (fileInput.value) fileInput.value.value = ''
 }
 
 const query = ref('')
@@ -151,7 +270,53 @@ const onSearch = () => {
 .muted { color: var(--el-text-color-secondary); font-size: 12px; }
 .kb__scroll { flex: 1; min-height: 0; }
 .doc-icon { color: var(--el-color-primary); vertical-align: middle; margin-right: 6px; }
+.doc-icon.is-image { color: var(--el-color-warning); }
 .doc-name { vertical-align: middle; }
+.kind-tag { margin-left: 8px; vertical-align: middle; }
+
+/* 导入对话框 */
+.kb-hidden-input { display: none; }
+.picker {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 26px 16px; border: 1px dashed var(--el-border-color);
+  border-radius: 10px; cursor: pointer; text-align: center;
+  background: var(--el-fill-color-blank);
+  transition: border-color .2s, background .2s;
+}
+.picker:hover { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
+.picker.is-picked { border-style: solid; }
+.picker__icon { font-size: 36px; color: var(--el-color-primary); }
+.picker__icon.picked { color: var(--el-color-success); }
+.picker__title { font-size: 14px; font-weight: 600; }
+.picker__file { max-width: 100%; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker__hint { font-size: 12px; color: var(--el-text-color-secondary); }
+
+.import-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 10px; font-size: 13px;
+}
+.import-bar b { color: var(--el-color-primary); }
+.import-bar__right { display: flex; align-items: center; gap: 8px; }
+
+.file-list { display: flex; flex-direction: column; gap: 8px; }
+.file-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px; background: var(--el-fill-color-blank);
+}
+.file-row__icon { font-size: 20px; color: var(--el-color-primary); flex-shrink: 0; }
+.file-row__icon.is-image { color: var(--el-color-warning); }
+.file-row__info { flex: 1; min-width: 0; }
+.file-row__name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-row__sub { font-size: 11px; color: var(--el-text-color-secondary); }
+.file-row__kind { flex-shrink: 0; }
+.file-row__del { flex-shrink: 0; }
+
+.kind-hint {
+  display: flex; align-items: center; gap: 6px; margin-top: 10px;
+  font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.5;
+}
+.kind-hint .el-icon { color: var(--el-color-primary); flex-shrink: 0; }
 
 .chunks { padding: 6px 12px; display: flex; flex-direction: column; gap: 6px; }
 .chunk { display: flex; gap: 8px; font-size: 12.5px; line-height: 1.6; }

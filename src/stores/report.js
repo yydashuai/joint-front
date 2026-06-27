@@ -90,6 +90,7 @@ const seedRuns = () => [
   {
     id: uid('run'), systemId: 'sys-weapon', name: '武器管理-高并发联试',
     startedAt: '2026-06-23 09:05', finishedAt: '2026-06-23 10:15', durationText: '70 min', result: '存在异常',
+    taskCreator: '李测试',
     summary: { totalRequests: 18432, successRequests: 17855, failedRequests: 432, errorRequests: 145, avgResponseTime: 124, p95: 287, passRate: 96.9 },
     stepResults: [
       { taskName: '任务分配冒烟', iface: 'POST:/missions/assign', total: 4821, success: 4810, failed: 8, error: 3, avgMs: 98, result: '通过' },
@@ -107,6 +108,7 @@ const seedRuns = () => [
   {
     id: uid('run'), systemId: 'sys-weapon', name: '弹药状态回归联试',
     startedAt: '2026-06-24 14:00', finishedAt: '2026-06-24 14:26', durationText: '26 min', result: '通过',
+    taskCreator: '王测试',
     summary: { totalRequests: 5210, successRequests: 5190, failedRequests: 16, errorRequests: 4, avgResponseTime: 88, p95: 176, passRate: 99.6 },
     stepResults: [
       { taskName: '弹药状态查询', iface: 'GET:/ammo/status', total: 3120, success: 3112, failed: 6, error: 2, avgMs: 72, result: '通过' },
@@ -119,6 +121,7 @@ const seedRuns = () => [
   {
     id: uid('run'), systemId: 'sys-fire', name: '火控解算联试',
     startedAt: '2026-06-25 10:30', finishedAt: '2026-06-25 11:08', durationText: '38 min', result: '通过',
+    taskCreator: '赵联试',
     summary: { totalRequests: 7640, successRequests: 7602, failedRequests: 30, errorRequests: 8, avgResponseTime: 96, p95: 198, passRate: 99.5 },
     stepResults: [
       { taskName: '目标分配联试', iface: 'POST:/targets/assign', total: 4100, success: 4086, failed: 11, error: 3, avgMs: 84, result: '通过' },
@@ -135,7 +138,8 @@ export const useReportStore = defineStore('report', {
     /* —— 报告模板（全局，上传的 DOCX 文件） —— */
     templates: [
       { id: uid('tpl'), name: '标准联试报告模板', fileName: '标准联试报告模板.docx', size: '48 KB', uploadedAt: '2026-06-20 09:00' },
-      { id: uid('tpl'), name: '异常专项报告模板', fileName: '异常专项报告模板.docx', size: '32 KB', uploadedAt: '2026-06-21 14:30' }
+      { id: uid('tpl'), name: '异常专项报告模板', fileName: '异常专项报告模板.docx', size: '32 KB', uploadedAt: '2026-06-21 14:30' },
+      { id: uid('tpl'), name: '交付归档报告模板', fileName: '交付归档报告模板.docx', size: '56 KB', uploadedAt: '2026-06-22 16:20' }
     ],
 
     /* —— 执行批次（报告数据源） —— */
@@ -211,7 +215,8 @@ export const useReportStore = defineStore('report', {
     addKnowledgeDoc(doc) {
       const d = {
         id: uid('kb'), title: doc.title || '未命名文档', moduleId: null, source: '本地导入',
-        type: doc.type || 'md', importedAt: now(), vectorized: 'pending',
+        type: doc.type || 'md', kind: doc.kind === 'image' ? 'image' : 'file',
+        importedAt: now(), vectorized: 'pending',
         chunks: doc.chunks || [{ idx: 1, text: '（导入文档内容，将自动分块）' }]
       }
       this.knowledgeDocs.unshift(d)
@@ -274,7 +279,7 @@ export const useReportStore = defineStore('report', {
     },
 
     /* —— 生成报告（静态：进度模拟 + 按批次确定性组织 + 描述段变体） —— */
-    async generateReport({ systemId, runId, title, templateId, materials, sysName } = {}) {
+    async generateReport({ systemId, runId, title, templateId, materials, sysName, generatorName } = {}) {
       if (this.generating) return null
       const run = this.runs.find((r) => r.id === runId)
       if (!run) return null
@@ -290,6 +295,8 @@ export const useReportStore = defineStore('report', {
         systemId: systemId ?? run.systemId,
         runId: run.id,
         runName: run.name,
+        taskCreator: run.taskCreator || '—',
+        generatorName: generatorName || '—',
         templateId: templateId || null,
         materials: (materials || []).map((m) => ({ ...m })),
         createdAt: now(),
@@ -318,9 +325,21 @@ export const useReportStore = defineStore('report', {
       if (this.currentReportId === id) this.currentReportId = null
     },
 
-    reportMarkdown(report) {
+    reportMarkdown(report, options = {}) {
       if (!report) return ''
-      return `# ${report.title}\n\n` + report.sections.map((s) => `## ${s.title}\n\n${s.content}\n`).join('\n')
+      const { includeTitle = true, includeMeta = true } = options
+      const parts = []
+      if (includeTitle) parts.push(`# ${report.title}`)
+      if (includeMeta) {
+        parts.push([
+          `- 测试任务创建者：${report.taskCreator || '—'}`,
+          `- 报告生成者：${report.generatorName || '—'}`,
+          `- 执行批次：${report.runName || '—'}`,
+          `- 生成时间：${report.createdAt || '—'}`
+        ].join('\n'))
+      }
+      parts.push(report.sections.map((s) => `## ${s.title}\n\n${s.content}\n`).join('\n'))
+      return `${parts.join('\n\n')}\n`
     }
   }
 })

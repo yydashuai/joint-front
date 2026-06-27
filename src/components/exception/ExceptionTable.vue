@@ -13,9 +13,6 @@
       <el-select v-model="local.state" placeholder="状态" clearable>
         <el-option v-for="state in EXC_STATES" :key="state.value" :label="state.label" :value="state.value" />
       </el-select>
-      <el-select v-model="local.source" placeholder="来源" clearable>
-        <el-option v-for="source in EXC_SOURCES" :key="source.value" :label="source.label" :value="source.value" />
-      </el-select>
       <el-select v-model="local.tag" placeholder="标签" clearable filterable>
         <el-option v-for="tag in tagOptions" :key="tag" :label="tag" :value="tag" />
       </el-select>
@@ -24,9 +21,7 @@
 
     <div class="batch-row">
       <span class="muted">已选 {{ selected.length }} 条</span>
-      <el-button size="small" :disabled="!selected.length" @click="batchState('处理中')">开始处理</el-button>
-      <el-button size="small" type="success" plain :disabled="!selected.length" @click="batchState('已处理')">标记已处理</el-button>
-      <el-button size="small" type="info" plain :disabled="!selected.length" @click="batchState('已忽略')">批量忽略</el-button>
+      <el-button size="small" type="success" plain :disabled="!selected.length" @click="markSelectedProcessed">标记已处理</el-button>
       <el-button size="small" :icon="Download" @click="exportCsv">导出 CSV</el-button>
     </div>
 
@@ -43,11 +38,11 @@
           empty-text="暂无异常"
           class="ledger-table"
           @selection-change="onSelectionChange"
+          @sort-change="onSortChange"
           @row-click="$emit('view', $event)"
         >
           <el-table-column type="selection" width="42" />
-          <el-table-column label="时间" prop="capturedTime" width="170" />
-          <el-table-column label="系统 / 模块" min-width="190">
+          <el-table-column label="系统 / 模块" prop="systemModule" sortable="custom" min-width="190">
             <template #default="{ row }">
               <div class="stack">
                 <strong>{{ systemName(row.systemId) }}</strong>
@@ -55,24 +50,27 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="接口" prop="iface" min-width="130" />
-          <el-table-column label="类型" min-width="128">
+          <el-table-column label="接口" prop="iface" sortable="custom" min-width="130" />
+          <el-table-column label="类型" prop="type" sortable="custom" min-width="128">
             <template #default="{ row }"><el-tag effect="plain">{{ row.type }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="级别" width="80" align="center">
+          <el-table-column label="级别" prop="level" sortable="custom" width="80" align="center">
             <template #default="{ row }"><el-tag :type="levelMeta(row.level).tag" effect="dark" size="small">{{ row.level }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="来源" width="100" align="center">
-            <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
-          </el-table-column>
-          <el-table-column label="状态" width="104" align="center">
+          <el-table-column label="状态" prop="state" sortable="custom" width="104" align="center">
             <template #default="{ row }"><el-tag :type="stateMeta(row.state).tag" size="small">{{ row.state }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="标签" min-width="160">
+          <el-table-column label="标签" prop="tags" sortable="custom" min-width="160">
             <template #default="{ row }">
               <span class="tag-text" :title="tagText(row.tags)">{{ tagText(row.tags) }}</span>
             </template>
           </el-table-column>
+          <el-table-column label="备注" prop="remark" sortable="custom" min-width="220">
+            <template #default="{ row }">
+              <RemarkCell v-model="row.remark" @click.stop />
+            </template>
+          </el-table-column>
+          <el-table-column label="时间" prop="capturedTime" sortable="custom" width="170" />
           <el-table-column label="操作" width="82" fixed="right" align="center">
             <template #default="{ row }">
               <el-button link type="primary" @click.stop="$emit('view', row)">详情</el-button>
@@ -88,7 +86,8 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download, Search } from '@element-plus/icons-vue'
-import { EXC_SOURCES, EXC_STATES, useExceptionStore } from '@/stores/exception'
+import { EXC_LEVELS, EXC_SOURCES, EXC_STATES, useExceptionStore } from '@/stores/exception'
+import RemarkCell from '@/components/RemarkCell.vue'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
 
@@ -103,7 +102,8 @@ const systemStore = useSystemStore()
 const connStore = useConnectionStore()
 const selected = ref([])
 const groupBy = ref('none')
-const local = reactive({ keyword: '', type: '', level: '', state: '', source: '', tag: '' })
+const sortState = ref({ prop: '', order: null })
+const local = reactive({ keyword: '', type: '', level: '', state: '', tag: '' })
 const groupOptions = [
   { label: '不分组', value: 'none' },
   { label: '按类型', value: 'type' },
@@ -123,9 +123,38 @@ const sourceLabel = (source) => EXC_SOURCES.find((item) => item.value === source
 const systemName = (id) => systemStore.systems.find((item) => item.id === id)?.name || '未归属系统'
 const moduleName = (id) => connStore.nodes.find((item) => item.id === id)?.name || '未归属模块'
 const tagText = (tags = []) => tags.length ? tags.join(', ') : '未打标签'
+const levelRank = (level) => {
+  const index = EXC_LEVELS.findIndex((item) => item.value === level)
+  return index === -1 ? EXC_LEVELS.length : index
+}
+const stateRank = (state) => {
+  const index = EXC_STATES.findIndex((item) => item.value === state)
+  return index === -1 ? EXC_STATES.length : index
+}
+const sortValue = (row, prop) => {
+  if (prop === 'systemModule') return `${systemName(row.systemId)} ${moduleName(row.moduleId)}`
+  if (prop === 'level') return levelRank(row.level)
+  if (prop === 'source') return sourceLabel(row.source)
+  if (prop === 'state') return stateRank(row.state)
+  if (prop === 'tags') return tagText(row.tags)
+  if (prop === 'remark') return row.remark || row.detail?.ruleMessage || ''
+  if (prop === 'capturedTime') return new Date(String(row.capturedTime || '').replace(/\//g, '-')).getTime() || 0
+  return row[prop] ?? ''
+}
+const compareRows = (a, b, prop, order) => {
+  const left = sortValue(a, prop)
+  const right = sortValue(b, prop)
+  const result = typeof left === 'number' && typeof right === 'number'
+    ? left - right
+    : String(left).localeCompare(String(right), 'zh-CN', { numeric: true })
+  return order === 'descending' ? -result : result
+}
 
 const sortedRows = computed(() => [...props.rows].sort((a, b) => {
-  const pendingRank = (item) => item.state === '待处理' ? 0 : (item.state === '处理中' ? 1 : 2)
+  if (sortState.value.prop && sortState.value.order) {
+    return compareRows(a, b, sortState.value.prop, sortState.value.order)
+  }
+  const pendingRank = (item) => item.state === '待处理' ? 0 : 1
   const rank = pendingRank(a) - pendingRank(b)
   if (rank) return rank
   return String(b.capturedTime || '').localeCompare(String(a.capturedTime || ''))
@@ -159,10 +188,17 @@ const groupLabel = (key) => {
 const onSelectionChange = (items) => {
   selected.value = items
 }
-const batchState = (state) => {
-  const ids = [...new Set(selected.value.map((item) => item.id))]
-  store.batchUpdate(ids, { state }, '批量处置')
-  ElMessage.success(`已更新 ${selected.value.length} 条异常`)
+const onSortChange = ({ prop, order }) => {
+  sortState.value = { prop: prop || '', order }
+}
+const markSelectedProcessed = () => {
+  const rows = selected.value.filter((item) => item?.id && item.state !== '已处理')
+  const ids = [...new Set(rows.map((item) => item.id))]
+  rows.forEach((item) => {
+    item.state = '已处理'
+  })
+  store.batchUpdate(ids, { state: '已处理' }, '批量标记已处理')
+  ElMessage.success(`已标记 ${ids.length} 条异常为已处理`)
   selected.value = []
 }
 const exportCsv = () => {
@@ -193,7 +229,7 @@ const exportCsv = () => {
 .exception-table { display: flex; flex-direction: column; gap: 12px; }
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) repeat(5, minmax(110px, 128px)) 260px;
+  grid-template-columns: minmax(180px, 1fr) repeat(4, minmax(110px, 128px)) 260px;
   gap: 8px;
   align-items: center;
 }
@@ -207,7 +243,7 @@ const exportCsv = () => {
   overflow-y: hidden;
 }
 .ledger-table {
-  min-width: 1180px;
+  min-width: 1400px;
 }
 .group-title {
   display: flex;

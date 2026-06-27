@@ -4,11 +4,7 @@
     <div class="login-brand">
       <div class="login-brand__content">
         <div class="login-brand__icon">
-          <svg viewBox="0 0 64 64" width="56" height="56" fill="none">
-            <rect width="64" height="64" rx="14" fill="rgba(255,255,255,0.15)" />
-            <path d="M20 32h24M32 20v24" stroke="#fff" stroke-width="3" stroke-linecap="round" />
-            <circle cx="32" cy="32" r="18" stroke="rgba(255,255,255,0.4)" stroke-width="2" fill="none" />
-          </svg>
+          <img src="/favicon.svg" alt="便携式智能联试工具" />
         </div>
         <h1 class="login-brand__title">便携式智能联试工具</h1>
         <p class="login-brand__desc">
@@ -148,7 +144,13 @@ const handleLogin = async () => {
 .login-brand {
   width: 46%;
   flex-shrink: 0;
-  background: linear-gradient(135deg, #2f6feb 0%, #1a4fc4 60%, #153da0 100%);
+  background:
+    radial-gradient(circle at 24% 28%, rgba(47, 111, 235, 0.32), transparent 30%),
+    radial-gradient(circle at 80% 50%, rgba(84, 132, 226, 0.2), transparent 34%),
+    linear-gradient(rgba(218, 232, 252, 0.075) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(218, 232, 252, 0.075) 1px, transparent 1px),
+    linear-gradient(135deg, #1f2933 0%, #1a345f 48%, #153da0 100%);
+  background-size: auto, auto, 42px 42px, 42px 42px, auto;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -157,26 +159,29 @@ const handleLogin = async () => {
   overflow: hidden;
   padding: 48px;
 
-  /* 装饰性几何背景 */
+  /* 军事态势屏背景：雷达环 + 坐标扫描线 */
   &::before {
     content: '';
     position: absolute;
-    width: 500px;
-    height: 500px;
+    width: 520px;
+    height: 520px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.04);
-    top: -120px;
-    right: -100px;
+    background:
+      conic-gradient(from 230deg, rgba(47, 111, 235, 0), rgba(47, 111, 235, 0.26), rgba(47, 111, 235, 0) 28%),
+      radial-gradient(circle, transparent 0 20%, rgba(218, 232, 252, 0.18) 20.2% 20.6%, transparent 21% 39%, rgba(218, 232, 252, 0.14) 39.2% 39.6%, transparent 40% 58%, rgba(218, 232, 252, 0.12) 58.2% 58.6%, transparent 59%);
+    top: -110px;
+    right: -130px;
+    opacity: 0.95;
   }
   &::after {
     content: '';
     position: absolute;
-    width: 300px;
-    height: 300px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.03);
-    bottom: -60px;
-    left: -40px;
+    inset: 0;
+    background:
+      linear-gradient(140deg, transparent 0 18%, rgba(218, 232, 252, 0.12) 18.2% 18.6%, transparent 18.8% 34%, rgba(218, 232, 252, 0.08) 34.2% 34.6%, transparent 34.8%),
+      linear-gradient(28deg, transparent 0 52%, rgba(47, 111, 235, 0.18) 52.2% 52.6%, transparent 52.8%),
+      linear-gradient(180deg, rgba(31, 41, 51, 0) 0%, rgba(31, 41, 51, 0.42) 100%);
+    opacity: 0.9;
   }
 
   &__content {
@@ -187,6 +192,15 @@ const handleLogin = async () => {
 
   &__icon {
     margin-bottom: 24px;
+
+    img {
+      display: block;
+      width: 56px;
+      height: 56px;
+      margin: 0 auto;
+      border-radius: 14px;
+      box-shadow: 0 12px 32px rgba(10, 26, 62, 0.32);
+    }
   }
 
   &__title {
@@ -235,7 +249,8 @@ const handleLogin = async () => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(218, 232, 252, 0.78);
+  box-shadow: 0 0 10px rgba(47, 111, 235, 0.8);
   flex-shrink: 0;
 }
 

@@ -25,16 +25,14 @@
 
       <template v-if="form.type === 'type'">
         <el-form-item label="数据类型">
-          <el-select v-model="form.params.dataType" filterable style="width: 100%;">
-            <el-option-group v-for="group in ['字节数据类型', '接口参数类型']" :key="group" :label="group">
-              <el-option
-                v-for="opt in dataTypeOptions.filter((o) => o.group === group)"
-                :key="opt.value"
-                :label="opt.label"
-                :value="opt.value"
-              />
-            </el-option-group>
-          </el-select>
+          <el-cascader
+            v-model="form.params.dataType"
+            :options="dataTypeOptions"
+            :props="dataTypeCascaderProps"
+            :show-all-levels="false"
+            filterable
+            style="width: 100%;"
+          />
         </el-form-item>
       </template>
       <template v-if="form.type === 'range' || form.type === 'boundary'">
@@ -116,11 +114,13 @@ const protoRange = computed(() => {
   return { min: constraint.min, max: constraint.max }
 })
 
-const dataTypeOptions = computed(() => {
-  const byteTypes = BYTE_DATA_TYPES.map((t) => ({ value: t.value, label: t.label, group: '字节数据类型' }))
-  const fieldTypes = FIELD_TYPES.map((t) => ({ value: t, label: t, group: '接口参数类型' }))
-  return [...byteTypes, ...fieldTypes]
-})
+// 数据类型二级菜单：顶层为接口参数类型，「常量」展开为全部字节数据类型
+const dataTypeCascaderProps = { emitPath: false, expandTrigger: 'hover' }
+const dataTypeOptions = computed(() => FIELD_TYPES.map((t) => (
+  t === '常量'
+    ? { value: '常量', label: '常量', children: BYTE_DATA_TYPES.map((b) => ({ value: b.value, label: b.label })) }
+    : { value: t, label: t }
+)))
 
 watch(() => props.modelValue, (open) => {
   if (!open) return

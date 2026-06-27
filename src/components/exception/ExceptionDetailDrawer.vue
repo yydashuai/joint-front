@@ -4,14 +4,15 @@
       <div class="drawer-body">
         <section class="panel">
           <div class="panel-title">处置</div>
+          <el-segmented
+            v-model="currentState"
+            :options="stateOptions"
+            class="state-switch"
+            @update:model-value="setState"
+          />
           <el-input v-model="note" type="textarea" :rows="3" placeholder="填写处置说明或复核结论" />
           <div class="actions">
-            <el-button @click="setState('处理中')">开始处理</el-button>
-            <el-button type="success" plain @click="setState('已修复')">已修复</el-button>
-            <el-button type="success" @click="setState('已处理')">已处理</el-button>
-            <el-button type="warning" plain @click="setState('已转派')">转派</el-button>
-            <el-button type="info" plain @click="setState('已忽略')">忽略</el-button>
-            <el-button :disabled="!note.trim()" @click="addTrace">添加处理记录</el-button>
+            <el-button type="primary" :disabled="!note.trim()" @click="addTrace">保存处置记录</el-button>
           </div>
         </section>
 
@@ -156,7 +157,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close, Plus, Search } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
-import { EXC_SOURCES, useExceptionStore } from '@/stores/exception'
+import { EXC_SOURCES, EXC_STATES, useExceptionStore } from '@/stores/exception'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -167,6 +168,7 @@ const emit = defineEmits(['update:modelValue'])
 const router = useRouter()
 const store = useExceptionStore()
 const note = ref('')
+const currentState = ref('待处理')
 const tagDraft = ref([])
 const tagPickerVisible = ref(false)
 const tagSearch = ref('')
@@ -181,15 +183,25 @@ const visible = computed({
 })
 
 watch(() => props.exception?.id, () => {
-  note.value = ''
+  note.value = props.exception?.remark || ''
+  currentState.value = props.exception?.state || '待处理'
   tagDraft.value = [...(props.exception?.tags || [])]
 }, { immediate: true })
+
+watch(() => props.exception?.state, (state) => {
+  currentState.value = state || '待处理'
+})
+
+watch(() => props.exception?.remark, (remark) => {
+  note.value = remark || ''
+})
 
 watch(() => props.exception?.tags, (tags) => {
   tagDraft.value = [...(tags || [])]
 }, { deep: true })
 
 const sourceLabel = (source) => EXC_SOURCES.find((item) => item.value === source)?.label || source
+const stateOptions = EXC_STATES.map((item) => ({ label: item.label, value: item.value }))
 const tagSummary = computed(() => props.exception?.tags?.length ? props.exception.tags.join(', ') : '未设置标签')
 const filteredTagOptions = computed(() => {
   const keyword = tagSearch.value.trim().toLowerCase()
@@ -201,15 +213,14 @@ const suggestedTags = computed(() => {
 })
 const setState = (state) => {
   if (!props.exception) return
-  store.updateState(props.exception.id, state, note.value || '状态快速流转')
+  props.exception.state = state
+  store.updateState(props.exception.id, state, note.value || '更新处置状态')
   ElMessage.success(`已更新为${state}`)
-  note.value = ''
 }
 const addTrace = () => {
   if (!props.exception || !note.value.trim()) return
   store.addTrace(props.exception.id, note.value.trim())
   ElMessage.success('处理记录已添加')
-  note.value = ''
 }
 const saveTags = () => {
   if (!props.exception) return

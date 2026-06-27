@@ -12,20 +12,13 @@ export const EXC_LEVELS = [
 
 export const EXC_STATES = [
   { value: '待处理', label: '待处理', tag: 'danger' },
-  { value: '处理中', label: '处理中', tag: 'warning' },
   { value: '已处理', label: '已处理', tag: 'success' },
-  { value: '已修复', label: '已修复', tag: 'success' },
-  { value: '已忽略', label: '已忽略', tag: 'info' },
-  { value: '已转派', label: '已转派', tag: 'warning' },
-  { value: '自动恢复', label: '自动恢复', tag: 'primary' },
-  { value: '已记录', label: '已记录', tag: 'info' },
 ]
 
 export const EXC_SOURCES = [
   { value: 'execution', label: '执行编排' },
   { value: 'rule', label: '规则判定' },
   { value: 'link', label: '链路连接' },
-  { value: 'manual', label: '手动录入' },
   { value: 'system', label: '系统事件' },
 ]
 
@@ -36,11 +29,6 @@ const defaultTypes = [
   { id: 'overflow', name: '字段越界', source: 'rule', defaultLevel: '高', suggestion: '确认报文字段长度、字节偏移与端序定义。' },
   { id: 'timeout', name: '响应超时', source: 'rule', defaultLevel: '中', suggestion: '排查链路时延、任务负载与被测模块响应能力。' },
   { id: 'format', name: '格式错误', source: 'rule', defaultLevel: '高', suggestion: '检查帧头、校验码、JSON/结构体格式与协议版本。' },
-  { id: 'frame-head', name: '帧头校验失败', source: 'system', defaultLevel: '高', suggestion: '检查帧同步头、CRC 与传输过程中的错位。' },
-  { id: 'heartbeat-lost', name: '心跳丢失', source: 'link', defaultLevel: '中', suggestion: '先复测链路连通性，再确认模块进程与网络配置。' },
-  { id: 'frame-lost', name: '数据帧丢失', source: 'system', defaultLevel: '中', suggestion: '检查重传机制、缓存队列和收发节拍。' },
-  { id: 'link-down', name: '链路中断', source: 'link', defaultLevel: '高', suggestion: '确认网口、IP/端口、防火墙和被测模块在线状态。' },
-  { id: 'manual', name: '人工登记', source: 'manual', defaultLevel: '中', suggestion: '补充现场现象、复现步骤与处置结论。' },
 ].map((item) => ({ ...item, captureEnabled: true, desc: item.suggestion }))
 
 const typeIdOf = (typeName) => {
@@ -48,18 +36,18 @@ const typeIdOf = (typeName) => {
   return hit?.id || `custom-${typeName}`
 }
 
-const sourceOf = (typeName) => {
-  if (['心跳丢失', '链路中断'].includes(typeName)) return 'link'
-  if (typeName === '人工登记') return 'manual'
-  return 'execution'
-}
+const sourceOf = (typeName) => defaultTypes.find((item) => item.name === typeName)?.source || 'execution'
 
+const activeStateOf = (state) => {
+  if (['已处理', '已修复', '已忽略', '已转派', '自动恢复', '已记录'].includes(state)) return '已处理'
+  return '待处理'
+}
 const seedTagsOf = (alert) => {
   const tags = []
-  if (['响应超时', '心跳丢失', '链路中断', '数据帧丢失'].includes(alert.type)) tags.push('链路问题')
-  if (['类型校验', '取值范围', '边界值检测', '字段越界', '格式错误', '帧头校验失败'].includes(alert.type)) tags.push('协议字段')
+  if (['响应超时'].includes(alert.type)) tags.push('链路问题')
+  if (['类型校验', '取值范围', '边界值检测', '字段越界', '格式错误'].includes(alert.type)) tags.push('协议字段')
   if (alert.level === '高') tags.push('高优先级')
-  if (alert.state === '待处理' || alert.state === '处理中') tags.push('需跟进')
+  if (activeStateOf(alert.state) === '待处理') tags.push('需跟进')
   return [...new Set(tags)]
 }
 
@@ -70,7 +58,7 @@ const normalizeSeed = (alert, index) => ({
   type: alert.type,
   typeId: typeIdOf(alert.type),
   level: alert.level || '中',
-  state: alert.state || '待处理',
+  state: activeStateOf(alert.state),
   systemId: alert.systemId,
   moduleId: alert.moduleId,
   interfaceId: '',
@@ -100,9 +88,15 @@ const normalizeSeed = (alert, index) => ({
   tags: seedTagsOf(alert),
 })
 
-const resolvedStates = ['已处理', '已修复', '已忽略', '自动恢复', '已记录']
 const stateMeta = (state) => EXC_STATES.find((item) => item.value === state) || { value: state, label: state, tag: 'info' }
 const levelMeta = (level) => EXC_LEVELS.find((item) => item.value === level) || { value: level, label: level, tag: 'info' }
+const defaultExceptionSettings = {
+  targetSlaRate: 95,
+  highSlaHours: 4,
+  mediumSlaHours: 8,
+  lowSlaHours: 24,
+  warningLeadHours: 1,
+}
 
 export const useExceptionStore = defineStore('exception', {
   state: () => {
@@ -112,6 +106,7 @@ export const useExceptionStore = defineStore('exception', {
       types: defaultTypes,
       selectedId: null,
       tagHistory: cleanTags(exceptions.flatMap((item) => item.tags || [])),
+      settings: { ...defaultExceptionSettings },
     }
   },
 
@@ -119,7 +114,7 @@ export const useExceptionStore = defineStore('exception', {
     selected(state) {
       return state.exceptions.find((item) => item.id === state.selectedId) || state.exceptions[0] || null
     },
-    pendingCount: (state) => state.exceptions.filter((item) => item.state === '待处理' || item.state === '处理中').length,
+    pendingCount: (state) => state.exceptions.filter((item) => item.state === '待处理').length,
     exceptionsOfModule: (state) => (moduleId) => state.exceptions.filter((item) => item.moduleId === moduleId),
     exceptionsOfSystem: (state) => (systemId) => state.exceptions.filter((item) => !systemId || item.systemId === systemId),
     typeByName: (state) => (name) => state.types.find((item) => item.name === name),
@@ -127,35 +122,41 @@ export const useExceptionStore = defineStore('exception', {
     tagOptions: (state) => cleanTags([...state.tagHistory, ...state.exceptions.flatMap((item) => item.tags || [])]).sort((a, b) => a.localeCompare(b, 'zh-CN')),
     stateMeta: () => stateMeta,
     levelMeta: () => levelMeta,
+    slaHours: (state) => (level) => {
+      if (level === '高') return state.settings.highSlaHours
+      if (level === '低') return state.settings.lowSlaHours
+      return state.settings.mediumSlaHours
+    },
     overdueItems: (state) => {
-      const slaHours = { '高': 4, '中': 8, '低': 24 }
       const now = Date.now()
       return state.exceptions
-        .filter((item) => item.state === '待处理' || item.state === '处理中')
+        .filter((item) => item.state === '待处理')
         .map((item) => {
           const captured = new Date(item.capturedTime.replace(/\//g, '-')).getTime()
           const elapsed = now - captured
-          const slaMs = (slaHours[item.level] || 8) * 3600000
-          return { ...item, elapsedHours: Math.round(elapsed / 3600000), slaHours: slaHours[item.level] || 8, overdue: elapsed > slaMs }
+          const slaHours = levelMeta(item.level).value === '高'
+            ? state.settings.highSlaHours
+            : (levelMeta(item.level).value === '低' ? state.settings.lowSlaHours : state.settings.mediumSlaHours)
+          const slaMs = slaHours * 3600000
+          return { ...item, elapsedHours: Math.round(elapsed / 3600000), slaHours, overdue: elapsed > slaMs }
         })
         .filter((item) => item.overdue)
         .sort((a, b) => b.elapsedHours - a.elapsedHours)
     },
     stats: () => (items = []) => {
       const total = items.length
-      const pending = items.filter((item) => item.state === '待处理' || item.state === '处理中').length
+      const pending = items.filter((item) => item.state === '待处理').length
+      const processed = total - pending
       const high = items.filter((item) => item.level === '高').length
       const middle = items.filter((item) => item.level === '中').length
       const low = items.filter((item) => item.level === '低').length
-      const resolved = total - pending
       return {
         total,
         pending,
+        processed,
         high,
         middle,
         low,
-        resolved,
-        resolvedRate: total ? Math.round((resolved / total) * 100) : 0,
       }
     },
     filtered: (state) => (filters = {}) => state.exceptions.filter((item) => {
@@ -180,7 +181,7 @@ export const useExceptionStore = defineStore('exception', {
       this.selectedId = id
     },
     capture(payload = {}) {
-      const typeName = payload.type || payload.ruleLabel || '人工登记'
+      const typeName = payload.type || payload.ruleLabel || '系统事件'
       const typeDef = this.types.find((item) => item.name === typeName || item.id === payload.typeId) || {
         id: typeIdOf(typeName),
         name: typeName,
@@ -194,7 +195,7 @@ export const useExceptionStore = defineStore('exception', {
         type: typeDef.name,
         typeId: typeDef.id,
         level: payload.level || typeDef.defaultLevel || '中',
-        state: payload.state || '待处理',
+        state: activeStateOf(payload.state),
         systemId: payload.systemId || '',
         moduleId: payload.moduleId || '',
         interfaceId: payload.interfaceId || '',
@@ -228,32 +229,32 @@ export const useExceptionStore = defineStore('exception', {
       this.selectedId = item.id
       return item
     },
-    addManual(payload) {
-      return this.capture({ ...payload, type: payload.type || '人工登记', source: 'manual', state: '待处理' })
-    },
     updateState(id, state, note = '', handler = '测试员') {
-      const item = this.exceptions.find((ex) => ex.id === id)
+      const item = this.exceptions.find((ex) => String(ex.id) === String(id))
       if (!item) return false
-      item.state = state
+      item.state = activeStateOf(state)
       item.handler = handler
-      if (resolvedStates.includes(state)) item.resolvedTime = nowText()
+      if (item.state === '已处理') item.resolvedTime = nowText()
       item.trace.unshift({
         time: nowText(),
         user: handler,
-        action: `状态变更为${state}`,
+        action: `状态变更为${item.state}`,
         note,
       })
       return true
     },
     addTrace(id, note, handler = '测试员') {
-      const item = this.exceptions.find((ex) => ex.id === id)
+      const item = this.exceptions.find((ex) => String(ex.id) === String(id))
       if (!item || !note) return false
       item.trace.unshift({ time: nowText(), user: handler, action: '添加处理记录', note })
       item.remark = note
       return true
     },
+    updateExceptionSettings(patch) {
+      Object.assign(this.settings, patch)
+    },
     setTags(id, tags = []) {
-      const item = this.exceptions.find((ex) => ex.id === id)
+      const item = this.exceptions.find((ex) => String(ex.id) === String(id))
       if (!item) return false
       item.tags = cleanTags(tags)
       this.tagHistory = cleanTags([...this.tagHistory, ...item.tags])
@@ -272,7 +273,7 @@ export const useExceptionStore = defineStore('exception', {
       ids.forEach((id) => {
         if (patch.state) this.updateState(id, patch.state, note)
         else {
-          const item = this.exceptions.find((ex) => ex.id === id)
+          const item = this.exceptions.find((ex) => String(ex.id) === String(id))
           if (item) Object.assign(item, patch)
         }
       })
@@ -291,7 +292,7 @@ export const useExceptionStore = defineStore('exception', {
       const item = {
         id: payload.id || uid('etype'),
         name,
-        source: payload.source || 'manual',
+        source: payload.source || 'execution',
         defaultLevel: payload.defaultLevel || '中',
         captureEnabled: payload.captureEnabled ?? true,
         suggestion: payload.suggestion || '按现场处置经验补充建议。',

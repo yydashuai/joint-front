@@ -67,7 +67,7 @@ import { EXC_SOURCES, useExceptionStore } from '@/stores/exception'
 
 const store = useExceptionStore()
 const adding = ref(false)
-const form = reactive({ name: '', source: 'manual', defaultLevel: '中', suggestion: '' })
+const form = reactive({ name: '', source: 'execution', defaultLevel: '中', suggestion: '' })
 
 const sourceLabel = (source) => EXC_SOURCES.find((item) => item.value === source)?.label || source
 const confirm = () => {
@@ -76,7 +76,7 @@ const confirm = () => {
     ElMessage.warning('请填写类型名称')
     return
   }
-  Object.assign(form, { name: '', source: 'manual', defaultLevel: '中', suggestion: '' })
+  Object.assign(form, { name: '', source: 'execution', defaultLevel: '中', suggestion: '' })
   adding.value = false
   ElMessage.success('异常类型已新增')
 }

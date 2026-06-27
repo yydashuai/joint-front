@@ -121,103 +121,142 @@
       </el-table>
     </el-card>
 
-    <!-- ======== 异常告警（树形表格） ======== -->
-    <el-card shadow="never" class="tree-card">
-      <template #header>
-        <div class="panel-head">
-          <span class="panel-title">异常告警</span>
-          <el-button size="small" text type="primary" @click="$router.push('/exception')">全部异常 →</el-button>
-        </div>
-      </template>
-      <div class="col-header">
-        <span class="col-header__name">名称</span>
-        <span class="col-header__c1">级别</span>
-        <span class="col-header__c2">处理状态</span>
-        <span class="col-header__remark">备注</span>
-      </div>
-      <el-scrollbar class="tree-scroll">
-        <el-tree
-          :data="alertTree"
-          node-key="key"
-          default-expand-all
-          :expand-on-click-node="false"
-          @node-click="(d) => onLeafClick(d, '/exception')"
-        >
-          <template #default="{ data }">
-            <div class="trow">
-              <div class="trow__name">
-                <el-icon class="trow__icon" :class="`ticon--${data.kind}`"><component :is="data.icon" /></el-icon>
-                <span class="trow__label">{{ data.label }}</span>
+    <!-- ======== 联试任务 / 异常告警联动区 ======== -->
+    <div class="dashboard-workspace">
+      <el-card shadow="never" class="scope-tree-card" :body-style="{ padding: '0' }">
+        <template #header>
+          <div class="panel-head">
+            <span class="panel-title">任务 / 异常导航</span>
+            <el-button size="small" text type="primary" @click="clearScope">全部</el-button>
+          </div>
+        </template>
+        <el-scrollbar class="scope-tree-scroll">
+          <el-tree
+            :data="scopeTree"
+            node-key="key"
+            default-expand-all
+            highlight-current
+            :current-node-key="selectedScopeKey"
+            :expand-on-click-node="true"
+            @node-click="onScopeSelect"
+          >
+            <template #default="{ data }">
+              <div class="scope-node" :class="`scope-node--${data.kind}`">
+                <el-icon class="scope-node__icon"><component :is="data.icon" /></el-icon>
+                <span class="scope-node__label">{{ data.label }}</span>
+                <span v-if="data.count !== undefined" class="scope-node__count">{{ data.count }}</span>
               </div>
-              <div class="trow__c1">
-                <el-tag v-if="data.level" :type="data.level === '高' ? 'danger' : 'warning'" size="small" effect="dark">{{ data.level }}</el-tag>
-              </div>
-              <div class="trow__c2">
-                <template v-if="data.kind === 'item'">
-                  <el-tag :type="stateTag(data.ref.state)" size="small">{{ data.ref.state }}</el-tag>
-                  <span class="trow__sub-time">{{ data.ref.resolvedTime || '' }}</span>
-                </template>
-              </div>
-              <div class="trow__remark">
-                <RemarkCell v-if="data.kind === 'item'" v-model="data.ref.remark" />
-              </div>
-            </div>
-          </template>
-        </el-tree>
-        <el-empty v-if="!alertTree.length" description="暂无异常告警" :image-size="60" />
-      </el-scrollbar>
-    </el-card>
+            </template>
+          </el-tree>
+          <el-empty v-if="!scopeTree.length" description="暂无系统/模块数据" :image-size="70" />
+        </el-scrollbar>
+      </el-card>
 
-    <!-- ======== 最近联试任务（树形表格） ======== -->
-    <el-card shadow="never" class="tree-card">
-      <template #header>
-        <div class="panel-head">
-          <span class="panel-title">最近联试任务</span>
-          <el-button size="small" text type="primary" @click="$router.push('/task')">全部任务 →</el-button>
-        </div>
-      </template>
-      <div class="col-header">
-        <span class="col-header__name">名称</span>
-        <span class="col-header__c1">状态</span>
-        <span class="col-header__c2">更新时间</span>
-        <span class="col-header__remark">备注</span>
-      </div>
-      <el-scrollbar class="tree-scroll">
-        <el-tree
-          :data="taskTree"
-          node-key="key"
-          default-expand-all
-          :expand-on-click-node="false"
-          @node-click="(d) => onLeafClick(d, '/task')"
+      <div class="linked-lists">
+        <el-card
+          shadow="never"
+          class="list-card"
+          :class="{ 'list-card--muted': activeDomain === 'task' }"
+          :body-style="{ padding: '0' }"
         >
-          <template #default="{ data }">
-            <div class="trow">
-              <div class="trow__name">
-                <el-icon class="trow__icon" :class="`ticon--${data.kind}`"><component :is="data.icon" /></el-icon>
-                <span class="trow__label">{{ data.label }}</span>
+          <template #header>
+            <div class="panel-head">
+              <div>
+                <span class="panel-title">异常告警</span>
+                <span class="panel-subtitle">{{ scopeTitle }}</span>
               </div>
-              <div class="trow__c1">
-                <el-tag v-if="data.status" :type="taskTag(data.status)" size="small">{{ data.status }}</el-tag>
-              </div>
-              <div class="trow__c2">
-                <span v-if="data.time" class="trow__time">{{ data.time }}</span>
-              </div>
-              <div class="trow__remark">
-                <RemarkCell v-if="data.kind === 'item'" v-model="data.ref.remark" />
-              </div>
+              <el-button size="small" text type="primary" @click="$router.push('/exception')">全部异常 →</el-button>
             </div>
           </template>
-        </el-tree>
-        <el-empty v-if="!taskTree.length" description="暂无联试任务" :image-size="60" />
-      </el-scrollbar>
-    </el-card>
+          <el-table :data="scopedAlerts" size="small" height="100%" empty-text="当前范围暂无异常告警">
+            <el-table-column label="异常名称" min-width="180" show-overflow-tooltip>
+              <template #default="{ row }">
+                <div class="name-cell">
+                  <el-icon><Warning /></el-icon>
+                  <span>{{ row.type }} · {{ row.iface }}</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="模块" min-width="130" show-overflow-tooltip>
+              <template #default="{ row }">{{ moduleName(row.moduleId) }}</template>
+            </el-table-column>
+            <el-table-column label="级别" width="78" align="center">
+              <template #default="{ row }">
+                <el-tag :type="row.level === '高' ? 'danger' : row.level === '中' ? 'warning' : 'info'" size="small" effect="dark">{{ row.level }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="处理状态" width="106" align="center">
+              <template #default="{ row }">
+                <el-tag :type="stateTag(row.state)" size="small">{{ row.state }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="备注" min-width="220">
+              <template #default="{ row }">
+                <RemarkCell v-model="row.remark" />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="76" align="center" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openAlert(row)">查看</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+
+        <el-card
+          shadow="never"
+          class="list-card"
+          :class="{ 'list-card--muted': activeDomain === 'alert' }"
+          :body-style="{ padding: '0' }"
+        >
+          <template #header>
+            <div class="panel-head">
+              <div>
+                <span class="panel-title">最近联试任务</span>
+                <span class="panel-subtitle">{{ scopeTitle }}</span>
+              </div>
+              <el-button size="small" text type="primary" @click="$router.push('/task')">全部任务 →</el-button>
+            </div>
+          </template>
+          <el-table :data="scopedTasks" size="small" height="100%" empty-text="当前范围暂无联试任务">
+            <el-table-column label="任务名称" min-width="180" show-overflow-tooltip>
+              <template #default="{ row }">
+                <div class="name-cell">
+                  <el-icon><Document /></el-icon>
+                  <span>{{ row.name }}</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="模块" min-width="130" show-overflow-tooltip>
+              <template #default="{ row }">{{ moduleName(row.moduleId) }}</template>
+            </el-table-column>
+            <el-table-column label="状态" width="92" align="center">
+              <template #default="{ row }">
+                <el-tag :type="taskTag(row.status)" size="small">{{ row.status }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="更新时间" width="150" prop="time" />
+            <el-table-column label="备注" min-width="190">
+              <template #default="{ row }">
+                <RemarkCell v-model="row.remark" />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="76" align="center" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openTask(row)">查看</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, markRaw, ref } from 'vue'
+import { computed, markRaw, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Upload, WarningFilled, Tickets, Back, Cpu, Connection, Document, Warning } from '@element-plus/icons-vue'
+import { Plus, Upload, WarningFilled, Tickets, Back, Cpu, Connection, Document, Warning, FolderOpened } from '@element-plus/icons-vue'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
 import { useExceptionStore } from '@/stores/exception'
@@ -233,6 +272,7 @@ const treeIcons = {
   connection: markRaw(Connection),
   document: markRaw(Document),
   warning: markRaw(Warning),
+  folder: markRaw(FolderOpened),
 }
 
 /* ========== 核心状态 ========== */
@@ -261,8 +301,11 @@ const totalPending = computed(() => {
   return pool.filter(a => a.state === '待处理' || a.state === '处理中').length
 })
 
-/* ========== 树构建：系统 → 模块 → 条目（复用于任务 / 告警） ========== */
-const buildTree = (items, itemMapper) => {
+/* ========== 统一树：系统 → 模块 → 任务目录 / 异常目录 → 条目 ========== */
+const selectedScopeKey = ref('')
+const selectedScope = ref({ kind: 'all', label: '全部范围' })
+
+const scopeTree = computed(() => {
   const systems = isAll.value
     ? systemStore.visibleSystems
     : systemStore.systems.filter(s => s.id === currentId.value)
@@ -273,59 +316,112 @@ const buildTree = (items, itemMapper) => {
       kind: 'system',
       icon: treeIcons.cpu,
       label: sys.name,
+      systemId: sys.id,
+      count: modules.length,
       children: modules.map(mod => {
-        const leaves = items.filter(it => it.moduleId === mod.id).map(itemMapper)
-        if (!leaves.length) return null
+        const modTasks = visibleTasks.value.filter(t => t.moduleId === mod.id)
+        const modAlerts = visibleAlerts.value.filter(a => a.moduleId === mod.id)
         return {
           key: `m-${mod.id}`,
           kind: 'module',
           icon: treeIcons.connection,
           label: mod.name,
-          children: leaves
+          systemId: sys.id,
+          moduleId: mod.id,
+          count: modTasks.length + modAlerts.length,
+          children: [
+            {
+              key: `ag-${mod.id}`,
+              kind: 'alertGroup',
+              icon: treeIcons.folder,
+              label: '异常',
+              systemId: sys.id,
+              moduleId: mod.id,
+              domain: 'alert',
+              count: modAlerts.length,
+              children: modAlerts.map(a => ({
+                key: `a-${a.id}`,
+                kind: 'alert',
+                icon: treeIcons.warning,
+                label: `${a.type} · ${a.iface}`,
+                systemId: a.systemId,
+                moduleId: a.moduleId,
+                domain: 'alert',
+                itemId: a.id,
+                ref: a
+              }))
+            },
+            {
+              key: `tg-${mod.id}`,
+              kind: 'taskGroup',
+              icon: treeIcons.folder,
+              label: '任务',
+              systemId: sys.id,
+              moduleId: mod.id,
+              domain: 'task',
+              count: modTasks.length,
+              children: modTasks.map(t => ({
+                key: `t-${t.id}`,
+                kind: 'task',
+                icon: treeIcons.document,
+                label: t.name,
+                systemId: t.systemId,
+                moduleId: t.moduleId,
+                domain: 'task',
+                itemId: t.id,
+                ref: t
+              }))
+            }
+          ]
         }
-      }).filter(Boolean)
+      })
     }
-  }).filter(s => s.children.length)
+  })
+})
+
+const onScopeSelect = (data) => {
+  selectedScopeKey.value = data.key
+  selectedScope.value = data
 }
 
-const taskTree = computed(() =>
-  buildTree(visibleTasks.value, t => ({
-    key: `t-${t.id}`,
-    kind: 'item',
-    icon: treeIcons.document,
-    label: t.name,
-    status: t.status,
-    time: t.time,
-    ref: t
-  }))
-)
-
-const alertTree = computed(() =>
-  buildTree(visibleAlerts.value, a => ({
-    key: `a-${a.id}`,
-    kind: 'item',
-    icon: treeIcons.warning,
-    label: `${a.type} · ${a.iface}`,
-    level: a.level,
-    state: a.state,
-    ref: a
-  }))
-)
-
-/* ========== 叶子点击跳转 ========== */
-const onLeafClick = (data, route) => {
-  if (data.kind !== 'item') return
-  // 任务叶子：携带 id 跳转，TestTask 页面自动选中
-  if (route === '/task' && data.ref?.id) {
-    router.push({ path: '/task', query: { id: data.ref.id } })
-    return
-  }
-  if (route === '/exception' && data.ref?.id) {
-    router.push({ path: '/exception', query: { id: data.ref.id } })
-    return
-  }
-  router.push(route)
+const clearScope = () => {
+  selectedScopeKey.value = ''
+  selectedScope.value = { kind: 'all', label: '全部范围' }
 }
+
+watch(currentId, clearScope)
+
+const activeDomain = computed(() => selectedScope.value.domain || 'all')
+const scopeTitle = computed(() => {
+  const scope = selectedScope.value
+  if (!scope || scope.kind === 'all') return isAll.value ? '全部范围' : `系统：${current.value?.name || ''}`
+  if (scope.moduleId) return `模块：${moduleName(scope.moduleId)}`
+  if (scope.systemId) return `系统：${scope.label}`
+  return scope.label
+})
+
+const scopedTasks = computed(() => {
+  const scope = selectedScope.value
+  let list = visibleTasks.value
+  if (scope.systemId) list = list.filter(t => t.systemId === scope.systemId)
+  if (scope.moduleId) list = list.filter(t => t.moduleId === scope.moduleId)
+  if (scope.kind === 'task' && scope.itemId) list = list.filter(t => t.id === scope.itemId)
+  return [...list].sort((a, b) => String(b.time || '').localeCompare(String(a.time || ''), 'zh-CN')).slice(0, 20)
+})
+
+const scopedAlerts = computed(() => {
+  const scope = selectedScope.value
+  let list = visibleAlerts.value
+  if (scope.systemId) list = list.filter(a => a.systemId === scope.systemId)
+  if (scope.moduleId) list = list.filter(a => a.moduleId === scope.moduleId)
+  if (scope.kind === 'alert' && scope.itemId) list = list.filter(a => a.id === scope.itemId)
+  return [...list].sort((a, b) => {
+    const pa = a.state === '待处理' || a.state === '处理中' ? 1 : 0
+    const pb = b.state === '待处理' || b.state === '处理中' ? 1 : 0
+    if (pa !== pb) return pb - pa
+    return String(b.capturedTime || '').localeCompare(String(a.capturedTime || ''), 'zh-CN')
+  }).slice(0, 20)
+})
 
 /* ========== 系统健康卡片（全局视图） ========== */
 const systemCards = computed(() =>
@@ -353,6 +449,13 @@ const onModuleClick = (row) => {
   connStore.select(row.id)
   router.push('/connection')
 }
+
+const moduleName = (moduleId) => connStore.nodes.find(m => m.id === moduleId)?.name || '未归属模块'
+const openTask = (row) => router.push({ path: '/task', query: { id: row.id } })
+const openAlert = (row) => router.push({
+  path: '/exception',
+  query: { id: row.id, systemId: row.systemId, moduleId: row.moduleId }
+})
 
 /* ========== 状态映射 ========== */
 const modTag = s => ({ online: 'success', pinging: 'warning', offline: 'info' }[s] || 'info')
@@ -504,67 +607,67 @@ const stateTag = s => ({ '待处理': 'danger', '已处理': 'success', '已修�
   color: var(--el-color-success);
 }
 
-/* ============ 树形卡片（任务 + 告警共用） ============ */
-.tree-card {
-  height: 330px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-
-  :deep(.el-card__body) {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    padding: 0;
-    overflow: hidden;
-  }
-}
-
 .panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 .panel-title { font-weight: 600; font-size: 14px; }
+.panel-subtitle {
+  margin-left: 8px;
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
+  font-weight: 400;
+}
 
-.tree-scroll {
+/* ============ 任务 / 异常联动工作区 ============ */
+.dashboard-workspace {
+  flex: 0 0 734px;
+  height: 734px;
+  min-height: 0;
+  display: flex;
+  gap: 14px;
+}
+
+.scope-tree-card {
+  width: 320px;
+  height: 100%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+
+  :deep(.el-card__header) {
+    padding: 10px 14px;
+  }
+
+  :deep(.el-card__body) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+}
+
+.scope-tree-scroll {
   flex: 1;
   min-height: 0;
-  padding: 4px 8px;
-}
+  padding: 8px 6px;
 
-/* 列标题行（与 trow 栅格对齐，留出 el-tree 的缩进空间） */
-.col-header {
-  display: grid;
-  grid-template-columns: 1fr 120px 250px 240px;
-  gap: 8px;
-  padding: 6px 8px 6px 32px; /* 左侧留出树节点展开箭头空间 */
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--el-text-color-secondary);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  flex-shrink: 0;
-
-  &__c1, &__c2, &__remark { text-align: left; }
-}
-
-/* 树节点行：四列栅格（名称 | 列1 | 列2 | 备注），对齐整齐 */
-.trow {
-  display: grid;
-  grid-template-columns: 1fr 120px 250px 240px;
-  align-items: center;
-  width: 100%;
-  font-size: 13px;
-  padding-right: 8px;
-  gap: 8px;
-
-  &__name {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
+  :deep(.el-scrollbar__wrap) {
+    overflow-x: hidden;
   }
+}
+
+.scope-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding-right: 6px;
+  font-size: 13px;
 
   &__icon {
     color: var(--el-text-color-secondary);
@@ -579,46 +682,107 @@ const stateTag = s => ({ '待处理': 'danger', '已处理': 'success', '已修�
     white-space: nowrap;
   }
 
-  &__c1, &__c2 {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
-
-  &__time {
-    font-size: 12px;
+  &__count {
+    min-width: 22px;
+    padding: 0 6px;
+    border-radius: 8px;
+    background: var(--el-fill-color);
     color: var(--el-text-color-secondary);
-    white-space: nowrap;
-  }
-
-  &__sub-time {
     font-size: 11px;
-    color: var(--el-text-color-placeholder);
-    white-space: nowrap;
+    line-height: 18px;
+    text-align: center;
   }
 
-  &__remark {
-    min-width: 0;
+  &--system {
+    font-weight: 600;
+    .scope-node__icon { color: var(--el-color-primary); }
+  }
+
+  &--module {
+    font-weight: 500;
+    .scope-node__icon { color: #722ed1; }
+  }
+
+  &--taskGroup .scope-node__icon,
+  &--task .scope-node__icon {
+    color: var(--el-color-success);
+  }
+
+  &--alertGroup .scope-node__icon,
+  &--alert .scope-node__icon {
+    color: var(--el-color-danger);
+  }
+}
+
+.linked-lists {
+  height: 100%;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.list-card {
+  flex: 0 0 360px;
+  height: 360px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  transition: opacity 0.16s, border-color 0.16s;
+
+  :deep(.el-card__header) {
+    padding: 10px 14px;
+  }
+
+  :deep(.el-card__body) {
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
   }
+
+  &--muted {
+    opacity: 0.72;
+  }
 }
 
-/* 节点类型图标色（与 SystemModuleTree 一致） */
-.ticon--system { color: var(--el-color-primary); }
-.ticon--module { color: #722ed1; }
+.name-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 
-/* 系统 / 模块层级加粗（与 SystemModuleTree 的 tnode--system / tnode--module 对齐） */
-:deep(.el-tree-node--expanded > .el-tree-node__content .trow),
-:deep(.el-tree-node:has(> .el-tree-node__children) > .el-tree-node__content .trow) {
-  font-weight: 600;
-}
-:deep(.el-tree-node .el-tree-node .el-tree-node--expanded > .el-tree-node__content .trow),
-:deep(.el-tree-node .el-tree-node .el-tree-node:has(> .el-tree-node__children) > .el-tree-node__content .trow) {
-  font-weight: 500;
+  .el-icon {
+    color: var(--el-text-color-secondary);
+    flex-shrink: 0;
+  }
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 /* ============ 通用 ============ */
 .text-danger { color: var(--el-color-danger) !important; }
 .text-ph { color: var(--el-text-color-placeholder); }
+
+@media (max-width: 1100px) {
+  .dashboard-workspace {
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .scope-tree-card {
+    width: 100%;
+    height: 300px;
+  }
+
+  .linked-lists {
+    height: auto;
+    min-height: 620px;
+  }
+}
 </style>

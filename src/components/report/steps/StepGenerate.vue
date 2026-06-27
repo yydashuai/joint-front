@@ -2,11 +2,22 @@
   <div class="step step-generate">
     <el-scrollbar class="step__scroll">
       <div class="step__inner">
+        <div class="step-head">
+          <div>
+            <div class="blk__title"><el-icon><FolderOpened /></el-icon> 生成确认</div>
+            <div class="blk__desc">确认数据批次、模板和素材后生成静态预览报告。</div>
+          </div>
+          <div class="step-actions">
+            <el-button :icon="ArrowLeft" @click="$emit('back')">上一步</el-button>
+          </div>
+        </div>
         <el-card shadow="never" class="prev">
-          <template #header><div class="blk__title"><el-icon><FolderOpened /></el-icon> 待生成内容</div></template>
+          <template #header><div class="card-title">待生成内容</div></template>
           <div class="prev__row"><span class="prev__k">数据批次</span><span>{{ run ? `${run.name} · ${run.startedAt}` : '未选择批次' }}</span></div>
           <div class="prev__row"><span class="prev__k">报告标题</span><span>{{ form.title || (run ? `${run.name}报告` : '—') }}</span></div>
           <div class="prev__row"><span class="prev__k">报告模板</span><span>{{ templateName }}</span></div>
+          <div class="prev__row"><span class="prev__k">任务创建者</span><span>{{ run?.taskCreator || '—' }}</span></div>
+          <div class="prev__row"><span class="prev__k">报告生成者</span><span>{{ generatorName }}</span></div>
           <div class="prev__row">
             <span class="prev__k">素材</span>
             <span class="prev__mats">
@@ -27,10 +38,6 @@
         </div>
       </div>
     </el-scrollbar>
-
-    <div class="step__foot">
-      <el-button :icon="ArrowLeft" @click="$emit('back')">上一步</el-button>
-    </div>
   </div>
 </template>
 
@@ -40,6 +47,7 @@ import { ElMessage } from 'element-plus'
 import { FolderOpened, MagicStick, ArrowLeft } from '@element-plus/icons-vue'
 import { useReportStore, REPORT_STAGES } from '@/stores/report'
 import { useSystemStore } from '@/stores/system'
+import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
   form: { type: Object, required: true },
@@ -49,10 +57,12 @@ const emit = defineEmits(['back', 'done'])
 
 const store = useReportStore()
 const systemStore = useSystemStore()
+const authStore = useAuthStore()
 
 const run = computed(() => store.runs.find((r) => r.id === props.form.runId) || null)
 const sysName = computed(() => systemStore.systems.find((s) => s.id === run.value?.systemId)?.name || '')
 const templateName = computed(() => store.templates.find((t) => t.id === props.form.templateId)?.name || '默认结构')
+const generatorName = computed(() => authStore.currentUser?.realName || authStore.currentUser?.username || '当前用户')
 const stageText = computed(() => (store.genStage >= 0 ? REPORT_STAGES[store.genStage] : '生成中…'))
 const pct = computed(() => Math.round(((store.genStage + 1) / REPORT_STAGES.length) * 100))
 
@@ -64,7 +74,8 @@ const onGenerate = async () => {
     title: props.form.title.trim(),
     templateId: props.form.templateId,
     materials: props.materials,
-    sysName: sysName.value
+    sysName: sysName.value,
+    generatorName: generatorName.value
   })
   if (rep) { ElMessage.success('报告已生成'); emit('done') }
 }
@@ -73,11 +84,17 @@ const onGenerate = async () => {
 <style scoped lang="scss">
 .step { position: relative; height: 100%; display: flex; flex-direction: column; min-height: 0; }
 .step__scroll { flex: 1; min-height: 0; }
-.step__inner { max-width: 760px; margin: 0 auto; padding: 4px 4px 48px; }
+.step__inner { max-width: 820px; margin: 0 auto; padding: 4px 4px 48px; }
 
 .blk__title { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; .el-icon { color: var(--el-color-primary); } }
+.step-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px;
+}
+.step-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.blk__desc { font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.5; margin-top: 4px; }
+.card-title { font-size: 14px; font-weight: 600; color: var(--el-text-color-primary); }
 .prev__row { display: flex; gap: 12px; font-size: 13px; line-height: 2; align-items: baseline; }
-.prev__k { color: var(--el-text-color-secondary); width: 64px; flex-shrink: 0; }
+.prev__k { color: var(--el-text-color-secondary); width: 76px; flex-shrink: 0; }
 .prev__mats { display: flex; flex-wrap: wrap; gap: 6px; }
 .muted { color: var(--el-text-color-placeholder); }
 
@@ -89,8 +106,8 @@ const onGenerate = async () => {
 .gen-zone__hint { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; color: var(--el-text-color-secondary); margin-bottom: 18px; .el-icon { color: var(--el-color-success); } }
 .gen-zone__bar { margin-top: 16px; }
 
-.step__foot {
-  position: absolute; right: 6px; bottom: 6px; z-index: 5;
-  display: flex; align-items: center; gap: 12px;
+@media (max-width: 720px) {
+  .step-head { flex-direction: column; }
+  .step-actions { width: 100%; justify-content: flex-end; }
 }
 </style>

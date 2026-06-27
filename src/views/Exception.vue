@@ -3,13 +3,12 @@
     <div class="page__header">
       <div>
         <h2>故障异常管理</h2>
-        <div class="page__desc">集中接收执行判定、链路事件与人工登记异常，完成归类、处置和记录</div>
+        <div class="page__desc">集中接收执行判定与链路事件异常，完成归类、处置和记录</div>
       </div>
       <div class="header-actions">
         <el-select v-model="systemSelectValue" class="system-select">
           <el-option v-for="item in systemOptions" :key="item.selectValue" :label="item.label" :value="item.selectValue" />
         </el-select>
-        <el-button type="primary" :icon="Plus" @click="showManual = true">手动录入</el-button>
         <el-badge :value="metrics.pending" :hidden="!metrics.pending" :max="99">
           <el-tag type="danger" effect="dark">待处理</el-tag>
         </el-badge>
@@ -22,6 +21,7 @@
           v-model="selectedKey"
           title="异常归属"
           @select="onTreeSelect"
+          @clear="resetToAllSystems"
         />
       </div>
 
@@ -55,9 +55,9 @@
             <span>{{ metrics.low }}</span>
             <small>低级别</small>
           </div>
-          <div class="metric metric--resolved">
-            <span>{{ metrics.resolvedRate }}%</span>
-            <small>处置率</small>
+          <div class="metric metric--processed">
+            <span>{{ metrics.processed ?? 0 }}</span>
+            <small>已处理</small>
           </div>
         </div>
 
@@ -80,23 +80,16 @@
     </div>
 
     <ExceptionDetailDrawer v-model="detailVisible" :exception="activeException" />
-    <ManualExceptionDialog
-      v-model="showManual"
-      :system-id="systemStore.currentId || ''"
-      :module-id="selectedModuleId"
-    />
   </div>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Plus } from '@element-plus/icons-vue'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import ExceptionTable from '@/components/exception/ExceptionTable.vue'
 import ExceptionEfficiency from '@/components/exception/ExceptionEfficiency.vue'
 import ExceptionDetailDrawer from '@/components/exception/ExceptionDetailDrawer.vue'
-import ManualExceptionDialog from '@/components/exception/ManualExceptionDialog.vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useExceptionStore } from '@/stores/exception'
 import { useSystemStore } from '@/stores/system'
@@ -110,10 +103,9 @@ const ALL_SYSTEM_VALUE = '__all__'
 const selectedKey = ref('')
 const selectedModuleId = ref('')
 const activeTab = ref('ledger')
-const tableFilters = ref({ keyword: '', type: '', level: '', state: '', source: '', tag: '' })
+const tableFilters = ref({ keyword: '', type: '', level: '', state: '', tag: '' })
 const detailVisible = ref(false)
 const activeException = ref(null)
-const showManual = ref(false)
 
 const systemOptions = computed(() => systemStore.options.map((item) => ({
   ...item,
@@ -144,10 +136,42 @@ const scopeSub = computed(() => {
   return '按左侧模块可快速聚焦，异常台账按当前系统范围汇总'
 })
 
+const queryValue = (value) => Array.isArray(value) ? value[0] : value
+const resetTableFilters = () => {
+  tableFilters.value = { keyword: '', type: '', level: '', state: '', tag: '' }
+}
+function openDetail(row) {
+  exceptionStore.select(row.id)
+  activeException.value = row
+  detailVisible.value = true
+}
+function locateException(item, { open = false } = {}) {
+  if (!item) return
+  resetTableFilters()
+  systemStore.setCurrent(item.systemId || null)
+  selectedModuleId.value = item.moduleId || ''
+  selectedKey.value = item.moduleId ? `mod-${item.moduleId}` : ''
+  activeTab.value = 'ledger'
+  if (open) openDetail(item)
+}
+
 watch(() => route.query.id, (id) => {
-  if (!id) return
-  const item = exceptionStore.exceptions.find((ex) => ex.id === id)
-  if (item) openDetail(item)
+  const targetId = queryValue(id)
+  if (!targetId) return
+  const item = exceptionStore.exceptions.find((ex) => String(ex.id) === String(targetId))
+  locateException(item, { open: true })
+}, { immediate: true })
+
+watch(() => [route.query.systemId, route.query.moduleId], ([systemId, moduleId]) => {
+  const targetSystemId = queryValue(systemId)
+  const targetModuleId = queryValue(moduleId)
+  if (!targetSystemId && !targetModuleId) return
+  const targetModule = connStore.nodes.find((item) => String(item.id) === String(targetModuleId))
+  const normalizedModuleId = targetModule?.id || ''
+  systemStore.setCurrent(targetSystemId || null)
+  selectedModuleId.value = normalizedModuleId
+  selectedKey.value = normalizedModuleId ? `mod-${normalizedModuleId}` : ''
+  activeTab.value = 'ledger'
 }, { immediate: true })
 
 const onTreeSelect = (data) => {
@@ -160,10 +184,11 @@ function clearModule() {
   selectedModuleId.value = ''
   selectedKey.value = ''
 }
-const openDetail = (row) => {
-  exceptionStore.select(row.id)
-  activeException.value = row
-  detailVisible.value = true
+function resetToAllSystems() {
+  systemStore.setCurrent(null)
+  clearModule()
+  resetTableFilters()
+  activeTab.value = 'ledger'
 }
 </script>
 
@@ -251,7 +276,7 @@ const openDetail = (row) => {
 }
 .metric--pending span,
 .metric--high span { color: var(--el-color-danger); }
-.metric--resolved span { color: var(--el-color-success); }
+.metric--processed span { color: var(--el-color-success); }
 .exception-tabs {
   flex: 1;
   min-height: 0;

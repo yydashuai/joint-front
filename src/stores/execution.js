@@ -18,7 +18,7 @@ const clamp = (n, min, max) => Math.max(min, Math.min(max, n))
 const rnd = (min, max) => Math.round(min + Math.random() * (max - min))
 
 const DEFAULT_REQUESTS = 8
-const FALLBACK_RULE_TYPES = ['类型校验', '取值范围', '边界值', '字段越界', '格式错误']
+const FALLBACK_RULE_TYPES = ['类型校验', '取值范围', '边界值检测', '字段越界', '格式错误']
 
 const emptyCounters = () => ({
   totalRequests: 0,
