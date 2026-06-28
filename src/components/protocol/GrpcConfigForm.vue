@@ -8,7 +8,7 @@
           <el-select :model-value="protocol.type" style="width: 100px" @change="(v) => $emit('switchType', v)">
             <el-option v-for="t in PROTOCOL_TYPES" :key="t.value" :label="t.label" :value="t.value" />
           </el-select>
-          <el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button>
+          <el-tooltip content="保存当前协议配置"><el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button></el-tooltip>
           <el-popconfirm title="删除该协议？" @confirm="$emit('delete')">
             <template #reference><el-button :icon="Delete" plain>删除</el-button></template>
           </el-popconfirm>
@@ -45,7 +45,7 @@
         <span class="form-label">Proto 文件</span>
         <el-input v-model="cfg.protoRef" placeholder="proto 文件路径引用" style="max-width: 400px">
           <template #append>
-            <el-button :icon="Upload" @click="$emit('uploadProto')" />
+            <el-tooltip content="上传 Proto 文件"><el-button :icon="Upload" @click="$emit('uploadProto')" /></el-tooltip>
           </template>
         </el-input>
       </div>
@@ -92,14 +92,16 @@
       </el-table-column>
       <el-table-column label="操作" width="100" align="center">
         <template #default="{ row, $index }">
-          <el-button v-if="row.type === 'message' || row.type === 'map'" text size="small" :icon="Plus"
-            @click="addProtoChild(row)" />
-          <el-button text size="small" :icon="Delete" @click="cfg.requestMessage.splice($index, 1)" />
+          <el-tooltip content="添加子字段"><el-button v-if="row.type === 'message' || row.type === 'map'" text size="small" :icon="Plus"
+            @click="addProtoChild(row)" /></el-tooltip>
+          <el-popconfirm title="删除该字段？" @confirm="cfg.requestMessage.splice($index, 1)">
+            <template #reference><el-button text size="small" :icon="Delete" /></template>
+          </el-popconfirm>
         </template>
       </el-table-column>
     </el-table>
     <el-empty v-else description="定义请求消息的 Protobuf 字段" :image-size="48" />
-    <el-button size="small" :icon="Plus" @click="addReqField">添加字段</el-button>
+    <el-tooltip content="添加一个请求消息字段"><el-button size="small" :icon="Plus" @click="addReqField">添加字段</el-button></el-tooltip>
 
     <!-- ====== 区块3: 响应消息结构 ====== -->
     <el-divider content-position="left">响应消息 (Response Message)</el-divider>
@@ -133,14 +135,16 @@
       </el-table-column>
       <el-table-column label="操作" width="100" align="center">
         <template #default="{ row, $index }">
-          <el-button v-if="row.type === 'message' || row.type === 'map'" text size="small" :icon="Plus"
-            @click="addProtoChild(row)" />
-          <el-button text size="small" :icon="Delete" @click="cfg.responseMessage.splice($index, 1)" />
+          <el-tooltip content="添加子字段"><el-button v-if="row.type === 'message' || row.type === 'map'" text size="small" :icon="Plus"
+            @click="addProtoChild(row)" /></el-tooltip>
+          <el-popconfirm title="删除该字段？" @confirm="cfg.responseMessage.splice($index, 1)">
+            <template #reference><el-button text size="small" :icon="Delete" /></template>
+          </el-popconfirm>
         </template>
       </el-table-column>
     </el-table>
     <el-empty v-else description="定义响应消息的 Protobuf 字段" :image-size="48" />
-    <el-button size="small" :icon="Plus" @click="addRespField">添加字段</el-button>
+    <el-tooltip content="添加一个响应消息字段"><el-button size="small" :icon="Plus" @click="addRespField">添加字段</el-button></el-tooltip>
 
     <!-- ====== 区块4: Metadata 元数据 ====== -->
     <el-divider content-position="left">Metadata（元数据）</el-divider>
@@ -164,11 +168,13 @@
       </el-table-column>
       <el-table-column label="操作" width="64" align="center">
         <template #default="{ $index }">
-          <el-button text size="small" :icon="Delete" @click="cfg.metadata.splice($index, 1)" />
+          <el-popconfirm title="删除该元数据？" @confirm="cfg.metadata.splice($index, 1)">
+            <template #reference><el-button text size="small" :icon="Delete" /></template>
+          </el-popconfirm>
         </template>
       </el-table-column>
     </el-table>
-    <el-button size="small" :icon="Plus" @click="cfg.metadata.push({ key: '', value: '', mode: 'static', desc: '' })">添加 Metadata</el-button>
+    <el-tooltip content="添加一条元数据"><el-button size="small" :icon="Plus" @click="cfg.metadata.push({ key: '', value: '', mode: 'static', desc: '' })">添加 Metadata</el-button></el-tooltip>
 
     <!-- ====== 区块5: 运行时配置 ====== -->
     <el-divider content-position="left">运行时配置</el-divider>

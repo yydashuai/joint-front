@@ -16,16 +16,20 @@
           </div>
           <div class="plan-actions">
             <el-tag type="info" effect="plain">{{ items.length }} 项 · {{ totalEstimatedRequests }} 请求</el-tag>
-            <el-button
-              type="primary"
-              plain
-              :icon="Plus"
-              :disabled="!selectedTask || selectedInPlan"
-              @click="$emit('add-selected')"
-            >
-              {{ selectedInPlan ? '已在计划中' : '添加测试任务' }}
-            </el-button>
-            <el-button :icon="RefreshRight" @click="$emit('reset-run')">重置本次运行</el-button>
+            <el-tooltip content="将选中的测试任务添加到执行计划">
+              <el-button
+                type="primary"
+                plain
+                :icon="Plus"
+                :disabled="!selectedTask || selectedInPlan"
+                @click="$emit('add-selected')"
+              >
+                {{ selectedInPlan ? '已在计划中' : '添加测试任务' }}
+              </el-button>
+            </el-tooltip>
+            <el-popconfirm title="确认重置本次运行？所有运行状态将被清除" @confirm="$emit('reset-run')">
+              <template #reference><el-button :icon="RefreshRight">重置本次运行</el-button></template>
+            </el-popconfirm>
           </div>
         </div>
       </template>
@@ -81,8 +85,10 @@
         </el-table-column>
         <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="router.push({ path: '/task', query: { id: row.task.id } })">编辑</el-button>
-            <el-button link type="danger" size="small" @click="store.removeFromPlan(row.id)">移除</el-button>
+            <el-tooltip content="跳转到任务详情页"><el-button link type="primary" size="small" @click="router.push({ path: '/task', query: { id: row.task.id } })">编辑</el-button></el-tooltip>
+            <el-popconfirm title="确认从计划中移除？" @confirm="store.removeFromPlan(row.id)">
+              <template #reference><el-button link type="danger" size="small">移除</el-button></template>
+            </el-popconfirm>
           </template>
         </el-table-column>
       </el-table>

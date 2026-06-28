@@ -10,9 +10,11 @@
       </el-tooltip>
       <div class="fnode__meta">{{ meta }}</div>
       <div class="fnode__ops">
-        <el-button text size="small" :icon="Edit" @click="actions.onEdit(node)" />
-        <el-button v-if="node.type === '共识体'" text size="small" :icon="Plus" @click="actions.onAddChild(node)" />
-        <el-button text size="small" :icon="Delete" @click="actions.onRemove(node)" />
+        <el-tooltip content="编辑该节点"><el-button text size="small" :icon="Edit" @click="actions.onEdit(node)" /></el-tooltip>
+        <el-tooltip content="添加子节点"><el-button v-if="node.type === '共识体'" text size="small" :icon="Plus" @click="actions.onAddChild(node)" /></el-tooltip>
+        <el-popconfirm title="确认删除该节点？" @confirm="actions.onRemove(node)">
+          <template #reference><el-button text size="small" :icon="Delete" /></template>
+        </el-popconfirm>
       </div>
     </div>
 

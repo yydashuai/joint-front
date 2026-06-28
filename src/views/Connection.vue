@@ -8,8 +8,8 @@
         </div>
       </div>
       <div class="header-actions">
-        <el-button :icon="Setting" @click="systemManagerVisible = true">管理系统</el-button>
-        <el-button type="primary" :icon="Plus" @click="openCreate">新建模块</el-button>
+        <el-tooltip content="打开被测系统管理对话框"><el-button :icon="Setting" @click="systemManagerVisible = true">管理系统</el-button></el-tooltip>
+        <el-tooltip content="创建一个新的链路模块"><el-button type="primary" :icon="Plus" @click="openCreate">新建模块</el-button></el-tooltip>
       </div>
     </div>
 
@@ -125,8 +125,8 @@
         <div class="ping-bar">
           <span class="ping-bar__note">系统每 5 秒自动检测一次链路；手动检测将发送 4 个探测包确认链路是否通畅</span>
           <div class="ping-bar__btns">
-            <el-button type="primary" :icon="Pointer" :loading="sel.status === 'pinging'" @click="handlePing">检测连通性</el-button>
-            <el-button @click="saveParams">保存参数</el-button>
+            <el-tooltip content="发送探测包检测该模块的链路是否通畅"><el-button type="primary" :icon="Pointer" :loading="sel.status === 'pinging'" @click="handlePing">检测连通性</el-button></el-tooltip>
+            <el-tooltip content="保存当前模块的链路参数"><el-button @click="saveParams">保存参数</el-button></el-tooltip>
             <el-popconfirm title="确认删除该模块？" @confirm="handleRemove">
               <template #reference>
                 <el-button :icon="Delete" plain>删除模块</el-button>
@@ -142,7 +142,7 @@
             <el-tag :type="statusMeta[sel.status].tag" size="small" effect="light">{{ statusMeta[sel.status].text }}</el-tag>
             <span v-if="sel.status === 'online' && sel.latency" class="ping-out__latency">平均时延 {{ sel.latency }}ms</span>
             <span class="ping-out__spacer" />
-            <el-button v-if="sel.pingLog.length" link size="small" @click="sel.pingLog = []">清空</el-button>
+            <el-tooltip content="清空检测输出日志"><el-button v-if="sel.pingLog.length" link size="small" @click="sel.pingLog = []">清空</el-button></el-tooltip>
           </div>
           <pre v-if="sel.pingLog.length" class="ping-out__body">{{ sel.pingLog.join('\n') }}</pre>
           <el-empty v-else description="点击「检测连通性」查看链路探测结果" :image-size="56" />

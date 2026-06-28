@@ -30,7 +30,7 @@
                 <span class="form-unit">次</span>
               </el-form-item>
               <el-form-item>
-                <el-button type="primary" @click="onSaveConfig('network')">保存</el-button>
+                <el-tooltip content="保存网络配置参数"><el-button type="primary" @click="onSaveConfig('network')">保存</el-button></el-tooltip>
               </el-form-item>
             </el-form>
           </el-card>
@@ -53,7 +53,7 @@
                 </el-select>
               </el-form-item>
               <el-form-item>
-                <el-button type="primary" @click="onSaveConfig('log')">保存</el-button>
+                <el-tooltip content="保存日志配置参数"><el-button type="primary" @click="onSaveConfig('log')">保存</el-button></el-tooltip>
               </el-form-item>
             </el-form>
           </el-card>
@@ -73,7 +73,7 @@
                 <span class="form-hint">当模块离线时发送通知</span>
               </el-form-item>
               <el-form-item>
-                <el-button type="primary" @click="onSaveConfig('notification')">保存</el-button>
+                <el-tooltip content="保存通知配置参数"><el-button type="primary" @click="onSaveConfig('notification')">保存</el-button></el-tooltip>
               </el-form-item>
             </el-form>
           </el-card>
@@ -112,7 +112,7 @@
                 <span class="form-unit">h</span>
               </el-form-item>
               <el-form-item>
-                <el-button type="primary" @click="onSaveConfig('exception')">保存</el-button>
+                <el-tooltip content="保存异常达标率配置"><el-button type="primary" @click="onSaveConfig('exception')">保存</el-button></el-tooltip>
               </el-form-item>
             </el-form>
           </el-card>

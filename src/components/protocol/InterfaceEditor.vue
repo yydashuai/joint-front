@@ -35,7 +35,7 @@
       <div class="struct">
         <div class="struct__head">
           <span class="struct__title">接口参数</span>
-          <el-button size="small" :icon="Plus" @click="addRootParam(iface.request)">添加参数</el-button>
+          <el-tooltip content="添加一个接口请求参数"><el-button size="small" :icon="Plus" @click="addRootParam(iface.request)">添加参数</el-button></el-tooltip>
         </div>
         <div class="struct__tree">
           <div v-for="p in iface.request" :key="p.id" class="struct__row" :data-field-id="p.id">
@@ -48,7 +48,7 @@
       <div class="struct">
         <div class="struct__head">
           <span class="struct__title">接口响应</span>
-          <el-button size="small" :icon="Plus" @click="addRootParam(iface.response)">添加字段</el-button>
+          <el-tooltip content="添加一个接口响应字段"><el-button size="small" :icon="Plus" @click="addRootParam(iface.response)">添加字段</el-button></el-tooltip>
         </div>
         <div class="struct__tree">
           <div v-for="p in iface.response" :key="p.id" class="struct__row" :data-field-id="p.id">

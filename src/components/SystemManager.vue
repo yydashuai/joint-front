@@ -11,7 +11,7 @@
       <div class="system-manager__list">
         <div class="system-manager__toolbar">
           <span>系统列表</span>
-          <el-button type="primary" :icon="Plus" size="small" @click="startCreate">新增系统</el-button>
+          <el-tooltip content="创建一个新的被测系统"><el-button type="primary" :icon="Plus" size="small" @click="startCreate">新增系统</el-button></el-tooltip>
         </div>
 
         <el-table :data="systemStore.systems" height="360" stripe>
@@ -22,8 +22,8 @@
           </el-table-column>
           <el-table-column label="操作" width="220" align="center">
             <template #default="{ row }">
-              <el-button :icon="ConnectionIcon" size="small" link type="success" @click="manageModules(row)">模块管理</el-button>
-              <el-button :icon="Edit" size="small" link type="primary" @click="startEdit(row)">编辑</el-button>
+              <el-tooltip content="管理该系统下的模块"><el-button :icon="ConnectionIcon" size="small" link type="success" @click="manageModules(row)">模块管理</el-button></el-tooltip>
+              <el-tooltip content="编辑该系统信息"><el-button :icon="Edit" size="small" link type="primary" @click="startEdit(row)">编辑</el-button></el-tooltip>
               <el-popconfirm
                 width="260"
                 title="删除后，该系统下模块将归入未分配，不会删除模块。确认删除？"
@@ -50,8 +50,8 @@
           <el-input v-model="draft.desc" type="textarea" :rows="4" placeholder="说明该系统覆盖的接口范围" />
         </el-form-item>
         <div class="system-manager__form-actions">
-          <el-button @click="resetForm">清空</el-button>
-          <el-button type="primary" @click="saveSystem">{{ editingId ? '保存修改' : '创建系统' }}</el-button>
+          <el-tooltip content="清空表单内容"><el-button @click="resetForm">清空</el-button></el-tooltip>
+          <el-tooltip :content="editingId ? '保存对系统的修改' : '创建新的被测系统'"><el-button type="primary" @click="saveSystem">{{ editingId ? '保存修改' : '创建系统' }}</el-button></el-tooltip>
         </div>
       </el-form>
     </div>

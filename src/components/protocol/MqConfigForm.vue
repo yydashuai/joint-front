@@ -8,7 +8,7 @@
           <el-select :model-value="protocol.type" style="width: 100px" @change="(v) => $emit('switchType', v)">
             <el-option v-for="t in PROTOCOL_TYPES" :key="t.value" :label="t.label" :value="t.value" />
           </el-select>
-          <el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button>
+          <el-tooltip content="保存当前协议配置"><el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button></el-tooltip>
           <el-popconfirm title="删除该协议？" @confirm="$emit('delete')">
             <template #reference><el-button :icon="Delete" plain>删除</el-button></template>
           </el-popconfirm>

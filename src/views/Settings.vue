@@ -41,7 +41,7 @@
             <el-input v-model="profileForm.email" placeholder="可选" />
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" @click="onSaveProfile">保存修改</el-button>
+            <el-tooltip content="保存个人基本信息"><el-button type="primary" @click="onSaveProfile">保存修改</el-button></el-tooltip>
           </el-form-item>
         </el-form>
       </el-card>
@@ -75,7 +75,7 @@
             <el-input v-model="pwdForm.confirmPwd" type="password" show-password placeholder="再次输入新密码" />
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" @click="onChangePassword">修改密码</el-button>
+            <el-tooltip content="修改登录密码"><el-button type="primary" @click="onChangePassword">修改密码</el-button></el-tooltip>
           </el-form-item>
         </el-form>
       </el-card>

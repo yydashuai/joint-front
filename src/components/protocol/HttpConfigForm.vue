@@ -8,7 +8,7 @@
           <el-select :model-value="protocol.type" style="width: 100px" @change="(v) => $emit('switchType', v)">
             <el-option v-for="t in PROTOCOL_TYPES" :key="t.value" :label="t.label" :value="t.value" />
           </el-select>
-          <el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button>
+          <el-tooltip content="保存当前协议配置"><el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button></el-tooltip>
           <el-popconfirm title="删除该协议？" @confirm="$emit('delete')">
             <template #reference><el-button :icon="Delete" plain>删除</el-button></template>
           </el-popconfirm>
@@ -126,11 +126,13 @@
           </el-table-column>
           <el-table-column label="操作" width="64" align="center">
             <template #default="{ $index }">
-              <el-button text size="small" :icon="Delete" @click="cfg.queryParams.splice($index, 1)" />
+              <el-popconfirm title="删除该查询参数？" @confirm="cfg.queryParams.splice($index, 1)">
+                <template #reference><el-button text size="small" :icon="Delete" /></template>
+              </el-popconfirm>
             </template>
           </el-table-column>
         </el-table>
-        <el-button size="small" :icon="Plus" @click="cfg.queryParams.push(makeHttpParam())">添加查询参数</el-button>
+        <el-tooltip content="添加一个查询参数"><el-button size="small" :icon="Plus" @click="cfg.queryParams.push(makeHttpParam())">添加查询参数</el-button></el-tooltip>
       </el-tab-pane>
 
       <!-- Tab 3: 请求体 -->
@@ -176,12 +178,14 @@
             </el-table-column>
             <el-table-column label="操作" width="100" align="center">
               <template #default="{ row, $index }">
-                <el-button v-if="row.dataType === 'object'" text size="small" :icon="Plus" @click="row.children.push(makeBodyField({ name: 'subField' }))" />
-                <el-button text size="small" :icon="Delete" @click="removeBodyField($index)" />
+                <el-tooltip content="添加子字段"><el-button v-if="row.dataType === 'object'" text size="small" :icon="Plus" @click="row.children.push(makeBodyField({ name: 'subField' }))" /></el-tooltip>
+                <el-popconfirm title="删除该字段？" @confirm="removeBodyField($index)">
+                  <template #reference><el-button text size="small" :icon="Delete" /></template>
+                </el-popconfirm>
               </template>
             </el-table-column>
           </el-table>
-          <el-button size="small" :icon="Plus" @click="cfg.requestBody.fields.push(makeBodyField())">添加字段</el-button>
+          <el-tooltip content="添加一个请求体字段"><el-button size="small" :icon="Plus" @click="cfg.requestBody.fields.push(makeBodyField())">添加字段</el-button></el-tooltip>
         </template>
 
         <!-- 文件上传模式 -->
@@ -211,12 +215,14 @@
       </el-table-column>
       <el-table-column label="操作" width="64" align="center">
         <template #default="{ $index }">
-          <el-button text size="small" :icon="Delete" @click="cfg.headers.splice($index, 1)" />
+          <el-popconfirm title="删除该请求头？" @confirm="cfg.headers.splice($index, 1)">
+            <template #reference><el-button text size="small" :icon="Delete" /></template>
+          </el-popconfirm>
         </template>
       </el-table-column>
     </el-table>
     <div class="header-actions">
-      <el-button size="small" :icon="Plus" @click="cfg.headers.push({ key: '', value: '' })">自定义 Header</el-button>
+      <el-tooltip content="添加自定义请求头"><el-button size="small" :icon="Plus" @click="cfg.headers.push({ key: '', value: '' })">自定义 Header</el-button></el-tooltip>
       <el-dropdown @command="addCommonHeader" trigger="click">
         <el-button size="small" plain>快捷添加常用 Header</el-button>
         <template #dropdown>
@@ -318,11 +324,13 @@
             </el-table-column>
             <el-table-column label="操作" width="64" align="center">
               <template #default="{ $index }">
-                <el-button text size="small" :icon="Delete" @click="resp.headers.splice($index, 1)" />
+                <el-popconfirm title="删除该响应头？" @confirm="resp.headers.splice($index, 1)">
+                  <template #reference><el-button text size="small" :icon="Delete" /></template>
+                </el-popconfirm>
               </template>
             </el-table-column>
           </el-table>
-          <el-button size="small" :icon="Plus" text @click="resp.headers.push({ key: '', value: '' })">添加响应头</el-button>
+          <el-tooltip content="添加一个响应头"><el-button size="small" :icon="Plus" text @click="resp.headers.push({ key: '', value: '' })">添加响应头</el-button></el-tooltip>
         </div>
 
         <div class="sub-section">
@@ -348,12 +356,14 @@
             </el-table-column>
             <el-table-column label="操作" width="100" align="center">
               <template #default="{ row, $index }">
-                <el-button v-if="row.dataType === 'object'" text size="small" :icon="Plus" @click="row.children.push(makeBodyField({ name: 'subField' }))" />
-                <el-button text size="small" :icon="Delete" @click="resp.bodyFields.splice($index, 1)" />
+                <el-tooltip content="添加子字段"><el-button v-if="row.dataType === 'object'" text size="small" :icon="Plus" @click="row.children.push(makeBodyField({ name: 'subField' }))" /></el-tooltip>
+                <el-popconfirm title="删除该字段？" @confirm="resp.bodyFields.splice($index, 1)">
+                  <template #reference><el-button text size="small" :icon="Delete" /></template>
+                </el-popconfirm>
               </template>
             </el-table-column>
           </el-table>
-          <el-button size="small" :icon="Plus" text @click="resp.bodyFields.push(makeBodyField())">添加字段</el-button>
+          <el-tooltip content="添加一个响应体字段"><el-button size="small" :icon="Plus" text @click="resp.bodyFields.push(makeBodyField())">添加字段</el-button></el-tooltip>
         </div>
 
         <div class="resp-actions">
@@ -365,7 +375,7 @@
         </div>
       </el-collapse-item>
     </el-collapse>
-    <el-button size="small" :icon="Plus" @click="addResponse">添加响应状态码</el-button>
+    <el-tooltip content="添加一个响应状态码"><el-button size="small" :icon="Plus" @click="addResponse">添加响应状态码</el-button></el-tooltip>
   </el-card>
 </template>
 

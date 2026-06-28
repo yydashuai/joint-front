@@ -9,7 +9,7 @@
             <el-tag size="small" effect="plain">{{ docs.length }} 篇</el-tag>
             <el-tag size="small" effect="plain" type="success">已向量化 {{ vectorizedCount }}</el-tag>
             <el-tag size="small" effect="plain" type="info">{{ chunkCount }} 片段</el-tag>
-            <el-button type="primary" size="small" :icon="Upload" @click="openImport">导入文档</el-button>
+            <el-tooltip content="导入知识文档到知识库"><el-button type="primary" size="small" :icon="Upload" @click="openImport">导入文档</el-button></el-tooltip>
           </div>
         </div>
       </template>
@@ -53,10 +53,12 @@
           </el-table-column>
           <el-table-column label="操作" width="120" align="center">
             <template #default="{ row }">
-              <el-button
-                v-if="row.vectorized !== 'done' && row.vectorized !== 'processing'"
-                size="small" text type="primary" :icon="Refresh" @click="vectorize(row)"
-              >向量化</el-button>
+              <el-tooltip content="对该文档进行向量化处理">
+                <el-button
+                  v-if="row.vectorized !== 'done' && row.vectorized !== 'processing'"
+                  size="small" text type="primary" :icon="Refresh" @click="vectorize(row)"
+                >向量化</el-button>
+              </el-tooltip>
               <el-popconfirm title="删除该文档？" @confirm="store.removeKnowledgeDoc(row.id)">
                 <template #reference><el-button size="small" text :icon="Delete" /></template>
               </el-popconfirm>
@@ -120,7 +122,9 @@
               </el-button-group>
             </template>
             <el-button size="small" :icon="FolderOpened" @click="openFilePicker">继续添加</el-button>
-            <el-button size="small" text type="danger" @click="clearFiles">清空</el-button>
+            <el-popconfirm title="确认清空所有已选文件？" @confirm="clearFiles">
+              <template #reference><el-button size="small" text type="danger">清空</el-button></template>
+            </el-popconfirm>
           </div>
         </div>
 
@@ -138,7 +142,9 @@
                 <el-radio-button value="file" :disabled="f.locked && f.kind !== 'file'">文件型</el-radio-button>
                 <el-radio-button value="image" :disabled="f.locked && f.kind !== 'image'">图片型</el-radio-button>
               </el-radio-group>
-              <el-button class="file-row__del" text :icon="Delete" @click="removeFile(i)" />
+              <el-popconfirm title="移除该文件？" @confirm="removeFile(i)">
+                <template #reference><el-button class="file-row__del" text :icon="Delete" /></template>
+              </el-popconfirm>
             </div>
           </div>
         </el-scrollbar>

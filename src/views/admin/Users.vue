@@ -6,7 +6,7 @@
         <h2>用户管理</h2>
         <div class="page__desc">创建和管理联试工具用户账号，分配测试权限</div>
       </div>
-      <el-button type="primary" :icon="Plus" @click="openDialog()">新建用户</el-button>
+      <el-tooltip content="创建一个新的用户账号"><el-button type="primary" :icon="Plus" @click="openDialog()">新建用户</el-button></el-tooltip>
     </div>
 
     <!-- ======== 统计栏 ======== -->
@@ -91,8 +91,8 @@
 
         <el-table-column label="操作" width="300" align="center">
           <template #default="{ row }">
-            <el-button size="small" text type="primary" @click="openDialog(row)">编辑</el-button>
-            <el-button size="small" text type="warning" @click="openResetPwd(row)">重置密码</el-button>
+            <el-tooltip content="编辑该用户信息"><el-button size="small" text type="primary" @click="openDialog(row)">编辑</el-button></el-tooltip>
+            <el-tooltip content="重置该用户的登录密码"><el-button size="small" text type="warning" @click="openResetPwd(row)">重置密码</el-button></el-tooltip>
             <el-popconfirm
               title="确认删除该用户？此操作不可恢复。"
               confirm-button-text="删除"

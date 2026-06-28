@@ -2,8 +2,8 @@
   <div class="rule-list">
     <div class="rule-toolbar">
       <div class="rule-toolbar__left">
-        <el-button type="primary" :icon="Lightning" @click="$emit('generate')">从接口自动生成</el-button>
-        <el-button :icon="Plus" @click="$emit('edit', null)">手动添加规则</el-button>
+        <el-tooltip content="根据接口字段定义自动生成校验规则"><el-button type="primary" :icon="Lightning" @click="$emit('generate')">从接口自动生成</el-button></el-tooltip>
+        <el-tooltip content="手动创建一条自定义校验规则"><el-button :icon="Plus" @click="$emit('edit', null)">手动添加规则</el-button></el-tooltip>
         <el-tag type="info" effect="plain" size="small">共 {{ filteredRules.length }} 条规则</el-tag>
       </div>
       <div class="rule-toolbar__right">
@@ -66,9 +66,11 @@
           </el-table-column>
           <el-table-column label="操作" width="148" align="center">
             <template #default="{ row }">
-              <el-button link type="primary" size="small" @click="$emit('edit', row)">编辑</el-button>
-              <el-button v-if="row.target?.interfaceId" link type="primary" size="small" @click="$emit('jump-protocol', row.target.interfaceId)">协议</el-button>
-              <el-button link type="danger" size="small" @click="store.removeRule(ruleSet.id, row.id)">删</el-button>
+              <el-tooltip content="编辑该规则"><el-button link type="primary" size="small" @click="$emit('edit', row)">编辑</el-button></el-tooltip>
+              <el-tooltip content="跳转到关联的协议配置"><el-button v-if="row.target?.interfaceId" link type="primary" size="small" @click="$emit('jump-protocol', row.target.interfaceId)">协议</el-button></el-tooltip>
+              <el-popconfirm title="确认删除该规则？" @confirm="store.removeRule(ruleSet.id, row.id)">
+                <template #reference><el-button link type="danger" size="small">删</el-button></template>
+              </el-popconfirm>
             </template>
           </el-table-column>
         </el-table>

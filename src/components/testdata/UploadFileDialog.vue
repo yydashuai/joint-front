@@ -22,7 +22,7 @@
               <span class="upload-filename">{{ selectedFile.name }}</span>
               <span class="upload-filesize">{{ formatSize(selectedFile.size) }} · {{ selectedFormat.toUpperCase() }}</span>
             </div>
-            <el-button text type="danger" size="small" @click.stop="clearFile">移除</el-button>
+            <el-tooltip content="移除已选文件"><el-button text type="danger" size="small" @click.stop="clearFile">移除</el-button></el-tooltip>
           </div>
         </div>
       </el-form-item>

@@ -13,9 +13,9 @@
           <el-select v-model="protocol.config.endian" style="width:120px">
             <el-option v-for="e in ENDIANS" :key="e.value" :label="e.label" :value="e.value" />
           </el-select>
-          <el-button :icon="Upload" @click="$emit('import')">导入</el-button>
-          <el-button :icon="Download" @click="$emit('export')">导出</el-button>
-          <el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button>
+          <el-tooltip content="导入协议配置"><el-button :icon="Upload" @click="$emit('import')">导入</el-button></el-tooltip>
+          <el-tooltip content="导出协议配置"><el-button :icon="Download" @click="$emit('export')">导出</el-button></el-tooltip>
+          <el-tooltip content="保存当前协议配置"><el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button></el-tooltip>
           <el-popconfirm title="删除该协议？" @confirm="$emit('delete')">
             <template #reference><el-button :icon="Delete" plain>删除</el-button></template>
           </el-popconfirm>
@@ -199,7 +199,9 @@
                   <el-input-number v-model="entry.value" :controls="false" size="small" style="width:54px" />
                   <span class="c-sep">=</span>
                   <el-input v-model="entry.label" size="small" style="width:72px" placeholder="标签" />
-                  <el-button text size="small" :icon="Delete" @click="row.constraint.entries.splice(ei, 1)" />
+                  <el-popconfirm title="删除该枚举项？" @confirm="row.constraint.entries.splice(ei, 1)">
+                    <template #reference><el-button text size="small" :icon="Delete" /></template>
+                  </el-popconfirm>
                 </div>
                 <el-button link type="primary" size="small" @click="row.constraint.entries.push({ value: 0, label: '' })">+ 枚举项</el-button>
               </div>
@@ -248,10 +250,10 @@
       <el-table-column label="操作" width="200" align="center">
         <template #default="{ row }">
           <template v-if="row.kind === 'byte'">
-            <el-button text size="small" :icon="Top" title="上移" :disabled="isFirstField(row)" @click="moveField(row.id, 'up')" />
-            <el-button text size="small" :icon="Bottom" title="下移" :disabled="isLastField(row)" @click="moveField(row.id, 'down')" />
-            <el-button v-if="!row.bitMode" text size="small" :icon="Operation" title="切换到位模式" @click="toggleUnit(row, 'bit')" />
-            <el-button v-else text size="small" :icon="Plus" title="添加位子段" :disabled="getBitsUsedInField(row) >= row.byteLength * 8" @click="addBitChild(row)" />
+            <el-tooltip content="上移字段"><el-button text size="small" :icon="Top" :disabled="isFirstField(row)" @click="moveField(row.id, 'up')" /></el-tooltip>
+            <el-tooltip content="下移字段"><el-button text size="small" :icon="Bottom" :disabled="isLastField(row)" @click="moveField(row.id, 'down')" /></el-tooltip>
+            <el-tooltip v-if="!row.bitMode" content="切换到位模式"><el-button text size="small" :icon="Operation" @click="toggleUnit(row, 'bit')" /></el-tooltip>
+            <el-tooltip v-else content="添加位子段"><el-button text size="small" :icon="Plus" :disabled="getBitsUsedInField(row) >= row.byteLength * 8" @click="addBitChild(row)" /></el-tooltip>
             <el-popconfirm title="删除该字段？" @confirm="removeField(row.id)">
               <template #reference><el-button text size="small" :icon="Delete" title="删除" /></template>
             </el-popconfirm>
@@ -262,9 +264,9 @@
             </el-popconfirm>
           </template>
           <template v-else>
-            <el-button text size="small" :icon="Top" title="上移" :disabled="isFirstField(row)" @click="moveField(row.id, 'up')" />
-            <el-button text size="small" :icon="Bottom" title="下移" :disabled="isLastField(row)" @click="moveField(row.id, 'down')" />
-            <el-button text size="small" :icon="Edit" title="编辑子字段" @click="openRepeatEditor(row)" />
+            <el-tooltip content="上移重复组"><el-button text size="small" :icon="Top" :disabled="isFirstField(row)" @click="moveField(row.id, 'up')" /></el-tooltip>
+            <el-tooltip content="下移重复组"><el-button text size="small" :icon="Bottom" :disabled="isLastField(row)" @click="moveField(row.id, 'down')" /></el-tooltip>
+            <el-tooltip content="编辑子字段"><el-button text size="small" :icon="Edit" @click="openRepeatEditor(row)" /></el-tooltip>
             <el-popconfirm title="删除该重复组？" @confirm="removeField(row.id)">
               <template #reference><el-button text size="small" :icon="Delete" title="删除" /></template>
             </el-popconfirm>
@@ -275,8 +277,8 @@
 
     <!-- ========== 底部操作按钮 ========== -->
     <div class="bottom-actions">
-      <el-button class="add-row" :icon="Plus" @click="addByteRow">添加字节字段</el-button>
-      <el-button class="add-row" :icon="FolderAdd" @click="addRepeatRow">添加重复组</el-button>
+      <el-tooltip content="新增一个字节类型的字段"><el-button class="add-row" :icon="Plus" @click="addByteRow">添加字节字段</el-button></el-tooltip>
+      <el-tooltip content="新增一个重复组字段，用于定义可重复的数据结构"><el-button class="add-row" :icon="FolderAdd" @click="addRepeatRow">添加重复组</el-button></el-tooltip>
     </div>
 
     <!-- ========== 重复组编辑弹窗 ========== -->
@@ -346,8 +348,8 @@
         <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
             <template v-if="row.kind === 'byte'">
-              <el-button v-if="!row.bitMode" text size="small" :icon="Operation" @click="toggleUnit(row, 'bit')" />
-              <el-button v-else text size="small" :icon="Plus" :disabled="getBitsUsedInField(row) >= row.byteLength * 8" @click="addBitChild(row)" />
+              <el-tooltip v-if="!row.bitMode" content="切换到位模式"><el-button text size="small" :icon="Operation" @click="toggleUnit(row, 'bit')" /></el-tooltip>
+              <el-tooltip v-else content="添加位子段"><el-button text size="small" :icon="Plus" :disabled="getBitsUsedInField(row) >= row.byteLength * 8" @click="addBitChild(row)" /></el-tooltip>
             </template>
             <el-popconfirm title="删除？" @confirm="removeRepeatChild(editingRepeat, row.id)">
               <template #reference><el-button text size="small" :icon="Delete" /></template>
@@ -367,7 +369,7 @@
           <li v-if="rowCtx.row?.kind === 'byte' && !rowCtx.row?.bitMode" @click="addRepeatAfter(rowCtx.row); rowCtx.visible = false">添加重复组</li>
           <li v-if="rowCtx.row?.kind === 'repeat'" @click="openRepeatEditor(rowCtx.row); rowCtx.visible = false">编辑子字段</li>
           <li @click="duplicateField(rowCtx.row); rowCtx.visible = false">复制字段</li>
-          <li class="danger" @click="removeField(rowCtx.row?.id); rowCtx.visible = false">删除</li>
+          <li class="danger" @click="confirmCtxDelete">删除</li>
         </ul>
       </div>
     </teleport>
@@ -687,6 +689,16 @@ const removeField = (id) => {
   const fields = props.protocol.config.fields
   const i = fields.findIndex(f => f.id === id)
   if (i >= 0) fields.splice(i, 1)
+}
+
+const confirmCtxDelete = () => {
+  rowCtx.visible = false
+  if (!rowCtx.row) return
+  ElMessageBox.confirm('确认删除该字段？', '确认', {
+    confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
+  }).then(() => {
+    removeField(rowCtx.row.id)
+  }).catch(() => {})
 }
 
 const removeBitChild = (bitRow) => {

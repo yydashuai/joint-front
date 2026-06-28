@@ -19,18 +19,19 @@
         </el-button>
       </div>
       <div class="header-actions">
-        <el-button type="primary" :icon="Plus" @click="$router.push('/task')">创建测试任务</el-button>
-        <el-button :icon="Upload" @click="$router.push('/protocol')">导入协议模板</el-button>
-        <el-button
-          :icon="WarningFilled"
-          @click="$router.push('/exception')"
-          :type="totalPending > 0 ? 'danger' : ''"
-          plain
-        >
+        <el-tooltip content="创建一个新的测试任务"><el-button type="primary" :icon="Plus" @click="$router.push('/task')">创建测试任务</el-button></el-tooltip>
+        <el-tooltip content="导入或管理协议模板"><el-button :icon="Upload" @click="$router.push('/protocol')">导入协议模板</el-button></el-tooltip>
+        <el-tooltip content="查看异常告警详情">
+          <el-button
+            :icon="WarningFilled"
+            @click="$router.push('/exception')"
+            :type="totalPending > 0 ? 'danger' : ''"
+            plain
+          >
           异常详情
           <el-badge v-if="totalPending > 0" :value="totalPending" :max="99" class="btn-badge" />
-        </el-button>
-        <el-button :icon="Tickets" @click="$router.push('/report')">生成报告</el-button>
+        </el-button></el-tooltip>
+        <el-tooltip content="进入报告生成流程"><el-button :icon="Tickets" @click="$router.push('/report')">生成报告</el-button></el-tooltip>
       </div>
     </div>
 

@@ -8,8 +8,8 @@
             <div class="blk__desc">图片和表格会按用途说明回填到报告对应章节。上传后请写清楚放置位置和表达目的。</div>
           </div>
           <div class="step-actions">
-            <el-button :icon="ArrowLeft" @click="$emit('back')">上一步</el-button>
-            <el-button type="primary" :icon="ArrowRight" @click="goNext">下一步：生成报告</el-button>
+            <el-tooltip content="返回上一步"><el-button :icon="ArrowLeft" @click="$emit('back')">上一步</el-button></el-tooltip>
+            <el-tooltip content="确认素材配置并进入报告生成"><el-button type="primary" :icon="ArrowRight" @click="goNext">下一步：生成报告</el-button></el-tooltip>
           </div>
         </div>
 
@@ -49,7 +49,9 @@
                 <div v-if="!m.note?.trim()" class="field-tip">请说明该素材插入哪个章节，以及用于支撑哪类结论。</div>
               </el-form-item>
             </div>
-            <el-button class="mat-card__del" text :icon="Delete" @click="materials.splice(i, 1)" />
+            <el-popconfirm title="确认移除该素材？" @confirm="materials.splice(i, 1)">
+              <template #reference><el-button class="mat-card__del" text :icon="Delete" /></template>
+            </el-popconfirm>
           </div>
         </el-form>
         <el-empty v-else description="暂无素材，可上传拓扑图 / 截图 / 统计表等需人工提供的内容" :image-size="90" />

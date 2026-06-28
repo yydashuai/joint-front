@@ -24,9 +24,9 @@
         <el-tag v-if="ds.linkedInterface" type="warning" effect="plain" size="small">
           接口：{{ ds.linkedInterface }}
         </el-tag>
-        <el-button size="small" :icon="Download" @click="onExportCsv">导出 CSV</el-button>
-        <el-button size="small" :icon="DocumentCopy" @click="onExportJson">导出 JSON</el-button>
-        <el-button size="small" :icon="CopyDocument" @click="onDuplicate">复制数据集</el-button>
+        <el-tooltip content="将数据集导出为 CSV 文件"><el-button size="small" :icon="Download" @click="onExportCsv">导出 CSV</el-button></el-tooltip>
+        <el-tooltip content="将数据集导出为 JSON 文件"><el-button size="small" :icon="DocumentCopy" @click="onExportJson">导出 JSON</el-button></el-tooltip>
+        <el-tooltip content="复制整个数据集及其所有数据行"><el-button size="small" :icon="CopyDocument" @click="onDuplicate">复制数据集</el-button></el-tooltip>
         <el-popconfirm title="确认删除此数据集？" @confirm="onDelete">
           <template #reference>
             <el-button size="small" type="danger" :icon="Delete">删除</el-button>
@@ -228,15 +228,17 @@
         <!-- 删除行 -->
         <el-table-column label="" width="50" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button type="danger" text size="small" :icon="Delete" @click="tdStore.removeRow(ds.id, row.id)" />
+            <el-popconfirm title="确认删除该行？" @confirm="tdStore.removeRow(ds.id, row.id)">
+              <template #reference><el-button type="danger" text size="small" :icon="Delete" /></template>
+            </el-popconfirm>
           </template>
         </el-table-column>
       </el-table>
 
-      <el-button class="add-row-btn" text type="primary" :icon="Plus" @click="onAddRow">
+      <el-tooltip content="添加一行新的测试数据 (Ctrl+N)"><el-button class="add-row-btn" text type="primary" :icon="Plus" @click="onAddRow">
         添加测试行
         <span class="shortcut-hint">Ctrl+N</span>
-      </el-button>
+      </el-button></el-tooltip>
     </div>
 
     <!-- ======== 数据预览 (优化点 24: 复制按钮) ======== -->
@@ -265,7 +267,7 @@
           <li @click="onCtxMoveUp" :class="{ disabled: rowCtx.isFirst }">上移</li>
           <li @click="onCtxMoveDown" :class="{ disabled: rowCtx.isLast }">下移</li>
           <li class="ctx-sep"></li>
-          <li class="danger" @click="onCtxDeleteRow">删除此行</li>
+          <li class="danger" @click="confirmCtxDelete">删除此行</li>
         </ul>
       </div>
     </teleport>
@@ -277,7 +279,7 @@ import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } 
 import {
   Download, Delete, Plus, Lock, DocumentCopy, CopyDocument, Search, Top, Bottom
 } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import Sortable from 'sortablejs'
 import { useTestDataStore } from '@/stores/testData'
 import { useProtocolStore } from '@/stores/protocol'
@@ -485,6 +487,17 @@ const onCtxDeleteRow = () => {
   if (!rowCtx.row) return
   tdStore.removeRow(ds.value.id, rowCtx.row.id)
   closeRowCtx()
+}
+
+const confirmCtxDelete = () => {
+  if (!rowCtx.row) return
+  const rowId = rowCtx.row.id
+  closeRowCtx()
+  ElMessageBox.confirm('确认删除该行？', '确认', {
+    confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
+  }).then(() => {
+    tdStore.removeRow(ds.value.id, rowId)
+  }).catch(() => {})
 }
 
 /* ========== 工具栏行操作 ========== */
