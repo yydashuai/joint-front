@@ -211,7 +211,7 @@
           </el-table-column>
           <el-table-column label="" width="90" align="center">
             <template #default="{ row }">
-              <el-button v-if="row.dataType === 'object' || row.dataType === 'array'" :icon="Plus" size="small" text @click="addBodyChild(row)" />
+              <el-button v-if="row.dataType === '共识体'" :icon="Plus" size="small" text @click="addBodyChild(row)" />
               <el-popconfirm title="删除该字段？" @confirm="removeBodyField(row)">
                 <template #reference><el-button :icon="Delete" size="small" text type="danger" /></template>
               </el-popconfirm>
@@ -246,10 +246,7 @@
         <el-table-column label="数据类型" width="130">
           <template #default="{ row }">
             <el-select v-model="row.dataType" size="small" class="cell-select">
-              <el-option label="String" value="string" />
-              <el-option label="Integer" value="integer" />
-              <el-option label="Boolean" value="boolean" />
-              <el-option label="Timestamp" value="timestamp" />
+              <el-option v-for="t in headerDataTypes" :key="t.value" :label="t.label" :value="t.value" />
             </el-select>
           </template>
         </el-table-column>
@@ -288,9 +285,7 @@
           <div class="form-row">
             <span class="form-label">键数据类型</span>
             <el-select v-model="cfg.messageKey.dataType" style="width: 160px">
-              <el-option label="String" value="string" />
-              <el-option label="Integer" value="integer" />
-              <el-option label="UUID" value="uuid" />
+              <el-option v-for="t in keyDataTypes" :key="t.value" :label="t.label" :value="t.value" />
             </el-select>
           </div>
           <div class="form-row">
@@ -342,7 +337,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { Delete, Check, Plus, InfoFilled } from '@element-plus/icons-vue'
-import { PROTOCOL_TYPES, MQ_BODY_DATA_TYPES, makeMqBodyField, makeMqHeader, useProtocolStore } from '@/stores/protocol'
+import { PROTOCOL_TYPES, MQ_BODY_DATA_TYPES, MQ_HEADER_DATA_TYPES, MQ_KEY_DATA_TYPES, makeMqBodyField, makeMqHeader, useProtocolStore } from '@/stores/protocol'
 
 const props = defineProps({
   protocol: { type: Object, required: true },
@@ -369,7 +364,7 @@ const cfg = computed(() => {
   const c = props.protocol.config
   if (!c.messageBody) c.messageBody = []
   if (!c.messageHeaders) c.messageHeaders = []
-  if (!c.messageKey) c.messageKey = { dataType: 'string', pattern: '', desc: '' }
+  if (!c.messageKey) c.messageKey = { dataType: 'utf8', pattern: '', desc: '' }
   return c
 })
 const brokerTypes = ['RabbitMQ', 'Kafka', 'RocketMQ', 'ActiveMQ']
@@ -386,13 +381,16 @@ const bodyTypeGroups = computed(() => {
   return Object.values(groups)
 })
 
+const headerDataTypes = MQ_HEADER_DATA_TYPES
+const keyDataTypes = MQ_KEY_DATA_TYPES
+
 // ─── 展平消息体字段（含嵌套标记） ───
 const flatBodyFields = computed(() => {
   const walk = (fields, depth = 0) => {
     return fields.map(f => ({
       ...f,
       flatId: `bf-${f.id}`,
-      hasChildren: (f.dataType === 'object' || f.dataType === 'array') && (!f.children || !f.children.length),
+      hasChildren: f.dataType === '共识体' && (!f.children || !f.children.length),
       children: f.children?.length ? walk(f.children, depth + 1) : undefined,
     }))
   }
@@ -418,7 +416,7 @@ const removeBodyField = (row) => {
 }
 
 const onBodyTypeChange = (row) => {
-  if (row.dataType !== 'object' && row.dataType !== 'array') {
+  if (row.dataType !== '共识体') {
     row.children = []
   }
 }

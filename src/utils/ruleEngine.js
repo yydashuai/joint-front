@@ -66,6 +66,22 @@ export function flattenInterfaceFields(iface) {
   return out
 }
 
+/**
+ * 从接口字段节点中提取共识体子结构，生成 structFields 数组。
+ * 递归处理嵌套共识体。
+ */
+export function extractStructFields(children = []) {
+  return children.map((child) => {
+    const isStruct = child.type === '共识体' && child.children?.length
+    return {
+      name: child.name || '',
+      dataType: child.type === '常量' ? (child.dataType || 'uint8') : child.type,
+      required: true,
+      ...(isStruct ? { children: extractStructFields(child.children) } : {}),
+    }
+  })
+}
+
 export function makeSample(iface, variant = 'valid') {
   const build = (fields = []) => {
     const obj = {}
@@ -171,8 +187,15 @@ export function evaluate(ruleSet, sample, iface, opts = { recvMs: null }) {
         return
       }
       const dataType = rule.params?.dataType
-      const pass = typeMatches(value, dataType, rule.params?.enumValues)
-      results.push(pass ? ok(rule, path, `${path} 类型符合 ${dataType}`) : fail(rule, path, `${path} 类型不符合 ${dataType}`))
+      const structFields = rule.params?.structFields || []
+      const pass = typeMatches(value, dataType, rule.params?.enumValues, structFields)
+      if (pass && dataType === '共识体' && structFields.length) {
+        // 递归校验子字段
+        const childResults = validateStructFields(value, structFields, path, rule)
+        results.push(...childResults)
+      } else {
+        results.push(pass ? ok(rule, path, `${path} 类型符合 ${dataType}`) : fail(rule, path, `${path} 类型不符合 ${dataType}`))
+      }
       return
     }
 
@@ -240,9 +263,11 @@ function getPath(obj, path = '') {
   }, obj)
 }
 
-function typeMatches(value, dataType, enumValues = []) {
+function typeMatches(value, dataType, enumValues = [], structFields = []) {
   const type = normalizeType(dataType)
   if (enumValues?.length) return enumValues.some((item) => String(item.value ?? item) === String(value))
+  if (dataType === '共识体') return value && typeof value === 'object' && !Array.isArray(value)
+  if (dataType === '结构矩阵') return Array.isArray(value)
   if (type.includes('string') || type.includes('ascii') || type.includes('utf')) return typeof value === 'string'
   if (type.includes('bool')) return typeof value === 'boolean'
   if (type.includes('array')) return Array.isArray(value)
@@ -250,6 +275,43 @@ function typeMatches(value, dataType, enumValues = []) {
   if (dataType === '位组序流') return typeof value === 'string'
   if (isNumericType(type)) return typeof value === 'number' && Number.isFinite(value)
   return value !== undefined
+}
+
+/**
+ * 递归校验共识体子字段，返回校验结果数组。
+ */
+function validateStructFields(obj, structFields, parentPath, rule) {
+  const results = []
+  structFields.forEach((sf) => {
+    const childPath = `${parentPath}.${sf.name}`
+    const childValue = obj?.[sf.name]
+    if (childValue === undefined || childValue === null) {
+      if (sf.required) {
+        results.push(fail(rule, childPath, `${childPath} 缺失（共识体必填子字段）`))
+      } else {
+        results.push(ok(rule, childPath, `${childPath} 选填字段未提供，跳过`))
+      }
+      return
+    }
+    // 嵌套共识体：递归
+    if (sf.dataType === '共识体' && sf.children?.length) {
+      if (childValue && typeof childValue === 'object' && !Array.isArray(childValue)) {
+        results.push(ok(rule, childPath, `${childPath} 共识体结构存在`))
+        results.push(...validateStructFields(childValue, sf.children, childPath, rule))
+      } else {
+        results.push(fail(rule, childPath, `${childPath} 应为共识体对象，实际类型不符`))
+      }
+      return
+    }
+    // 叶子字段：类型检查
+    const match = typeMatches(childValue, sf.dataType)
+    if (match) {
+      results.push(ok(rule, childPath, `${childPath} 类型符合 ${sf.dataType}`))
+    } else {
+      results.push(fail(rule, childPath, `${childPath} 类型不符合 ${sf.dataType}`))
+    }
+  })
+  return results
 }
 
 function clampNumber(value, min, max) {

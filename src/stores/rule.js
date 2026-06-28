@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ruleSets as seedRuleSets } from '@/mock/seed-data'
 import { useProtocolStore } from '@/stores/protocol'
 import { useTestTaskStore } from '@/stores/testTask'
-import { flattenInterfaceFields, inferConstraint, inferRange, RULE_TYPES } from '@/utils/ruleEngine'
+import { flattenInterfaceFields, inferConstraint, inferRange, RULE_TYPES, extractStructFields } from '@/utils/ruleEngine'
 
 let ruleSetSeq = 100
 let ruleSeq = 1000
@@ -71,6 +71,7 @@ export const useRuleStore = defineStore('rule', {
   state: () => ({
     ruleSets: clone(seedRuleSets || []),
     selectedRuleSetId: seedRuleSets?.[0]?.id || null,
+    _idsResolved: false,
   }),
 
   getters: {
@@ -97,6 +98,21 @@ export const useRuleStore = defineStore('rule', {
   actions: {
     select(id) {
       this.selectedRuleSetId = id
+    },
+
+    /** 一次性补全种子规则中缺失的 target.interfaceId（按 interfaceName 匹配） */
+    resolveInterfaceIds() {
+      if (this._idsResolved) return
+      this._idsResolved = true
+      const protoStore = useProtocolStore()
+      this.ruleSets.forEach((rs) => {
+        rs.rules.forEach((rule) => {
+          if (!rule.target?.interfaceId && rule.target?.interfaceName) {
+            const iface = protoStore.interfaces.find((i) => i.name === rule.target.interfaceName)
+            if (iface) rule.target.interfaceId = iface.id
+          }
+        })
+      })
     },
 
     addRuleSet(data = {}) {
@@ -182,10 +198,15 @@ export const useRuleStore = defineStore('rule', {
       fields.forEach((field) => {
         const constraint = inferConstraint(field)
         if (selectedTypes.includes('type')) {
-          preview.push(makeGeneratedRule(iface, field, 'type', {
+          const typeParams = {
             dataType: field.type === '常量' ? field.dataType : field.type,
             enumValues: field.constraint?.mode === 'enum' ? field.constraint.entries : [],
-          }))
+          }
+          // 共识体字段：自动提取子结构
+          if (field.type === '共识体' && field.children?.length) {
+            typeParams.structFields = extractStructFields(field.children)
+          }
+          preview.push(makeGeneratedRule(iface, field, 'type', typeParams))
         }
         if (selectedTypes.includes('range') && constraint) {
           preview.push(makeGeneratedRule(iface, field, 'range', {
@@ -276,7 +297,12 @@ function makeGeneratedRule(iface, field, type, params = {}, level = 'error') {
 }
 
 function describeGeneratedRule(type, field, params) {
-  if (type === 'type') return `${field.fieldPath} 必须符合 ${params.dataType}`
+  if (type === 'type') {
+    if (params.dataType === '共识体' && params.structFields?.length) {
+      return `${field.fieldPath} 必须符合共识体结构（${params.structFields.length} 个子字段）`
+    }
+    return `${field.fieldPath} 必须符合 ${params.dataType}`
+  }
   if (type === 'range') return `${field.fieldPath} 必须位于 ${params.min} ~ ${params.max}`
   if (type === 'boundary') return `${field.fieldPath} 命中 ${params.min}/${params.max} 时提醒`
   if (type === 'overflow') return `${field.fieldPath} 必须存在且长度不超过 ${params.maxLength}`

@@ -25,7 +25,6 @@ export const ENDIANS = [
 
 // ─── 字节数据类型枚举 ───
 export const BYTE_DATA_TYPES = [
-  // 数值型
   { value: 'uint8',   label: 'uint8',   group: '数值', bytes: 1, signed: false },
   { value: 'int8',    label: 'int8',    group: '数值', bytes: 1, signed: true },
   { value: 'uint16',  label: 'uint16',  group: '数值', bytes: 2, signed: false },
@@ -36,13 +35,6 @@ export const BYTE_DATA_TYPES = [
   { value: 'int64',   label: 'int64',   group: '数值', bytes: 8, signed: true },
   { value: 'float32', label: 'float32', group: '数值', bytes: 4, signed: true },
   { value: 'float64', label: 'float64', group: '数值', bytes: 8, signed: true },
-  // 字符型
-  { value: 'ascii',   label: 'ASCII',   group: '字符', bytes: 0 },
-  { value: 'gbk',     label: 'GBK',     group: '字符', bytes: 0 },
-  { value: 'utf8',    label: 'UTF-8',   group: '字符', bytes: 0 },
-  // 其他
-  { value: 'bcd',     label: 'BCD8421', group: '其他', bytes: 0 },
-  { value: 'raw',     label: '原始字节', group: '其他', bytes: 0 },
 ]
 
 export const isNumericType = (dt) =>
@@ -216,7 +208,7 @@ export const makeProtoField = (o = {}) => ({
 export const makeMqBodyField = (o = {}) => ({
   id: uid(),
   name: '',
-  dataType: 'string',
+  dataType: 'uint8',
   required: true,
   constraint: noneConstraint(),
   desc: '',
@@ -228,7 +220,7 @@ export const makeMqBodyField = (o = {}) => ({
 export const makeMqHeader = (o = {}) => ({
   id: uid(),
   key: '',
-  dataType: 'string',
+  dataType: 'utf8',
   required: false,
   defaultValue: '',
   desc: '',
@@ -263,18 +255,20 @@ export const COMMON_HEADERS = [
   'Cache-Control', 'User-Agent', 'Accept-Language', 'X-Api-Version',
 ]
 
-// ─── MQ 消息体字段数据类型 ───
+// ─── MQ 消息体字段数据类型（与 BYTE_DATA_TYPES 统一 + 共识体复合类型） ───
 export const MQ_BODY_DATA_TYPES = [
-  { value: 'string',  label: 'String',  group: '基础' },
-  { value: 'integer', label: 'Integer', group: '基础' },
-  { value: 'float',   label: 'Float',   group: '基础' },
-  { value: 'double',  label: 'Double',  group: '基础' },
-  { value: 'boolean', label: 'Boolean', group: '基础' },
-  { value: 'object',  label: 'Object',  group: '复合' },
-  { value: 'array',   label: 'Array',   group: '复合' },
-  { value: 'timestamp', label: 'Timestamp', group: '特殊' },
-  { value: 'uuid',    label: 'UUID',    group: '特殊' },
-  { value: 'enum',    label: 'Enum',    group: '特殊' },
+  { value: 'uint8',   label: 'uint8',   group: '数值' },
+  { value: 'int8',    label: 'int8',    group: '数值' },
+  { value: 'uint16',  label: 'uint16',  group: '数值' },
+  { value: 'int16',   label: 'int16',   group: '数值' },
+  { value: 'uint32',  label: 'uint32',  group: '数值' },
+  { value: 'int32',   label: 'int32',   group: '数值' },
+  { value: 'uint64',  label: 'uint64',  group: '数值' },
+  { value: 'int64',   label: 'int64',   group: '数值' },
+  { value: 'float32', label: 'float32', group: '数值' },
+  { value: 'float64', label: 'float64', group: '数值' },
+  { value: 'utf8',    label: 'UTF-8',   group: '字符' },
+  { value: '共识体',  label: '共识体',  group: '复合' },
 ]
 
 // ─── MQ Broker 类型枚举 ───
@@ -285,6 +279,23 @@ export const MQ_OPERATION_TYPES = [
   { value: 'publish',      label: '发布消息',   desc: '向 Topic/Exchange 发布消息' },
   { value: 'subscribe',    label: '订阅消费',   desc: '从 Topic/Queue 消费消息' },
   { value: 'request-reply',label: '请求-响应', desc: '发布并等待 Reply-To 响应' },
+]
+
+// ─── MQ 消息头数据类型 ───
+export const MQ_HEADER_DATA_TYPES = [
+  { value: 'utf8',    label: 'UTF-8' },
+  { value: 'uint8',   label: 'uint8' },
+  { value: 'int32',   label: 'int32' },
+  { value: 'uint32',  label: 'uint32' },
+  { value: 'int64',   label: 'int64' },
+]
+
+// ─── MQ 消息键数据类型 ───
+export const MQ_KEY_DATA_TYPES = [
+  { value: 'utf8',    label: 'UTF-8' },
+  { value: 'int32',   label: 'int32' },
+  { value: 'uint32',  label: 'uint32' },
+  { value: 'int64',   label: 'int64' },
 ]
 
 // ─── 类型专用 config 工厂 ───
@@ -341,7 +352,7 @@ export const makeConfig = (type) => {
         consumerGroup: '', qos: 0, ackMode: 'auto', messageFormat: 'JSON',
         messageBody: [],
         messageHeaders: [],
-        messageKey: { dataType: 'string', pattern: '', desc: '' },
+        messageKey: { dataType: 'utf8', pattern: '', desc: '' },
       }
     default:
       return {}

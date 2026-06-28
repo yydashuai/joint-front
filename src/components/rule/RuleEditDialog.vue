@@ -32,7 +32,48 @@
             :show-all-levels="false"
             filterable
             style="width: 100%;"
+            @change="onDataTypeChange"
           />
+        </el-form-item>
+        <el-form-item v-if="isStructType" label="子字段结构">
+          <div class="struct-fields">
+            <el-table v-if="flattenedStructRows.length" :data="flattenedStructRows" size="small" class="struct-table" row-key="__uid">
+              <el-table-column label="字段名" min-width="130">
+                <template #default="{ row }">
+                  <span v-if="row.__nested" class="struct-indent">└</span>
+                  <el-input v-model="row.name" size="small" placeholder="字段名" class="struct-name-input" />
+                </template>
+              </el-table-column>
+              <el-table-column label="数据类型" width="136">
+                <template #default="{ row }">
+                  <el-select v-model="row.dataType" size="small" @change="(val) => onStructDataTypeChange(row, val)">
+                    <el-option-group label="常量">
+                      <el-option v-for="dt in BYTE_DATA_TYPES" :key="dt.value" :label="dt.label" :value="dt.value" />
+                    </el-option-group>
+                    <el-option v-if="!row.__nested" label="共识体" value="共识体" />
+                    <el-option label="位组序流" value="位组序流" />
+                  </el-select>
+                </template>
+              </el-table-column>
+              <el-table-column label="必填" width="56" align="center">
+                <template #default="{ row }">
+                  <el-checkbox v-model="row.required" />
+                </template>
+              </el-table-column>
+              <el-table-column label="" width="100" align="center">
+                <template #default="{ row }">
+                  <el-button v-if="row.dataType === '共识体' && !row.__nested" link type="primary" size="small" @click="addStructField(row.children)">+子</el-button>
+                  <el-button link type="danger" size="small" @click="removeStructField(row)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="struct-actions">
+              <el-button size="small" type="primary" plain @click="addStructField(form.params.structFields)">添加子字段</el-button>
+              <el-button v-if="currentField?.type === '共识体' && currentField?.children?.length" size="small" plain @click="autoFillStructFromInterface">
+                从接口定义导入
+              </el-button>
+            </div>
+          </div>
         </el-form-item>
       </template>
       <template v-if="form.type === 'range' || form.type === 'boundary'">
@@ -80,9 +121,10 @@
 <script setup>
 import { computed, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import { RULE_TYPES, useRuleStore } from '@/stores/rule'
 import { useProtocolStore, BYTE_DATA_TYPES, FIELD_TYPES } from '@/stores/protocol'
-import { flattenInterfaceFields, inferConstraint } from '@/utils/ruleEngine'
+import { flattenInterfaceFields, inferConstraint, extractStructFields } from '@/utils/ruleEngine'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -122,11 +164,108 @@ const dataTypeOptions = computed(() => FIELD_TYPES.map((t) => (
     : { value: t, label: t }
 )))
 
+// ─── 共识体子字段管理 ───
+let structSeq = 0
+const isStructType = computed(() => form.params?.dataType === '共识体')
+
+// 将嵌套的 structFields 展平为一维数组（顶层 + 一级子字段）
+const flattenedStructRows = computed(() => {
+  const rows = []
+  const fields = form.params?.structFields || []
+  fields.forEach((field) => {
+    if (!field.__uid) field.__uid = `sf-${++structSeq}`
+    rows.push(field)
+    if (field.dataType === '共识体' && field.children?.length) {
+      field.children.forEach((child) => {
+        if (!child.__uid) child.__uid = `sf-${++structSeq}`
+        child.__nested = true
+        rows.push(child)
+      })
+    }
+  })
+  return rows
+})
+
+const addStructField = (list) => {
+  if (!Array.isArray(list)) return
+  list.push({
+    name: '',
+    dataType: 'uint8',
+    required: true,
+    __uid: `sf-${++structSeq}`,
+  })
+}
+
+const removeStructField = (row) => {
+  const topList = form.params.structFields
+  // 尝试从顶层删除
+  let idx = topList.findIndex((f) => f === row)
+  if (idx >= 0) {
+    topList.splice(idx, 1)
+    return
+  }
+  // 尝试从嵌套 children 中删除
+  for (const field of topList) {
+    if (field.children?.length) {
+      idx = field.children.findIndex((c) => c === row)
+      if (idx >= 0) {
+        field.children.splice(idx, 1)
+        return
+      }
+    }
+  }
+}
+
+const onStructDataTypeChange = (row, val) => {
+  if (val === '共识体') {
+    if (!row.children) row.children = []
+  } else {
+    delete row.children
+  }
+}
+
+const onDataTypeChange = (val) => {
+  if (val === '共识体') {
+    if (!form.params.structFields) form.params.structFields = []
+    // 如果当前目标字段是共识体，自动填充
+    if (currentField.value?.type === '共识体' && currentField.value?.children?.length) {
+      form.params.structFields = extractStructFields(currentField.value.children)
+    }
+  } else {
+    delete form.params.structFields
+  }
+}
+
+const autoFillStructFromInterface = () => {
+  if (currentField.value?.type === '共识体' && currentField.value?.children?.length) {
+    form.params.structFields = extractStructFields(currentField.value.children)
+  }
+}
+
 watch(() => props.modelValue, (open) => {
   if (!open) return
   Object.assign(form, props.rule ? JSON.parse(JSON.stringify(props.rule)) : blank())
-  if (!form.target.interfaceId) onInterfaceChange(moduleInterfaces.value[0]?.id)
-  applyTypeDefaults()
+
+  // 补全缺失的 interfaceId：优先按 interfaceName 匹配正确接口
+  if (!form.target.interfaceId && form.target.interfaceName) {
+    const matched = protoStore.interfaces.find((i) => i.name === form.target.interfaceName)
+    if (matched) {
+      form.target.interfaceId = matched.id
+    }
+  }
+
+  // 仅在完全没有接口时才回退到第一个接口（新建规则或无法匹配时）
+  if (!form.target.interfaceId) {
+    onInterfaceChange(moduleInterfaces.value[0]?.id)
+  }
+
+  // 仅对新建规则应用默认值；编辑时保留已有 params
+  if (!form.id) {
+    applyTypeDefaults()
+  } else if (isInterfaceRule.value) {
+    form.target.fieldPath = ''
+    form.target.fieldName = ''
+  }
 })
 
 function blank() {
@@ -168,7 +307,13 @@ const onFieldChange = (path) => {
 
 const fillParamsFromField = (field) => {
   const constraint = inferConstraint(field)
-  if (form.type === 'type') form.params = { dataType: field.type === '常量' ? field.dataType : field.type }
+  if (form.type === 'type') {
+    form.params = { dataType: field.type === '常量' ? field.dataType : field.type }
+    // 共识体：自动提取子结构
+    if (field.type === '共识体' && field.children?.length) {
+      form.params.structFields = extractStructFields(field.children)
+    }
+  }
   if ((form.type === 'range' || form.type === 'boundary') && constraint) form.params = { min: constraint.min, max: constraint.max, dataType: field.dataType || field.type }
   if (form.type === 'overflow') form.params = { required: true, maxLength: field.type === '位组序流' ? 256 : 64 }
 }
@@ -184,6 +329,16 @@ const applyTypeDefaults = () => {
   else if (form.target.fieldPath) onFieldChange(form.target.fieldPath)
 }
 
+// 递归清除 structFields 中的 UI 临时属性
+const cleanStructFields = (fields) => {
+  if (!fields?.length) return fields
+  return fields.map(({ __uid, __nested, children, ...rest }) => {
+    const cleaned = { ...rest }
+    if (children?.length) cleaned.children = cleanStructFields(children)
+    return cleaned
+  })
+}
+
 const save = () => {
   // Validate range/boundary rules are within protocol-defined range
   if ((form.type === 'range' || form.type === 'boundary') && protoRange.value) {
@@ -194,6 +349,10 @@ const save = () => {
       return
     }
   }
+  // 清除 structFields 的 UI 临时属性
+  if (form.params?.structFields) {
+    form.params.structFields = cleanStructFields(form.params.structFields)
+  }
   if (form.id) store.updateRule(props.ruleSet.id, form.id, JSON.parse(JSON.stringify(form)))
   else store.addRule(props.ruleSet.id, JSON.parse(JSON.stringify({ ...form, id: undefined })))
   visible.value = false
@@ -202,4 +361,30 @@ const save = () => {
 
 <style scoped>
 .unit { margin-left: 8px; color: var(--el-text-color-secondary); font-size: 12px; }
+.struct-fields {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.struct-table {
+  width: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.struct-nested {
+  background: var(--el-fill-color-lighter);
+}
+.struct-indent {
+  color: var(--el-text-color-secondary);
+  margin-right: 4px;
+  font-size: 12px;
+}
+.struct-name-input {
+  width: 100%;
+}
+.struct-actions {
+  display: flex;
+  gap: 8px;
+}
 </style>

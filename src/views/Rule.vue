@@ -78,7 +78,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CopyDocument, Delete, Download, Search } from '@element-plus/icons-vue'
@@ -97,6 +97,9 @@ const protoStore = useProtocolStore()
 const connStore = useConnectionStore()
 const router = useRouter()
 const route = useRoute()
+
+// 一次性补全种子规则中缺失的 target.interfaceId
+onMounted(() => ruleStore.resolveInterfaceIds())
 
 const selectedKey = ref('')
 const keyword = ref('')

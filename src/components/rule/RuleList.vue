@@ -163,7 +163,13 @@ const typeMeta = (type) => RULE_TYPE_MAP[type] || { label: type, tag: 'info' }
 
 const ruleText = (rule) => {
   const p = rule.params || {}
-  if (rule.type === 'type') return p.enumValues?.length ? `枚举成员：${p.enumValues.map((i) => i.label ?? i.value ?? i).join(' / ')}` : `类型必须为 ${p.dataType || '已声明类型'}`
+  if (rule.type === 'type') {
+    if (p.enumValues?.length) return `枚举成员：${p.enumValues.map((i) => i.label ?? i.value ?? i).join(' / ')}`
+    if (p.dataType === '共识体' && p.structFields?.length) {
+      return `共识体结构（${p.structFields.length} 个子字段：${p.structFields.map((f) => f.name).filter(Boolean).join(', ')}）`
+    }
+    return `类型必须为 ${p.dataType || '已声明类型'}`
+  }
   if (rule.type === 'range') return `${p.min} ~ ${p.max}`
   if (rule.type === 'boundary') return `边界提醒：${p.min} / ${p.max}`
   if (rule.type === 'overflow') return `必填 ${p.required ? '是' : '否'}，最大长度 ${p.maxLength || '不限'}`

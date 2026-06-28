@@ -338,23 +338,23 @@ export const protocols = [
       topic: '', queueName: 'mount-change-queue', exchangeName: 'weapon-exchange', routingKey: 'mount.change',
       consumerGroup: '', qos: 1, ackMode: 'auto', messageFormat: 'JSON',
       messageBody: [
-        { id: pid(), name: 'eventId', dataType: 'uuid', required: true, constraint: { mode: 'none' }, desc: '事件唯一标识', children: [] },
-        { id: pid(), name: 'timestamp', dataType: 'timestamp', required: true, constraint: { mode: 'none' }, desc: '变更发生时间', children: [] },
-        { id: pid(), name: 'aircraftId', dataType: 'integer', required: true, constraint: { mode: 'range', min: 1, max: 9999, value: 0 }, desc: '飞机编号', children: [] },
-        { id: pid(), name: 'pylonNo', dataType: 'integer', required: true, constraint: { mode: 'range', min: 1, max: 12, value: 0 }, desc: '挂点号', children: [] },
-        { id: pid(), name: 'changeType', dataType: 'enum', required: true, constraint: { mode: 'enum', entries: [{ value: 'mount', label: '挂载' }, { value: 'unmount', label: '卸载' }, { value: 'replace', label: '更换' }] }, desc: '变更类型', children: [] },
-        { id: pid(), name: 'payload', dataType: 'object', required: true, constraint: { mode: 'none' }, desc: '载荷信息', children: [
-          { id: pid(), name: 'loadType', dataType: 'integer', required: true, constraint: { mode: 'range', min: 0, max: 5, value: 0 }, desc: '载荷类型', children: [] },
-          { id: pid(), name: 'weight', dataType: 'integer', required: true, constraint: { mode: 'range', min: 0, max: 9999, value: 0 }, desc: '重量 kg', children: [] },
-          { id: pid(), name: 'locked', dataType: 'boolean', required: true, constraint: { mode: 'none' }, desc: '是否锁定', children: [] },
+        { id: pid(), name: 'eventId', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '事件唯一标识', children: [] },
+        { id: pid(), name: 'timestamp', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '变更发生时间', children: [] },
+        { id: pid(), name: 'aircraftId', dataType: 'int32', required: true, constraint: { mode: 'range', min: 1, max: 9999, value: 0 }, desc: '飞机编号', children: [] },
+        { id: pid(), name: 'pylonNo', dataType: 'int32', required: true, constraint: { mode: 'range', min: 1, max: 12, value: 0 }, desc: '挂点号', children: [] },
+        { id: pid(), name: 'changeType', dataType: 'utf8', required: true, constraint: { mode: 'enum', entries: [{ value: 'mount', label: '挂载' }, { value: 'unmount', label: '卸载' }, { value: 'replace', label: '更换' }] }, desc: '变更类型', children: [] },
+        { id: pid(), name: 'payload', dataType: '共识体', required: true, constraint: { mode: 'none' }, desc: '载荷信息', children: [
+          { id: pid(), name: 'loadType', dataType: 'int32', required: true, constraint: { mode: 'range', min: 0, max: 5, value: 0 }, desc: '载荷类型', children: [] },
+          { id: pid(), name: 'weight', dataType: 'int32', required: true, constraint: { mode: 'range', min: 0, max: 9999, value: 0 }, desc: '重量 kg', children: [] },
+          { id: pid(), name: 'locked', dataType: 'uint8', required: true, constraint: { mode: 'none' }, desc: '是否锁定', children: [] },
         ]},
       ],
       messageHeaders: [
-        { id: pid(), key: 'correlation_id', dataType: 'string', required: true, defaultValue: '', desc: '请求关联 ID' },
-        { id: pid(), key: 'content_type', dataType: 'string', required: true, defaultValue: 'application/json', desc: '消息内容类型' },
-        { id: pid(), key: 'priority', dataType: 'integer', required: false, defaultValue: '5', desc: '消息优先级 0~9' },
+        { id: pid(), key: 'correlation_id', dataType: 'utf8', required: true, defaultValue: '', desc: '请求关联 ID' },
+        { id: pid(), key: 'content_type', dataType: 'utf8', required: true, defaultValue: 'application/json', desc: '消息内容类型' },
+        { id: pid(), key: 'priority', dataType: 'int32', required: false, defaultValue: '5', desc: '消息优先级 0~9' },
       ],
-      messageKey: { dataType: 'string', pattern: '', desc: '' },
+      messageKey: { dataType: 'utf8', pattern: '', desc: '' },
     }
   }),
 
@@ -718,24 +718,24 @@ export const protocols = [
       topic: 'alert-events', queueName: '', exchangeName: '', routingKey: '',
       consumerGroup: 'cmd-audit-group', qos: 1, ackMode: 'manual', messageFormat: 'JSON',
       messageBody: [
-        { id: pid(), name: 'alertId', dataType: 'uuid', required: true, constraint: { mode: 'none' }, desc: '告警唯一标识', children: [] },
-        { id: pid(), name: 'timestamp', dataType: 'timestamp', required: true, constraint: { mode: 'none' }, desc: '告警触发时间', children: [] },
-        { id: pid(), name: 'systemId', dataType: 'string', required: true, constraint: { mode: 'none' }, desc: '来源系统 ID', children: [] },
-        { id: pid(), name: 'level', dataType: 'enum', required: true, constraint: { mode: 'enum', entries: [{ value: 'high', label: '高' }, { value: 'medium', label: '中' }, { value: 'low', label: '低' }] }, desc: '告警等级', children: [] },
-        { id: pid(), name: 'category', dataType: 'string', required: true, constraint: { mode: 'enum', entries: [{ value: 'field_overflow', label: '字段越界' }, { value: 'timeout', label: '响应超时' }, { value: 'format_error', label: '格式错误' }, { value: 'link_down', label: '链路中断' }] }, desc: '告警类别', children: [] },
-        { id: pid(), name: 'detail', dataType: 'object', required: true, constraint: { mode: 'none' }, desc: '告警详情', children: [
-          { id: pid(), name: 'interfaceName', dataType: 'string', required: true, constraint: { mode: 'none' }, desc: '关联接口名称', children: [] },
-          { id: pid(), name: 'fieldPath', dataType: 'string', required: false, constraint: { mode: 'none' }, desc: '异常字段路径', children: [] },
-          { id: pid(), name: 'message', dataType: 'string', required: true, constraint: { mode: 'length', minLen: 1, maxLen: 1024 }, desc: '告警描述', children: [] },
+        { id: pid(), name: 'alertId', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '告警唯一标识', children: [] },
+        { id: pid(), name: 'timestamp', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '告警触发时间', children: [] },
+        { id: pid(), name: 'systemId', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '来源系统 ID', children: [] },
+        { id: pid(), name: 'level', dataType: 'utf8', required: true, constraint: { mode: 'enum', entries: [{ value: 'high', label: '高' }, { value: 'medium', label: '中' }, { value: 'low', label: '低' }] }, desc: '告警等级', children: [] },
+        { id: pid(), name: 'category', dataType: 'utf8', required: true, constraint: { mode: 'enum', entries: [{ value: 'field_overflow', label: '字段越界' }, { value: 'timeout', label: '响应超时' }, { value: 'format_error', label: '格式错误' }, { value: 'link_down', label: '链路中断' }] }, desc: '告警类别', children: [] },
+        { id: pid(), name: 'detail', dataType: '共识体', required: true, constraint: { mode: 'none' }, desc: '告警详情', children: [
+          { id: pid(), name: 'interfaceName', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '关联接口名称', children: [] },
+          { id: pid(), name: 'fieldPath', dataType: 'utf8', required: false, constraint: { mode: 'none' }, desc: '异常字段路径', children: [] },
+          { id: pid(), name: 'message', dataType: 'utf8', required: true, constraint: { mode: 'length', minLen: 1, maxLen: 1024 }, desc: '告警描述', children: [] },
         ]},
-        { id: pid(), name: 'tags', dataType: 'array', required: false, constraint: { mode: 'none' }, desc: '标签列表', children: [] },
+        { id: pid(), name: 'tags', dataType: '共识体', required: false, constraint: { mode: 'none' }, desc: '标签列表', children: [] },
       ],
       messageHeaders: [
-        { id: pid(), key: 'kafka_key', dataType: 'string', required: true, defaultValue: '', desc: 'Kafka 分区键' },
-        { id: pid(), key: 'source_system', dataType: 'string', required: true, defaultValue: '', desc: '来源系统标识' },
-        { id: pid(), key: 'trace_id', dataType: 'string', required: false, defaultValue: '', desc: '分布式追踪 ID' },
+        { id: pid(), key: 'kafka_key', dataType: 'utf8', required: true, defaultValue: '', desc: 'Kafka 分区键' },
+        { id: pid(), key: 'source_system', dataType: 'utf8', required: true, defaultValue: '', desc: '来源系统标识' },
+        { id: pid(), key: 'trace_id', dataType: 'utf8', required: false, defaultValue: '', desc: '分布式追踪 ID' },
       ],
-      messageKey: { dataType: 'string', pattern: '{systemId}-{level}', desc: '按系统+等级分区路由' },
+      messageKey: { dataType: 'utf8', pattern: '{systemId}-{level}', desc: '按系统+等级分区路由' },
     }
   }),
 
@@ -748,22 +748,22 @@ export const protocols = [
       topic: 'track-data', queueName: '', exchangeName: '', routingKey: '',
       consumerGroup: 'track-consumers', qos: 1, ackMode: 'auto', messageFormat: 'JSON',
       messageBody: [
-        { id: pid(), name: 'trackId', dataType: 'integer', required: true, constraint: { mode: 'range', min: 1, max: 65535, value: 0 }, desc: '航迹编号', children: [] },
-        { id: pid(), name: 'timestamp', dataType: 'timestamp', required: true, constraint: { mode: 'none' }, desc: '采集时间', children: [] },
-        { id: pid(), name: 'position', dataType: 'object', required: true, constraint: { mode: 'none' }, desc: '位置信息', children: [
-          { id: pid(), name: 'azimuth', dataType: 'float', required: true, constraint: { mode: 'range', min: 0, max: 360, value: 0 }, desc: '方位角 °', children: [] },
-          { id: pid(), name: 'elevation', dataType: 'float', required: true, constraint: { mode: 'range', min: -90, max: 90, value: 0 }, desc: '俯仰角 °', children: [] },
-          { id: pid(), name: 'distance', dataType: 'float', required: true, constraint: { mode: 'range', min: 0, max: 500000, value: 0 }, desc: '距离 m', children: [] },
+        { id: pid(), name: 'trackId', dataType: 'int32', required: true, constraint: { mode: 'range', min: 1, max: 65535, value: 0 }, desc: '航迹编号', children: [] },
+        { id: pid(), name: 'timestamp', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '采集时间', children: [] },
+        { id: pid(), name: 'position', dataType: '共识体', required: true, constraint: { mode: 'none' }, desc: '位置信息', children: [
+          { id: pid(), name: 'azimuth', dataType: 'float32', required: true, constraint: { mode: 'range', min: 0, max: 360, value: 0 }, desc: '方位角 °', children: [] },
+          { id: pid(), name: 'elevation', dataType: 'float32', required: true, constraint: { mode: 'range', min: -90, max: 90, value: 0 }, desc: '俯仰角 °', children: [] },
+          { id: pid(), name: 'distance', dataType: 'float32', required: true, constraint: { mode: 'range', min: 0, max: 500000, value: 0 }, desc: '距离 m', children: [] },
         ]},
-        { id: pid(), name: 'velocity', dataType: 'float', required: false, constraint: { mode: 'range', min: 0, max: 3000, value: 0 }, desc: '速度 m/s', children: [] },
-        { id: pid(), name: 'confidence', dataType: 'float', required: false, constraint: { mode: 'range', min: 0, max: 1, value: 0 }, desc: '置信度', children: [] },
-        { id: pid(), name: 'targetType', dataType: 'enum', required: false, constraint: { mode: 'enum', entries: [{ value: 'unknown', label: '未知' }, { value: 'fighter', label: '战斗机' }, { value: 'transport', label: '运输机' }, { value: 'missile', label: '导弹' }, { value: 'uav', label: '无人机' }] }, desc: '目标类型', children: [] },
+        { id: pid(), name: 'velocity', dataType: 'float32', required: false, constraint: { mode: 'range', min: 0, max: 3000, value: 0 }, desc: '速度 m/s', children: [] },
+        { id: pid(), name: 'confidence', dataType: 'float32', required: false, constraint: { mode: 'range', min: 0, max: 1, value: 0 }, desc: '置信度', children: [] },
+        { id: pid(), name: 'targetType', dataType: 'utf8', required: false, constraint: { mode: 'enum', entries: [{ value: 'unknown', label: '未知' }, { value: 'fighter', label: '战斗机' }, { value: 'transport', label: '运输机' }, { value: 'missile', label: '导弹' }, { value: 'uav', label: '无人机' }] }, desc: '目标类型', children: [] },
       ],
       messageHeaders: [
-        { id: pid(), key: 'kafka_key', dataType: 'string', required: true, defaultValue: '', desc: '分区键(航迹ID)' },
-        { id: pid(), key: 'content_type', dataType: 'string', required: true, defaultValue: 'application/json', desc: '内容类型' },
+        { id: pid(), key: 'kafka_key', dataType: 'utf8', required: true, defaultValue: '', desc: '分区键(航迹ID)' },
+        { id: pid(), key: 'content_type', dataType: 'utf8', required: true, defaultValue: 'application/json', desc: '内容类型' },
       ],
-      messageKey: { dataType: 'integer', pattern: '{trackId}', desc: '按航迹ID分区，保证同一航迹有序' },
+      messageKey: { dataType: 'int32', pattern: '{trackId}', desc: '按航迹ID分区，保证同一航迹有序' },
     }
   }),
 
@@ -776,22 +776,22 @@ export const protocols = [
       topic: '', queueName: 'situation-fanout', exchangeName: 'situation-exchange', routingKey: 'situation.update',
       consumerGroup: '', qos: 1, ackMode: 'auto', messageFormat: 'JSON',
       messageBody: [
-        { id: pid(), name: 'updateId', dataType: 'uuid', required: true, constraint: { mode: 'none' }, desc: '更新批次ID', children: [] },
-        { id: pid(), name: 'timestamp', dataType: 'timestamp', required: true, constraint: { mode: 'none' }, desc: '更新时间', children: [] },
-        { id: pid(), name: 'areaId', dataType: 'string', required: true, constraint: { mode: 'none' }, desc: '区域编号', children: [] },
-        { id: pid(), name: 'changeType', dataType: 'enum', required: true, constraint: { mode: 'enum', entries: [{ value: 'add', label: '新增目标' }, { value: 'update', label: '更新目标' }, { value: 'remove', label: '移除目标' }] }, desc: '变更类型', children: [] },
-        { id: pid(), name: 'entities', dataType: 'array', required: true, constraint: { mode: 'none' }, desc: '变更实体列表', children: [
-          { id: pid(), name: 'entityId', dataType: 'integer', required: true, constraint: { mode: 'range', min: 1, max: 65535, value: 0 }, desc: '实体编号', children: [] },
-          { id: pid(), name: 'type', dataType: 'enum', required: true, constraint: { mode: 'enum', entries: [{ value: 'friendly', label: '友军' }, { value: 'hostile', label: '敌方' }, { value: 'neutral', label: '中性' }] }, desc: '实体类型', children: [] },
-          { id: pid(), name: 'lat', dataType: 'double', required: true, constraint: { mode: 'range', min: -90, max: 90, value: 0 }, desc: '纬度', children: [] },
-          { id: pid(), name: 'lon', dataType: 'double', required: true, constraint: { mode: 'range', min: -180, max: 180, value: 0 }, desc: '经度', children: [] },
+        { id: pid(), name: 'updateId', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '更新批次ID', children: [] },
+        { id: pid(), name: 'timestamp', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '更新时间', children: [] },
+        { id: pid(), name: 'areaId', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '区域编号', children: [] },
+        { id: pid(), name: 'changeType', dataType: 'utf8', required: true, constraint: { mode: 'enum', entries: [{ value: 'add', label: '新增目标' }, { value: 'update', label: '更新目标' }, { value: 'remove', label: '移除目标' }] }, desc: '变更类型', children: [] },
+        { id: pid(), name: 'entities', dataType: '共识体', required: true, constraint: { mode: 'none' }, desc: '变更实体列表', children: [
+          { id: pid(), name: 'entityId', dataType: 'int32', required: true, constraint: { mode: 'range', min: 1, max: 65535, value: 0 }, desc: '实体编号', children: [] },
+          { id: pid(), name: 'type', dataType: 'utf8', required: true, constraint: { mode: 'enum', entries: [{ value: 'friendly', label: '友军' }, { value: 'hostile', label: '敌方' }, { value: 'neutral', label: '中性' }] }, desc: '实体类型', children: [] },
+          { id: pid(), name: 'lat', dataType: 'float64', required: true, constraint: { mode: 'range', min: -90, max: 90, value: 0 }, desc: '纬度', children: [] },
+          { id: pid(), name: 'lon', dataType: 'float64', required: true, constraint: { mode: 'range', min: -180, max: 180, value: 0 }, desc: '经度', children: [] },
         ]},
       ],
       messageHeaders: [
-        { id: pid(), key: 'correlation_id', dataType: 'string', required: true, defaultValue: '', desc: '关联ID' },
-        { id: pid(), key: 'expiration', dataType: 'integer', required: false, defaultValue: '60000', desc: '消息TTL(ms)' },
+        { id: pid(), key: 'correlation_id', dataType: 'utf8', required: true, defaultValue: '', desc: '关联ID' },
+        { id: pid(), key: 'expiration', dataType: 'int32', required: false, defaultValue: '60000', desc: '消息TTL(ms)' },
       ],
-      messageKey: { dataType: 'string', pattern: '', desc: '' },
+      messageKey: { dataType: 'utf8', pattern: '', desc: '' },
     }
   }),
 
@@ -804,22 +804,22 @@ export const protocols = [
       topic: '', queueName: 'mount-change-queue', exchangeName: 'weapon-exchange', routingKey: 'mount.change',
       consumerGroup: '', qos: 1, ackMode: 'manual', messageFormat: 'JSON',
       messageBody: [
-        { id: pid(), name: 'changeId', dataType: 'uuid', required: true, constraint: { mode: 'none' }, desc: '变更事件唯一标识', children: [] },
-        { id: pid(), name: 'timestamp', dataType: 'timestamp', required: true, constraint: { mode: 'none' }, desc: '变更触发时间', children: [] },
-        { id: pid(), name: 'aircraftId', dataType: 'string', required: true, constraint: { mode: 'none' }, desc: '飞机编号', children: [] },
-        { id: pid(), name: 'pylonNo', dataType: 'integer', required: true, constraint: { mode: 'range', min: 1, max: 12, value: 0 }, desc: '挂点编号', children: [] },
-        { id: pid(), name: 'changeType', dataType: 'enum', required: true, constraint: { mode: 'enum', entries: [{ value: 'mount', label: '挂载' }, { value: 'unmount', label: '卸载' }, { value: 'swap', label: '更换' }] }, desc: '变更类型', children: [] },
-        { id: pid(), name: 'loadType', dataType: 'enum', required: true, constraint: { mode: 'enum', entries: [{ value: 'empty', label: '空' }, { value: 'missile', label: '导弹' }, { value: 'rocket', label: '火箭' }, { value: 'pod', label: '吊舱' }, { value: 'tank', label: '副油箱' }] }, desc: '载荷类型', children: [] },
-        { id: pid(), name: 'weight', dataType: 'integer', required: true, constraint: { mode: 'range', min: 0, max: 9999, value: 0 }, desc: '载荷重量 kg', children: [] },
-        { id: pid(), name: 'locked', dataType: 'boolean', required: true, constraint: { mode: 'none' }, desc: '是否锁定', children: [] },
-        { id: pid(), name: 'operator', dataType: 'string', required: false, constraint: { mode: 'none' }, desc: '操作员', children: [] },
+        { id: pid(), name: 'changeId', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '变更事件唯一标识', children: [] },
+        { id: pid(), name: 'timestamp', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '变更触发时间', children: [] },
+        { id: pid(), name: 'aircraftId', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '飞机编号', children: [] },
+        { id: pid(), name: 'pylonNo', dataType: 'int32', required: true, constraint: { mode: 'range', min: 1, max: 12, value: 0 }, desc: '挂点编号', children: [] },
+        { id: pid(), name: 'changeType', dataType: 'utf8', required: true, constraint: { mode: 'enum', entries: [{ value: 'mount', label: '挂载' }, { value: 'unmount', label: '卸载' }, { value: 'swap', label: '更换' }] }, desc: '变更类型', children: [] },
+        { id: pid(), name: 'loadType', dataType: 'utf8', required: true, constraint: { mode: 'enum', entries: [{ value: 'empty', label: '空' }, { value: 'missile', label: '导弹' }, { value: 'rocket', label: '火箭' }, { value: 'pod', label: '吊舱' }, { value: 'tank', label: '副油箱' }] }, desc: '载荷类型', children: [] },
+        { id: pid(), name: 'weight', dataType: 'int32', required: true, constraint: { mode: 'range', min: 0, max: 9999, value: 0 }, desc: '载荷重量 kg', children: [] },
+        { id: pid(), name: 'locked', dataType: 'uint8', required: true, constraint: { mode: 'none' }, desc: '是否锁定', children: [] },
+        { id: pid(), name: 'operator', dataType: 'utf8', required: false, constraint: { mode: 'none' }, desc: '操作员', children: [] },
       ],
       messageHeaders: [
-        { id: pid(), key: 'correlation_id', dataType: 'string', required: true, defaultValue: '', desc: '关联ID' },
-        { id: pid(), key: 'source_module', dataType: 'string', required: true, defaultValue: 'mount-detect', desc: '来源模块' },
-        { id: pid(), key: 'priority', dataType: 'string', required: false, defaultValue: 'normal', desc: '消息优先级' },
+        { id: pid(), key: 'correlation_id', dataType: 'utf8', required: true, defaultValue: '', desc: '关联ID' },
+        { id: pid(), key: 'source_module', dataType: 'utf8', required: true, defaultValue: 'mount-detect', desc: '来源模块' },
+        { id: pid(), key: 'priority', dataType: 'utf8', required: false, defaultValue: 'normal', desc: '消息优先级' },
       ],
-      messageKey: { dataType: 'string', pattern: '{aircraftId}-{pylonNo}', desc: '按飞机+挂点分区路由' },
+      messageKey: { dataType: 'utf8', pattern: '{aircraftId}-{pylonNo}', desc: '按飞机+挂点分区路由' },
     }
   }),
 ]
@@ -885,7 +885,7 @@ export const interfaces = [
       param({ name: 'aircraftId', type: '常量', dataType: 'uint16', desc: '飞机编号' }),
     ],
     response: [
-      param({ name: 'pylonList', type: '结构矩阵', desc: '挂点列表', children: [
+      param({ name: 'pylonList', type: '共识体', desc: '挂点列表', children: [
         param({ name: 'pylonNo', type: '常量', dataType: 'uint8', desc: '挂点号' }),
         param({ name: 'loadType', type: '常量', dataType: 'uint8', desc: '载荷类型' }),
         param({ name: 'locked', type: '常量', dataType: 'uint8', desc: '锁定状态' }),
@@ -1249,15 +1249,20 @@ export const interfaces = [
     operationType: 'publish',
     desc: '向 RabbitMQ weapon-exchange 发布挂载状态变更消息',
     request: [
-      param({ name: 'aircraftId', type: '常量', dataType: 'string', desc: '飞机编号' }),
+      param({ name: 'aircraftId', type: '常量', dataType: 'utf8', desc: '飞机编号' }),
       param({ name: 'pylonNo', type: '常量', dataType: 'uint8', desc: '挂点编号' }),
-      param({ name: 'changeType', type: '常量', dataType: 'string', desc: '变更类型: mount/unmount/swap' }),
-      param({ name: 'loadType', type: '常量', dataType: 'string', desc: '载荷类型' }),
+      param({ name: 'changeType', type: '常量', dataType: 'utf8', desc: '变更类型: mount/unmount/swap' }),
+      param({ name: 'loadType', type: '常量', dataType: 'utf8', desc: '载荷类型' }),
       param({ name: 'weight', type: '常量', dataType: 'uint16', desc: '载荷重量 kg' }),
     ],
     response: [
+      param({ name: 'aircraftId', type: '常量', dataType: 'utf8', desc: '飞机编号' }),
+      param({ name: 'pylonNo', type: '常量', dataType: 'uint8', desc: '挂点编号' }),
+      param({ name: 'changeType', type: '常量', dataType: 'utf8', desc: '变更类型' }),
+      param({ name: 'loadType', type: '常量', dataType: 'utf8', desc: '载荷类型' }),
+      param({ name: 'weight', type: '常量', dataType: 'uint16', desc: '载荷重量 kg' }),
+      param({ name: 'messageId', type: '常量', dataType: 'utf8', desc: '消息ID' }),
       param({ name: 'published', type: '常量', dataType: 'uint8', desc: '1=已发布' }),
-      param({ name: 'messageId', type: '常量', dataType: 'string', desc: '消息ID' }),
     ]
   }),
   _i({
@@ -1265,16 +1270,16 @@ export const interfaces = [
     operationType: 'subscribe',
     desc: '从 Kafka alert-events Topic 订阅消费告警事件消息',
     request: [
-      param({ name: 'consumerGroup', type: '常量', dataType: 'string', desc: '消费组: cmd-audit-group' }),
-      param({ name: 'autoOffsetReset', type: '常量', dataType: 'string', desc: '偏移重置策略: earliest' }),
+      param({ name: 'consumerGroup', type: '常量', dataType: 'utf8', desc: '消费组: cmd-audit-group' }),
+      param({ name: 'autoOffsetReset', type: '常量', dataType: 'utf8', desc: '偏移重置策略: earliest' }),
     ],
     response: [
-      param({ name: 'alertId', type: '常量', dataType: 'string', desc: '告警ID' }),
-      param({ name: 'level', type: '常量', dataType: 'string', desc: '告警等级' }),
-      param({ name: 'category', type: '常量', dataType: 'string', desc: '告警类别' }),
+      param({ name: 'alertId', type: '常量', dataType: 'utf8', desc: '告警ID' }),
+      param({ name: 'level', type: '常量', dataType: 'utf8', desc: '告警等级' }),
+      param({ name: 'category', type: '常量', dataType: 'utf8', desc: '告警类别' }),
       param({ name: 'detail', type: '共识体', desc: '告警详情', children: [
-        param({ name: 'interfaceName', type: '常量', dataType: 'string', desc: '关联接口' }),
-        param({ name: 'message', type: '常量', dataType: 'string', desc: '告警描述' }),
+        param({ name: 'interfaceName', type: '常量', dataType: 'utf8', desc: '关联接口' }),
+        param({ name: 'message', type: '常量', dataType: 'utf8', desc: '告警描述' }),
       ]}),
     ]
   }),
@@ -1285,14 +1290,22 @@ export const interfaces = [
     request: [
       param({ name: 'trackId', type: '常量', dataType: 'uint16', desc: '航迹编号' }),
       param({ name: 'position', type: '共识体', desc: '位置信息', children: [
-        param({ name: 'azimuth', type: '常量', dataType: 'float', desc: '方位角 °' }),
-        param({ name: 'elevation', type: '常量', dataType: 'float', desc: '俯仰角 °' }),
-        param({ name: 'distance', type: '常量', dataType: 'float', desc: '距离 m' }),
+        param({ name: 'azimuth', type: '常量', dataType: 'float32', desc: '方位角 °' }),
+        param({ name: 'elevation', type: '常量', dataType: 'float32', desc: '俯仰角 °' }),
+        param({ name: 'distance', type: '常量', dataType: 'float32', desc: '距离 m' }),
       ]}),
-      param({ name: 'velocity', type: '常量', dataType: 'float', desc: '速度 m/s' }),
-      param({ name: 'confidence', type: '常量', dataType: 'float', desc: '置信度' }),
+      param({ name: 'velocity', type: '常量', dataType: 'float32', desc: '速度 m/s' }),
+      param({ name: 'confidence', type: '常量', dataType: 'float32', desc: '置信度' }),
     ],
     response: [
+      param({ name: 'trackId', type: '常量', dataType: 'uint16', desc: '航迹编号' }),
+      param({ name: 'position', type: '共识体', desc: '位置信息', children: [
+        param({ name: 'azimuth', type: '常量', dataType: 'float32', desc: '方位角 °' }),
+        param({ name: 'elevation', type: '常量', dataType: 'float32', desc: '俯仰角 °' }),
+        param({ name: 'distance', type: '常量', dataType: 'float32', desc: '距离 m' }),
+      ]}),
+      param({ name: 'velocity', type: '常量', dataType: 'float32', desc: '速度 m/s' }),
+      param({ name: 'confidence', type: '常量', dataType: 'float32', desc: '置信度' }),
       param({ name: 'partition', type: '常量', dataType: 'uint8', desc: '目标分区号' }),
       param({ name: 'offset', type: '常量', dataType: 'uint32', desc: '写入偏移量' }),
     ]
@@ -1302,13 +1315,13 @@ export const interfaces = [
     operationType: 'publish',
     desc: '通过 RabbitMQ situation-exchange Fanout 广播态势变更给各终端',
     request: [
-      param({ name: 'areaId', type: '常量', dataType: 'string', desc: '区域编号' }),
-      param({ name: 'changeType', type: '常量', dataType: 'string', desc: '变更类型: add/update/remove' }),
-      param({ name: 'entities', type: '结构矩阵', desc: '变更实体列表', children: [
+      param({ name: 'areaId', type: '常量', dataType: 'utf8', desc: '区域编号' }),
+      param({ name: 'changeType', type: '常量', dataType: 'utf8', desc: '变更类型: add/update/remove' }),
+      param({ name: 'entities', type: '共识体', desc: '变更实体列表', children: [
         param({ name: 'entityId', type: '常量', dataType: 'uint16', desc: '实体编号' }),
-        param({ name: 'type', type: '常量', dataType: 'string', desc: '实体类型' }),
-        param({ name: 'lat', type: '常量', dataType: 'double', desc: '纬度' }),
-        param({ name: 'lon', type: '常量', dataType: 'double', desc: '经度' }),
+        param({ name: 'type', type: '常量', dataType: 'utf8', desc: '实体类型' }),
+        param({ name: 'lat', type: '常量', dataType: 'float64', desc: '纬度' }),
+        param({ name: 'lon', type: '常量', dataType: 'float64', desc: '经度' }),
       ]}),
     ],
     response: [
@@ -1632,13 +1645,13 @@ export const ruleSets = [
     createdAt: '2026-06-25',
     updatedAt: '2026-06-25 14:00',
     rules: [
-      { id: 'r-mq-mount-type-evt', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '挂载状态查询', fieldPath: 'message.eventId', fieldName: 'eventId' }, params: { dataType: 'string' }, desc: 'eventId 必须为 UUID 字符串' },
-      { id: 'r-mq-mount-range-pylon', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '挂载状态查询', fieldPath: 'message.pylonNo', fieldName: 'pylonNo' }, params: { dataType: 'integer', min: 1, max: 12 }, desc: '挂点号范围 1~12' },
-      { id: 'r-mq-mount-range-aircraft', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '挂载状态查询', fieldPath: 'message.aircraftId', fieldName: 'aircraftId' }, params: { dataType: 'integer', min: 1, max: 9999 }, desc: '飞机编号范围 1~9999' },
-      { id: 'r-mq-mount-range-weight', type: 'range', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '挂载状态查询', fieldPath: 'message.payload.weight', fieldName: 'weight' }, params: { dataType: 'integer', min: 0, max: 9999 }, desc: '载荷重量 0~9999 kg' },
-      { id: 'r-mq-mount-overflow-evt', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '挂载状态查询', fieldPath: 'message.eventId', fieldName: 'eventId' }, params: { required: true, maxLength: 36 }, desc: 'eventId 必须存在且长度不超过 36' },
-      { id: 'r-mq-mount-delivery', type: 'delivery', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '挂载状态查询', fieldPath: '', fieldName: '' }, params: { timeoutMs: 3000 }, desc: '挂载变更消息必须在 3s 内投递' },
-      { id: 'r-mq-mount-ordering', type: 'ordering', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '挂载状态查询', fieldPath: '', fieldName: '' }, params: { expectedOrder: ['mount', 'unmount', 'replace'] }, desc: '变更事件应按挂载→卸载→更换顺序到达' },
+      { id: 'r-mq-mount-type-evt', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '挂载变更通知', fieldPath: 'response.messageId', fieldName: 'messageId' }, params: { dataType: 'utf8' }, desc: 'messageId 必须为字符串' },
+      { id: 'r-mq-mount-range-pylon', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '挂载变更通知', fieldPath: 'response.pylonNo', fieldName: 'pylonNo' }, params: { dataType: 'uint8', min: 1, max: 12 }, desc: '挂点号范围 1~12' },
+      { id: 'r-mq-mount-range-aircraft', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '挂载变更通知', fieldPath: 'response.aircraftId', fieldName: 'aircraftId' }, params: { dataType: 'utf8', min: 1, max: 9999 }, desc: '飞机编号' },
+      { id: 'r-mq-mount-range-weight', type: 'range', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '挂载变更通知', fieldPath: 'response.weight', fieldName: 'weight' }, params: { dataType: 'uint16', min: 0, max: 9999 }, desc: '载荷重量 0~9999 kg' },
+      { id: 'r-mq-mount-overflow-evt', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '挂载变更通知', fieldPath: 'response.messageId', fieldName: 'messageId' }, params: { required: true, maxLength: 36 }, desc: 'messageId 必须存在且长度不超过 36' },
+      { id: 'r-mq-mount-delivery', type: 'delivery', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '挂载变更通知', fieldPath: '', fieldName: '' }, params: { timeoutMs: 3000 }, desc: '挂载变更消息必须在 3s 内投递' },
+      { id: 'r-mq-mount-ordering', type: 'ordering', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '挂载变更通知', fieldPath: '', fieldName: '' }, params: { expectedOrder: ['mount', 'unmount', 'replace'] }, desc: '变更事件应按挂载→卸载→更换顺序到达' },
     ]
   },
 
@@ -1653,12 +1666,12 @@ export const ruleSets = [
     createdAt: '2026-06-25',
     updatedAt: '2026-06-25 15:30',
     rules: [
-      { id: 'r-mq-track-range-id', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹订阅', fieldPath: 'message.trackId', fieldName: 'trackId' }, params: { dataType: 'integer', min: 1, max: 65535 }, desc: '航迹编号范围 1~65535' },
-      { id: 'r-mq-track-range-az', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹订阅', fieldPath: 'message.position.azimuth', fieldName: 'azimuth' }, params: { dataType: 'float', min: 0, max: 360 }, desc: '方位角 0°~360°' },
-      { id: 'r-mq-track-range-dist', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹订阅', fieldPath: 'message.position.distance', fieldName: 'distance' }, params: { dataType: 'float', min: 0, max: 500000 }, desc: '距离 0~500000m' },
-      { id: 'r-mq-track-range-conf', type: 'range', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '航迹订阅', fieldPath: 'message.confidence', fieldName: 'confidence' }, params: { dataType: 'float', min: 0, max: 1 }, desc: '置信度 0~1' },
-      { id: 'r-mq-track-delivery', type: 'delivery', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹订阅', fieldPath: '', fieldName: '' }, params: { timeoutMs: 2000 }, desc: '航迹数据必须在 2s 内投递' },
-      { id: 'r-mq-track-ordering', type: 'ordering', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '航迹订阅', fieldPath: '', fieldName: '' }, params: { expectedOrder: [] }, desc: '同一航迹的消息应按时间戳升序到达' },
+      { id: 'r-mq-track-range-id', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹数据分发', fieldPath: 'response.trackId', fieldName: 'trackId' }, params: { dataType: 'uint16', min: 1, max: 65535 }, desc: '航迹编号范围 1~65535' },
+      { id: 'r-mq-track-range-az', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹数据分发', fieldPath: 'response.position.azimuth', fieldName: 'azimuth' }, params: { dataType: 'float32', min: 0, max: 360 }, desc: '方位角 0°~360°' },
+      { id: 'r-mq-track-range-dist', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹数据分发', fieldPath: 'response.position.distance', fieldName: 'distance' }, params: { dataType: 'float32', min: 0, max: 500000 }, desc: '距离 0~500000m' },
+      { id: 'r-mq-track-range-conf', type: 'range', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '航迹数据分发', fieldPath: 'response.confidence', fieldName: 'confidence' }, params: { dataType: 'float32', min: 0, max: 1 }, desc: '置信度 0~1' },
+      { id: 'r-mq-track-delivery', type: 'delivery', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹数据分发', fieldPath: '', fieldName: '' }, params: { timeoutMs: 2000 }, desc: '航迹数据必须在 2s 内投递' },
+      { id: 'r-mq-track-ordering', type: 'ordering', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '航迹数据分发', fieldPath: '', fieldName: '' }, params: { expectedOrder: [] }, desc: '同一航迹的消息应按时间戳升序到达' },
     ]
   },
 ]
