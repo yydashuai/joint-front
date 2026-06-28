@@ -212,6 +212,29 @@ export const makeProtoField = (o = {}) => ({
   ...o
 })
 
+// ─── MQ 消息体字段工厂（支持嵌套，类似 HTTP bodyField） ───
+export const makeMqBodyField = (o = {}) => ({
+  id: uid(),
+  name: '',
+  dataType: 'string',
+  required: true,
+  constraint: noneConstraint(),
+  desc: '',
+  children: [],
+  ...o
+})
+
+// ─── MQ 消息头属性工厂 ───
+export const makeMqHeader = (o = {}) => ({
+  id: uid(),
+  key: '',
+  dataType: 'string',
+  required: false,
+  defaultValue: '',
+  desc: '',
+  ...o
+})
+
 // ─── HTTP Content-Type 枚举 ───
 export const HTTP_CONTENT_TYPES = [
   'application/json',
@@ -238,6 +261,30 @@ export const PROTO_FIELD_TYPES = [
 export const COMMON_HEADERS = [
   'Authorization', 'Accept', 'Content-Type', 'X-Request-Id',
   'Cache-Control', 'User-Agent', 'Accept-Language', 'X-Api-Version',
+]
+
+// ─── MQ 消息体字段数据类型 ───
+export const MQ_BODY_DATA_TYPES = [
+  { value: 'string',  label: 'String',  group: '基础' },
+  { value: 'integer', label: 'Integer', group: '基础' },
+  { value: 'float',   label: 'Float',   group: '基础' },
+  { value: 'double',  label: 'Double',  group: '基础' },
+  { value: 'boolean', label: 'Boolean', group: '基础' },
+  { value: 'object',  label: 'Object',  group: '复合' },
+  { value: 'array',   label: 'Array',   group: '复合' },
+  { value: 'timestamp', label: 'Timestamp', group: '特殊' },
+  { value: 'uuid',    label: 'UUID',    group: '特殊' },
+  { value: 'enum',    label: 'Enum',    group: '特殊' },
+]
+
+// ─── MQ Broker 类型枚举 ───
+export const MQ_BROKER_TYPES = ['RabbitMQ', 'Kafka', 'RocketMQ', 'ActiveMQ']
+
+// ─── MQ 接口操作类型 ───
+export const MQ_OPERATION_TYPES = [
+  { value: 'publish',      label: '发布消息',   desc: '向 Topic/Exchange 发布消息' },
+  { value: 'subscribe',    label: '订阅消费',   desc: '从 Topic/Queue 消费消息' },
+  { value: 'request-reply',label: '请求-响应', desc: '发布并等待 Reply-To 响应' },
 ]
 
 // ─── 类型专用 config 工厂 ───
@@ -291,7 +338,10 @@ export const makeConfig = (type) => {
       return {
         brokerType: 'RabbitMQ', brokerAddress: '',
         topic: '', queueName: '', exchangeName: '', routingKey: '',
-        consumerGroup: '', qos: 0, ackMode: 'auto', messageFormat: 'JSON'
+        consumerGroup: '', qos: 0, ackMode: 'auto', messageFormat: 'JSON',
+        messageBody: [],
+        messageHeaders: [],
+        messageKey: { dataType: 'string', pattern: '', desc: '' },
       }
     default:
       return {}
@@ -505,9 +555,68 @@ export const useProtocolStore = defineStore('protocol', {
       Object.assign(protocol.config.checksum, patch)
     },
 
+    /* ---- MQ 消息体 ---- */
+    addMqBodyField(protocol, parentId = null) {
+      const config = protocol.config
+      if (!config.messageBody) config.messageBody = []
+      const f = makeMqBodyField({ name: `field${config.messageBody.length + 1}` })
+      if (parentId) {
+        const parent = this._findMqField(config.messageBody, parentId)
+        if (parent && (parent.dataType === 'object' || parent.dataType === 'array')) {
+          if (!parent.children) parent.children = []
+          parent.children.push(f)
+          return f
+        }
+      }
+      config.messageBody.push(f)
+      return f
+    },
+
+    removeMqBodyField(protocol, fieldId) {
+      const fields = protocol.config.messageBody
+      if (!fields) return false
+      const i = fields.findIndex(f => f.id === fieldId)
+      if (i >= 0) { fields.splice(i, 1); return true }
+      for (const f of fields) {
+        if (f.children?.length) {
+          const ci = f.children.findIndex(c => c.id === fieldId)
+          if (ci >= 0) { f.children.splice(ci, 1); return true }
+        }
+      }
+      return false
+    },
+
+    addMqHeader(protocol) {
+      const config = protocol.config
+      if (!config.messageHeaders) config.messageHeaders = []
+      const h = makeMqHeader({ key: `header${config.messageHeaders.length + 1}` })
+      config.messageHeaders.push(h)
+      return h
+    },
+
+    removeMqHeader(protocol, headerId) {
+      const headers = protocol.config.messageHeaders
+      if (!headers) return false
+      const i = headers.findIndex(h => h.id === headerId)
+      if (i >= 0) { headers.splice(i, 1); return true }
+      return false
+    },
+
+    // 内部：在 MQ 消息体字段树中查找节点
+    _findMqField(fields, id) {
+      for (const f of (fields || [])) {
+        if (f.id === id) return f
+        if (f.children?.length) {
+          const found = this._findMqField(f.children, id)
+          if (found) return found
+        }
+      }
+      return null
+    },
+
     /* ---- 接口 ---- */
     addInterface(it = {}) {
-      const ni = { id: uid(), name: it.name || '新建接口', path: '', systemId: null, moduleId: null, desc: '', request: [], response: [], ...it }
+      const ni = { id: uid(), name: it.name || '新建接口', path: '', systemId: null, moduleId: null, desc: '', operationType: '', request: [], response: [], ...it }
       this.interfaces.unshift(ni)
       this.selectedInterfaceId = ni.id
       return ni

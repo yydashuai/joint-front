@@ -77,6 +77,76 @@ export const datasets = [
       row('近距离', { 'weaponId': 1001, 'fuseMode': 1, 'range': 800, 'angle': 12.5 }),
       row('最大射程', { 'weaponId': 2003, 'fuseMode': 2, 'range': 15000, 'angle': 78.3 }),
     ]
+  },
+  // ── MQ 消息队列测试数据集 ──
+  {
+    id: dsId(),
+    name: '挂载变更-多场景覆盖',
+    systemId: 'sys-weapon',
+    moduleName: '挂载检测模块',
+    linkedProtocol: null,
+    linkedInterface: '挂载变更通知',
+    desc: '覆盖挂载/卸载/更换操作在不同挂点和载荷类型下的消息投递验证',
+    createdAt: '2026-06-24',
+    rows: [
+      row('标准挂载-导弹', { 'aircraftId': 'AC-001', 'pylonNo': 1, 'changeType': 'mount', 'loadType': 'missile', 'weight': 320 }),
+      row('标准卸载', { 'aircraftId': 'AC-001', 'pylonNo': 1, 'changeType': 'unmount', 'loadType': 'missile', 'weight': 0 }),
+      row('更换吊舱', { 'aircraftId': 'AC-002', 'pylonNo': 5, 'changeType': 'swap', 'loadType': 'pod', 'weight': 180 }),
+      row('副油箱挂载', { 'aircraftId': 'AC-003', 'pylonNo': 7, 'changeType': 'mount', 'loadType': 'tank', 'weight': 1200 }),
+      row('边界-12号挂点', { 'aircraftId': 'AC-001', 'pylonNo': 12, 'changeType': 'mount', 'loadType': 'rocket', 'weight': 85 }),
+      row('边界-空载', { 'aircraftId': 'AC-004', 'pylonNo': 3, 'changeType': 'mount', 'loadType': 'empty', 'weight': 0 }),
+    ]
+  },
+  {
+    id: dsId(),
+    name: '告警事件-消费组配置',
+    systemId: 'sys-cmd',
+    moduleName: '日志审计模块',
+    linkedProtocol: null,
+    linkedInterface: '告警事件订阅',
+    desc: '不同消费组和偏移重置策略的告警事件订阅测试',
+    createdAt: '2026-06-24',
+    rows: [
+      row('默认消费组-最早偏移', { 'consumerGroup': 'cmd-audit-group', 'autoOffsetReset': 'earliest' }),
+      row('独立消费组', { 'consumerGroup': 'cmd-alert-monitor', 'autoOffsetReset': 'earliest' }),
+      row('最新偏移', { 'consumerGroup': 'cmd-audit-group', 'autoOffsetReset': 'latest' }),
+      row('临时消费组', { 'consumerGroup': 'cmd-debug-session', 'autoOffsetReset': 'earliest' }),
+    ]
+  },
+  {
+    id: dsId(),
+    name: '航迹分发-多目标场景',
+    systemId: 'sys-fire',
+    moduleName: '目标跟踪模块',
+    linkedProtocol: null,
+    linkedInterface: '航迹数据分发',
+    desc: '模拟不同目标类型和距离的航迹数据发布到 Kafka',
+    createdAt: '2026-06-25',
+    rows: [
+      row('近距离战斗机', { 'trackId': 1001, 'azimuth': 45.2, 'elevation': 12.5, 'distance': 15000, 'velocity': 340, 'confidence': 0.95 }),
+      row('远距离运输机', { 'trackId': 1002, 'azimuth': 180.0, 'elevation': 5.0, 'distance': 280000, 'velocity': 220, 'confidence': 0.82 }),
+      row('低空无人机', { 'trackId': 1003, 'azimuth': 90.7, 'elevation': -2.3, 'distance': 3500, 'velocity': 45, 'confidence': 0.91 }),
+      row('高速导弹', { 'trackId': 1004, 'azimuth': 270.0, 'elevation': 35.0, 'distance': 120000, 'velocity': 1200, 'confidence': 0.88 }),
+      row('边界-最大距离', { 'trackId': 1005, 'azimuth': 0.0, 'elevation': 0.0, 'distance': 500000, 'velocity': 0, 'confidence': 0.5 }),
+      row('边界-零距离', { 'trackId': 1006, 'azimuth': 359.9, 'elevation': 89.9, 'distance': 10, 'velocity': 5, 'confidence': 0.99 }),
+    ]
+  },
+  {
+    id: dsId(),
+    name: '态势广播-实体变更场景',
+    systemId: 'sys-cmd',
+    moduleName: '态势感知模块',
+    linkedProtocol: null,
+    linkedInterface: '态势更新广播',
+    desc: '模拟新增/更新/移除目标的态势变更广播消息',
+    createdAt: '2026-06-25',
+    rows: [
+      row('新增敌方目标', { 'areaId': 'ZONE-A1', 'changeType': 'add', 'entityId': 2001, 'type': 'hostile', 'lat': 39.9042, 'lon': 116.4074 }),
+      row('更新友军位置', { 'areaId': 'ZONE-A1', 'changeType': 'update', 'entityId': 1001, 'type': 'friendly', 'lat': 39.9100, 'lon': 116.4200 }),
+      row('移除中性目标', { 'areaId': 'ZONE-B2', 'changeType': 'remove', 'entityId': 3001, 'type': 'neutral', 'lat': 40.0000, 'lon': 116.3000 }),
+      row('批量新增', { 'areaId': 'ZONE-C3', 'changeType': 'add', 'entityId': 2002, 'type': 'hostile', 'lat': 38.5000, 'lon': 117.2000 }),
+      row('边界-极地坐标', { 'areaId': 'ZONE-D4', 'changeType': 'update', 'entityId': 1002, 'type': 'friendly', 'lat': 89.9999, 'lon': -179.9999 }),
+    ]
   }
 ]
 

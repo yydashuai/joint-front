@@ -5,6 +5,8 @@ export const RULE_TYPES = [
   { value: 'overflow', label: '字段越界', tag: 'danger', icon: 'FullScreen', level: 'error', desc: '帧长够不够、该有的字段在不在' },
   { value: 'timeout', label: '响应超时', tag: 'danger', icon: 'Timer', level: 'error', desc: '回得够不够快' },
   { value: 'format', label: '格式错误', tag: 'danger', icon: 'Tickets', level: 'error', desc: '帧格式、校验码、报文结构对不对' },
+  { value: 'delivery', label: '投递校验', tag: 'success', icon: 'Promotion', level: 'error', desc: '消息是否在指定时间内被成功投递（MQ）' },
+  { value: 'ordering', label: '顺序校验', tag: 'warning', icon: 'Sort', level: 'warning', desc: '消息是否按预期顺序到达（MQ）' },
 ]
 
 export const RULE_TYPE_MAP = Object.fromEntries(RULE_TYPES.map((item) => [item.value, item]))
@@ -111,6 +113,27 @@ export function evaluate(ruleSet, sample, iface, opts = { recvMs: null }) {
       const recvMs = Number(opts.recvMs ?? 0)
       if (recvMs > threshold) results.push(fail(rule, rule.target?.interfaceName, `响应 ${recvMs}ms，超过阈值 ${threshold}ms`))
       else results.push(ok(rule, rule.target?.interfaceName, `响应 ${recvMs}ms，未超过 ${threshold}ms`))
+      return
+    }
+
+    if (rule.type === 'delivery') {
+      const deliveryMs = Number(opts.deliveryMs ?? rule.params?.deliveryMs ?? 0)
+      const threshold = Number(rule.params?.timeoutMs || 3000)
+      const delivered = opts.delivered !== false
+      if (!delivered) results.push(fail(rule, rule.target?.interfaceName, `消息未在 ${threshold}ms 内投递`))
+      else if (deliveryMs > threshold) results.push(fail(rule, rule.target?.interfaceName, `投递耗时 ${deliveryMs}ms，超过 ${threshold}ms`))
+      else results.push(ok(rule, rule.target?.interfaceName, `消息已投递，耗时 ${deliveryMs}ms`))
+      return
+    }
+
+    if (rule.type === 'ordering') {
+      const received = opts.receivedOrder || []
+      const expected = rule.params?.expectedOrder || []
+      if (!expected.length) { results.push(ok(rule, rule.target?.interfaceName, '未定义期望顺序，跳过校验')); return }
+      const actualStr = received.slice(0, expected.length).join(',')
+      const expectedStr = expected.join(',')
+      if (actualStr === expectedStr) results.push(ok(rule, rule.target?.interfaceName, `消息顺序正确：${actualStr}`))
+      else results.push(fail(rule, rule.target?.interfaceName, `顺序不匹配，期望 ${expectedStr}，实际 ${actualStr || '(空)'}`))
       return
     }
 

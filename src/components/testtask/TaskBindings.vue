@@ -166,6 +166,16 @@
         中从接口自动生成
       </div>
     </el-card>
+
+    <!-- MQ 专项测试配置（仅当模块关联 MQ 协议时显示） -->
+    <el-card v-if="hasMqProtocol && localBindings.mqTest" shadow="never" class="bind-card">
+      <template #header>
+        <div class="bind-card__head">
+          <span class="bind-card__title">MQ 专项测试配置</span>
+        </div>
+      </template>
+      <MqTestConfig :mq-test="localBindings.mqTest" />
+    </el-card>
   </div>
 </template>
 
@@ -176,6 +186,8 @@ import { useProtocolStore } from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
 import { useConnectionStore } from '@/stores/connection'
 import { useRuleStore } from '@/stores/rule'
+import MqTestConfig from '@/components/testtask/MqTestConfig.vue'
+import { defaultMqTest } from '@/stores/testTask'
 
 const props = defineProps({
   task: { type: Object, required: true },
@@ -193,6 +205,14 @@ const localBindings = reactive({
   datasetIds: [],
   fileIds: [],
   ruleSetId: null,
+  mqTest: null,
+})
+
+/** 检测当前模块是否关联 MQ 协议 */
+const hasMqProtocol = computed(() => {
+  return protoStore.protocols.some(
+    p => p.moduleId === props.task.moduleId && p.type === 'MQ'
+  )
 })
 
 /** 同步 props.task.bindings → localBindings */
@@ -202,6 +222,7 @@ watch(() => props.task, (t) => {
     localBindings.datasetIds = [...(t.bindings.datasetIds || [])]
     localBindings.fileIds = [...(t.bindings.fileIds || [])]
     localBindings.ruleSetId = t.bindings.ruleSetId ?? null
+    localBindings.mqTest = t.bindings.mqTest ? JSON.parse(JSON.stringify(t.bindings.mqTest)) : defaultMqTest()
   }
 }, { immediate: true })
 
@@ -250,6 +271,7 @@ const emitChange = () => {
     datasetIds: [...localBindings.datasetIds],
     fileIds: [...localBindings.fileIds],
     ruleSetId: localBindings.ruleSetId,
+    mqTest: hasMqProtocol.value ? (localBindings.mqTest || defaultMqTest()) : undefined,
   })
 }
 </script>

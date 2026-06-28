@@ -17,6 +17,18 @@
         <template #prepend>路径</template>
       </el-input>
     </div>
+
+    <!-- MQ 接口操作类型 -->
+    <div class="meta-row" v-if="hasMqProtocol">
+      <span class="meta-row__label">操作类型</span>
+      <el-select v-model="iface.operationType" placeholder="选择 MQ 操作类型" style="width: 200px" clearable>
+        <el-option v-for="op in MQ_OPERATION_TYPES" :key="op.value" :label="op.label" :value="op.value">
+          <span>{{ op.label }}</span>
+          <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px">{{ op.desc }}</span>
+        </el-option>
+      </el-select>
+    </div>
+
     <div class="meta-row">
       <span class="meta-row__label req">所属系统</span>
       <el-select v-model="iface.systemId" placeholder="选择系统" class="meta-sel" @change="$emit('systemChange')">
@@ -89,9 +101,9 @@
 </template>
 
 <script setup>
-import { ref, provide } from 'vue'
+import { ref, provide, computed } from 'vue'
 import { Plus, Delete } from '@element-plus/icons-vue'
-import { FIELD_TYPES, CONST_SUBTYPES, makeParam } from '@/stores/protocol'
+import { FIELD_TYPES, CONST_SUBTYPES, MQ_OPERATION_TYPES, makeParam, useProtocolStore } from '@/stores/protocol'
 import FieldNode from '@/components/FieldNode.vue'
 import SignaturePreview from './SignaturePreview.vue'
 
@@ -104,6 +116,14 @@ const props = defineProps({
 defineEmits(['delete', 'systemChange'])
 
 const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+
+const protoStore = useProtocolStore()
+
+// 检查当前模块是否有 MQ 协议，决定是否显示操作类型选择器
+const hasMqProtocol = computed(() => {
+  if (!props.iface.moduleId) return false
+  return protoStore.protocols.some(p => p.moduleId === props.iface.moduleId && p.type === 'MQ')
+})
 
 const addRootParam = (list) => list.push(makeParam({ name: `field${list.length + 1}` }))
 

@@ -56,6 +56,51 @@
       </el-table>
     </el-card>
 
+    <!-- MQ 探测结果汇总 -->
+    <el-card v-if="store.hasMqTasks" shadow="never" class="exec-card">
+      <template #header>
+        <div class="card-head">
+          <span class="card-title">MQ 探测结果</span>
+          <el-tag v-if="mqOverallOk" type="success" size="small" effect="plain">全部通过</el-tag>
+          <el-tag v-else type="warning" size="small" effect="plain">存在告警</el-tag>
+        </div>
+      </template>
+      <el-table :data="mqSummaryRows" size="small" empty-text="暂无 MQ 探测结果">
+        <el-table-column label="任务" prop="taskName" min-width="180" />
+        <el-table-column label="Broker 健康" width="130" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.brokerStatus === 'healthy' ? 'success' : row.brokerStatus === 'warning' ? 'warning' : 'danger'" size="small">
+              {{ { healthy: '健康', warning: '告警', error: '异常' }[row.brokerStatus] || '未知' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="生产端" width="130" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.producerStatus === 'pass' ? 'success' : 'danger'" size="small">
+              {{ row.producerStatus === 'pass' ? '通过' : '失败' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="消费端" width="130" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.consumerStatus === 'pass' ? 'success' : row.consumerStatus === 'warning' ? 'warning' : 'danger'" size="small">
+              {{ { pass: '正常', warning: '告警', fail: '失败' }[row.consumerStatus] || '未知' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="消息延迟" width="100" align="center">
+          <template #default="{ row }">{{ row.producerLatency ? row.producerLatency + 'ms' : '—' }}</template>
+        </el-table-column>
+        <el-table-column label="综合" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.overall === 'pass' ? 'success' : row.overall === 'warning' ? 'warning' : 'danger'" effect="dark" size="small">
+              {{ row.overall === 'pass' ? '全部通过' : row.overall === 'warning' ? '部分告警' : '存在异常' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
     <el-card shadow="never" class="exec-card">
       <template #header>
         <div class="card-head">
@@ -112,6 +157,28 @@ const summaryItems = computed(() => [
 ])
 
 const detailText = (row) => row.detail?.ruleMessage || row.detail || row.remark || ''
+
+const mqSummaryRows = computed(() =>
+  store.mqProbeItems.map((item) => {
+    const probe = store.mqProbeResults[item.id] || {}
+    const bh = probe.brokerHealth || {}
+    const pc = probe.producerConnect || {}
+    const cc = probe.consumerConnect || {}
+    const statuses = [bh.overall === 'healthy' ? 'pass' : bh.overall === 'warning' ? 'warning' : 'fail', pc.status === 'pass' ? 'pass' : 'fail', cc.status === 'pass' ? 'pass' : cc.status === 'warning' ? 'warning' : 'fail']
+    const hasFail = statuses.includes('fail')
+    const hasWarn = statuses.includes('warning')
+    return {
+      taskName: item.task?.name || '未知任务',
+      brokerStatus: bh.overall || 'unknown',
+      producerStatus: pc.status || 'pending',
+      consumerStatus: cc.status || 'pending',
+      producerLatency: pc.latency || null,
+      overall: hasFail ? 'fail' : hasWarn ? 'warning' : 'pass',
+    }
+  })
+)
+
+const mqOverallOk = computed(() => mqSummaryRows.value.every((r) => r.overall === 'pass'))
 
 const saveRecord = () => {
   if (store.saveRunRecord()) ElMessage.success('执行记录已保存')

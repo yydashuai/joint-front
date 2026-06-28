@@ -37,14 +37,56 @@ const defaultStrategy = () => ({
   execution: 'serial',    // serial | parallel
   timeout: 30,            // 秒
   retries: 0,
+  mqExecution: {
+    mode: 'standard',           // standard | publish-verify | consume-verify | throughput
+    listenTopic: '',            // publish-verify 时监听的 topic
+    matchField: 'correlationId',// 关联发布/消费消息的字段
+    waitTimeout: 5000,          // 等待响应消息超时(ms)
+    throughputDuration: 60,     // 吞吐量测试持续时长(s)
+    throughputRate: 100,        // 目标发送速率(msg/s)
+  },
+})
+
+/** 默认 MQ 三维测试配置 */
+export const defaultMqTest = () => ({
+  enabled: false,
+  dimensions: ['broker_health', 'producer_connect', 'consumer_connect'],
+  brokerHealth: {
+    enabled: true,
+    timeout: 3000,
+  },
+  producer: {
+    enabled: true,
+    mode: 'active',
+    triggerUrl: '',
+    traceIdField: 'test_trace_id',
+    listenQueue: '',
+    waitTimeout: 10000,
+    passiveWindow: 300,
+    messageTag: 'connectivity_check',
+  },
+  consumer: {
+    enabled: true,
+    expectedConsumerCount: 1,
+    backlogThreshold: 1000,
+    checkInterval: 60,
+  },
+  schedule: {
+    interval: 5,
+    unit: 'm',
+  },
+  alertThreshold: {
+    consecutiveFailures: 2,
+  },
 })
 
 /** 默认绑定 */
 const defaultBindings = () => ({
-  interfaceId: null,      // 单选：关联的接口（接口是对模块的可测试入口）
-  datasetIds: [],         // 多选：关联的数据集（自动按所选接口过滤）
-  fileIds: [],            // 多选：关联的资源文件
-  ruleSetId: null,        // 单选：关联的规则集
+  interfaceId: null,
+  datasetIds: [],
+  fileIds: [],
+  ruleSetId: null,
+  mqTest: defaultMqTest(),
 })
 
 /** 扩展种子任务：映射状态 + 补充 bindings/strategy/runs */

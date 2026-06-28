@@ -84,6 +84,7 @@ export const useExecutionStore = defineStore('execution', {
     savedRunToTasks: false,
     _stepStats: {},
     _requestCursor: 0,
+    mqProbeResults: {},
   }),
 
   getters: {
@@ -183,6 +184,22 @@ export const useExecutionStore = defineStore('execution', {
     currentItem() {
       return this.planItems[this.activePlanIndex] || this.planItems[0] || null
     },
+    /** 执行计划中是否有 MQ 任务 */
+    hasMqTasks() {
+      const protocolStore = useProtocolStore()
+      return this.planItems.some((item) => {
+        if (!item.task?.bindings?.mqTest?.enabled) return false
+        const iface = item.iface
+        if (!iface) return false
+        return protocolStore.protocols.some(p =>
+          p.type === 'MQ' && p.moduleId === item.task?.moduleId
+        )
+      })
+    },
+    /** 有 MQ 探测的计划项列表 */
+    mqProbeItems() {
+      return this.planItems.filter(item => item.task?.bindings?.mqTest?.enabled)
+    },
   },
 
   actions: {
@@ -252,7 +269,9 @@ export const useExecutionStore = defineStore('execution', {
       }]))
       this._requestCursor = 0
       this.savedRunToTasks = false
+      this.mqProbeResults = {}
       this._markTasksRunning()
+      this._simulateMqProbes()
       this._tick()
       runTimer = window.setInterval(() => this._tick(), this.tickInterval())
       return true
@@ -296,6 +315,7 @@ export const useExecutionStore = defineStore('execution', {
       this.savedRunToTasks = false
       this._stepStats = {}
       this._requestCursor = 0
+      this.mqProbeResults = {}
     },
 
     tickInterval() {
@@ -550,6 +570,99 @@ export const useExecutionStore = defineStore('execution', {
       this.planItems.forEach((item) => {
         const task = taskStore.tasks.find((t) => t.id === item.taskId)
         if (task) task.status = 'running'
+      })
+    },
+
+    /** 模拟 MQ 三维探测（执行开始时运行） */
+    _simulateMqProbes() {
+      const connStore = useConnectionStore()
+      this.mqProbeResults = {}
+      this.mqProbeItems.forEach((item) => {
+        const mqCfg = item.task.bindings.mqTest
+        const broker = connStore.brokerOf(item.task.moduleId)
+        const brokerName = broker?.name || '未知 Broker'
+        const brokerType = broker?.brokerType || 'RabbitMQ'
+        const port = brokerType === 'Kafka' ? 9092 : (brokerType === 'RocketMQ' ? 9876 : 5672)
+        const proto = brokerType === 'Kafka' ? 'AdminClient' : (brokerType === 'RocketMQ' ? 'NameServer' : 'AMQP')
+        const ip = broker?.ip || '0.0.0.0'
+
+        // 维度一：Broker 健康
+        const l1Ms = rnd(1, 8)
+        const l2Ms = rnd(20, 80)
+        const l1Pass = Math.random() > 0.05
+        const l2Pass = l1Pass && Math.random() > 0.04
+        const l3Pass = l2Pass && Math.random() > 0.1
+        const l3Warn = !l3Pass && Math.random() > 0.5
+        const nodeCount = brokerType === 'Kafka' ? rnd(3, 5) : rnd(1, 3)
+        const queueCount = rnd(6, 24)
+        const consumerTotal = rnd(4, 16)
+
+        // 维度二：生产端
+        const prodPass = l1Pass && Math.random() > 0.08
+        const prodMs = rnd(12, 65)
+        const traceId = `trace-${rnd(100000, 999999).toString(16)}`
+
+        // 维度三：消费端
+        const onlineConsumers = l3Pass ? consumerTotal : (l3Warn ? consumerTotal - 1 : 0)
+        const backlog = l3Pass ? rnd(0, 10) : (l3Warn ? rnd(100, 500) : rnd(1000, 5000))
+        const consumerPass = onlineConsumers >= (mqCfg.consumer?.expectedConsumerCount || 1)
+
+        // 生成探测日志
+        const baseTime = new Date()
+        const ts = (offsetSec) => {
+          const t = new Date(baseTime.getTime() + offsetSec * 1000)
+          return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}:${String(t.getSeconds()).padStart(2, '0')}`
+        }
+        const probeLog = []
+        probeLog.push({ time: ts(0), level: 'info', msg: `开始 MQ 三维探测: ${item.task.name}` })
+        probeLog.push({ time: ts(1), level: l1Pass ? 'success' : 'error', msg: `Level 1: TCP ${ip}:${port} ${l1Pass ? `连接成功 (${l1Ms}ms)` : '连接超时'}` })
+        if (l1Pass) {
+          probeLog.push({ time: ts(2), level: l2Pass ? 'success' : 'error', msg: `Level 2: ${proto} 握手 ${l2Pass ? `认证通过 (${l2Ms}ms)` : '认证失败'}` })
+        }
+        if (l2Pass) {
+          probeLog.push({ time: ts(3), level: l3Pass ? 'success' : (l3Warn ? 'warning' : 'error'), msg: `Level 3: ${l3Pass ? `${nodeCount} 节点在线，${queueCount} 队列正常` : (l3Warn ? `${nodeCount} 节点（1 节点磁盘 > 85%）` : '集群异常')}` })
+        }
+        probeLog.push({ time: ts(4), level: 'info', msg: `Broker Health: ${l3Pass ? 'HEALTHY' : (l3Warn ? 'WARNING' : 'ERROR')}` })
+        if (mqCfg.producer?.enabled) {
+          probeLog.push({ time: ts(5), level: 'info', msg: `Producer [${mqCfg.producer.mode}]: 发送测试消息 trace_id=${traceId}` })
+          probeLog.push({ time: ts(6), level: prodPass ? 'success' : 'error', msg: prodPass ? `Producer: 消息已投递到 ${mqCfg.producer.listenQueue || mqCfg.producer.triggerUrl}，延迟 ${prodMs}ms` : 'Producer: 消息投递超时或失败' })
+        }
+        if (mqCfg.consumer?.enabled) {
+          probeLog.push({ time: ts(7), level: consumerPass ? 'success' : 'warning', msg: `Consumer: ${onlineConsumers}/${mqCfg.consumer.expectedConsumerCount || 1} 在线，堆积 ${backlog} 条，偏移量${consumerPass ? '持续更新' : '停滞'}` })
+        }
+        probeLog.push({ time: ts(8), level: (l3Pass && prodPass && consumerPass) ? 'success' : 'warning', msg: `探测完成: ${(l3Pass && prodPass && consumerPass) ? '全部通过' : '存在异常项'}` })
+
+        this.mqProbeResults[item.id] = {
+          taskName: item.task.name,
+          brokerName,
+          brokerType,
+          brokerHealth: {
+            level1: { status: l1Pass ? 'pass' : 'fail', latency: l1Ms, detail: l1Pass ? `TCP ${ip}:${port} 连接成功 (${l1Ms}ms)` : `TCP 连接超时` },
+            level2: { status: l2Pass ? 'pass' : (l1Pass ? 'fail' : 'pending'), latency: l2Ms, detail: l2Pass ? `${proto} 认证通过 (${l2Ms}ms)` : (l1Pass ? `${proto} 认证失败` : '跳过') },
+            level3: { status: l3Pass ? 'pass' : (l3Warn ? 'warning' : 'fail'), detail: l3Pass ? `${nodeCount} 节点在线，${queueCount} 队列正常` : (l3Warn ? `${nodeCount} 节点（1 节点磁盘 > 85%）` : '集群异常'), metrics: { nodes: nodeCount, queues: queueCount, consumers: consumerTotal } },
+            overall: l3Pass ? 'healthy' : (l3Warn ? 'warning' : 'error'),
+            checkedAt: timeText(),
+          },
+          producerConnect: {
+            status: prodPass ? 'pass' : 'fail',
+            mode: mqCfg.producer?.mode || 'active',
+            traceId,
+            sentAt: timeText(),
+            receivedAt: prodPass ? timeText() : null,
+            latency: prodPass ? prodMs : null,
+            messageValid: prodPass,
+            detail: prodPass ? `消息已投递并确认，trace_id=${traceId}，延迟 ${prodMs}ms` : `消息投递超时或失败`,
+          },
+          consumerConnect: {
+            status: consumerPass ? 'pass' : (backlog > (mqCfg.consumer?.backlogThreshold || 1000) ? 'warning' : 'fail'),
+            onlineConsumers,
+            expectedConsumers: mqCfg.consumer?.expectedConsumerCount || 1,
+            backlog,
+            offsetUpdated: consumerPass,
+            detail: consumerPass ? `${onlineConsumers} 消费者在线，偏移量持续更新，堆积 ${backlog} 条` : `消费者不足或堆积异常`,
+          },
+          probeLog,
+        }
       })
     },
 

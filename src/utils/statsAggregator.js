@@ -7,7 +7,7 @@
  *   - 接口覆盖：来自 protocolStore.interfaces（真实接口总数）
  * 禁列（无数据源）：被测系统 CPU/内存/带宽、业务正确率、真实并发用户、SLA、真实链路拓扑时延。
  */
-import { runHistory } from '@/mock/seed-data'
+import { runHistory, mqProbeHistory } from '@/mock/seed-data'
 import { useExceptionStore } from '@/stores/exception'
 import { useProtocolStore } from '@/stores/protocol'
 import { useExecutionStore } from '@/stores/execution'
@@ -375,6 +375,107 @@ export function aggregateTrend(filters = {}) {
     return { systemId, passRate: pct(success, total), runs: rs.length, total }
   })
   return { reqTrend, passTrend, excTrend, systemCompare }
+}
+
+/* ========== MQ 中间件统计 ========== */
+export function aggregateMq(filters = {}) {
+  const conn = useConnectionStore()
+  const exec = useExecutionStore()
+  const sysFilter = filters.systemId || null
+  const brokers = conn.brokers.filter((b) => !sysFilter || b.systemId === sysFilter)
+  const totalBrokers = brokers.length
+  const healthyBrokers = brokers.filter((b) => b.healthCheck?.overall === 'healthy').length
+  const healthRate = totalBrokers ? Math.round((healthyBrokers / totalBrokers) * 100) : 0
+
+  // 从 mqProbeResults（实时） + mqProbeHistory（种子） 中统计
+  const probeResults = Object.values(exec.mqProbeResults || {})
+  const producerTotal = probeResults.length
+  const producerPass = probeResults.filter((p) => p.producerConnect?.status === 'pass').length
+  const consumerOnline = probeResults.filter((p) => p.consumerConnect?.status === 'pass' || p.consumerConnect?.status === 'warning').length
+  const consumerTotal = probeResults.length
+  const allLatencies = probeResults.map((p) => p.producerConnect?.latency).filter((v) => v > 0)
+  const avgLatency = allLatencies.length ? Math.round(allLatencies.reduce((a, b) => a + b, 0) / allLatencies.length) : 0
+
+  // 种子探测历史 → 按系统过滤
+  const seedProbes = mqProbeHistory.filter((p) => !sysFilter || p.systemId === sysFilter)
+
+  // 种子统计：生产者通过率 & 消费者在线率
+  const seedProdTotal = seedProbes.length
+  const seedProdPass = seedProbes.filter((p) => p.producerPass).length
+  const seedConsumerOnline = seedProbes.filter((p) => p.consumerOnline > 0).length
+  const seedAllLatencies = seedProbes.map((p) => p.producerLatency).filter((v) => v > 0)
+  const seedAvgLatency = seedAllLatencies.length ? Math.round(seedAllLatencies.reduce((a, b) => a + b, 0) / seedAllLatencies.length) : 0
+
+  // 合并实时 + 种子
+  const mergedProdTotal = producerTotal + seedProdTotal
+  const mergedProdPass = producerPass + seedProdPass
+  const mergedConsTotal = consumerTotal + seedProbes.length
+  const mergedConsOnline = consumerOnline + seedConsumerOnline
+  const mergedAvgLatency = (allLatencies.length + seedAllLatencies.length)
+    ? Math.round((sum(allLatencies) + sum(seedAllLatencies)) / (allLatencies.length + seedAllLatencies.length))
+    : avgLatency || seedAvgLatency
+
+  // Broker 明细表（合并种子探测次数/通过率）
+  const brokerDetails = brokers.map((b) => {
+    const hc = b.healthCheck || {}
+    // 匹配种子中属于该 broker 的探测记录
+    const brokerProbes = seedProbes.filter((p) => {
+      if (b.brokerType && p.brokerType !== b.brokerType) return false
+      if (b.systemId && p.systemId !== b.systemId) return false
+      return true
+    })
+    const checkCount = brokerProbes.length
+    const passCount = brokerProbes.filter((p) => p.overall === 'healthy').length
+    const passRate = checkCount ? Math.round((passCount / checkCount) * 100) : 0
+    const probeLatencies = brokerProbes.map((p) => p.level2?.latency || p.level1?.latency || 0).filter((v) => v > 0)
+    const probeAvgLatency = probeLatencies.length ? Math.round(probeLatencies.reduce((a, c) => a + c, 0) / probeLatencies.length) : 0
+    return {
+      name: b.name,
+      brokerType: b.brokerType || 'Unknown',
+      ip: b.ip,
+      port: b.port,
+      overall: hc.overall || 'unknown',
+      l1Status: hc.level1?.status || 'pending',
+      l2Status: hc.level2?.status || 'pending',
+      l3Status: hc.level3?.status || 'pending',
+      avgLatency: hc.level2?.latency || hc.level1?.latency || probeAvgLatency || 0,
+      lastCheck: hc.lastCheck || '—',
+      checkCount,
+      passRate,
+      queueCount: hc.level3?.metrics?.queues || hc.level3?.metrics?.queueCount || 0,
+      consumerCount: hc.level3?.metrics?.consumers || hc.level3?.metrics?.consumerCount || 0,
+    }
+  })
+
+  // 7天健康趋势：每天计算种子探测的 healthy 比率
+  const days = ['06-19', '06-20', '06-21', '06-22', '06-23', '06-24', '06-25']
+  const fullDays = ['2026-06-19', '2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25']
+  const healthTrend = days.map((d, i) => {
+    const dayProbes = seedProbes.filter((p) => p.dateKey === fullDays[i])
+    if (!dayProbes.length) return { x: d, y: totalBrokers ? Math.round((healthyBrokers / totalBrokers) * 100) : 0 }
+    const healthy = dayProbes.filter((p) => p.overall === 'healthy').length
+    return { x: d, y: Math.round((healthy / dayProbes.length) * 100) }
+  })
+
+  // 延迟分布：按 Broker 聚合种子平均延迟
+  const latencyDistribution = brokerDetails.map((b) => ({
+    label: b.name.length > 12 ? b.name.slice(0, 12) + '…' : b.name,
+    value: b.avgLatency,
+  }))
+
+  return {
+    kpis: {
+      totalBrokers,
+      healthyBrokers,
+      healthRate,
+      producerPassRate: mergedProdTotal ? Math.round((mergedProdPass / mergedProdTotal) * 100) : (totalBrokers ? 100 : 0),
+      consumerOnlineRate: mergedConsTotal ? Math.round((mergedConsOnline / mergedConsTotal) * 100) : (totalBrokers ? 100 : 0),
+      avgLatency: mergedAvgLatency,
+    },
+    healthTrend,
+    latencyDistribution,
+    brokerDetails,
+  }
 }
 
 /* ========== 导出 ========== */

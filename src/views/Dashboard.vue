@@ -63,6 +63,10 @@
                 <b>{{ sc.onlineCount }}<em>/{{ sc.moduleCount }}</em></b>
                 <span>模块</span>
               </div>
+              <div class="hcard__m" v-if="sc.brokerCount > 0">
+                <b :class="{ 'text-warning': sc.brokerHealthy < sc.brokerCount }">{{ sc.brokerHealthy }}<em>/{{ sc.brokerCount }}</em></b>
+                <span>MQ</span>
+              </div>
               <div class="hcard__m">
                 <b>{{ sc.taskCount }}</b>
                 <span>任务</span>
@@ -92,6 +96,12 @@
         </div>
       </template>
       <el-table :data="moduleList" size="small" highlight-current-row @row-click="onModuleClick" style="cursor: pointer;" :height="154">
+        <el-table-column label="类型" width="70" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.nodeType === 'broker'" type="warning" size="small" effect="plain">MQ</el-tag>
+            <el-tag v-else type="info" size="small" effect="plain">模块</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="模块名称" min-width="160">
           <template #default="{ row }">
             <span class="dot" :class="`dot--${row.status}`" />
@@ -428,6 +438,8 @@ const scopedAlerts = computed(() => {
 const systemCards = computed(() =>
   systemStore.visibleSystems.map(sys => {
     const mods = connStore.modulesOf(sys.id)
+    const brokers = connStore.brokers.filter(b => b.systemId === sys.id)
+    const brokerHealthy = brokers.filter(b => b.healthCheck?.overall === 'healthy' || b.healthCheck?.overall === 'unknown').length
     return {
       id: sys.id,
       name: sys.name,
@@ -435,7 +447,9 @@ const systemCards = computed(() =>
       moduleCount: mods.length,
       onlineCount: mods.filter(m => m.status === 'online').length,
       taskCount: tasks.filter(t => t.systemId === sys.id).length,
-      alertCount: exceptionStore.exceptions.filter(a => a.systemId === sys.id).length
+      alertCount: exceptionStore.exceptions.filter(a => a.systemId === sys.id).length,
+      brokerCount: brokers.length,
+      brokerHealthy,
     }
   })
 )
@@ -768,6 +782,7 @@ const stateTag = s => ({ '待处理': 'danger', '已处理': 'success', '已修�
 
 /* ============ 通用 ============ */
 .text-danger { color: var(--el-color-danger) !important; }
+.text-warning { color: var(--el-color-warning) !important; }
 .text-ph { color: var(--el-text-color-placeholder); }
 
 @media (max-width: 1100px) {

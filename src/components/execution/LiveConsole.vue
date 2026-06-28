@@ -60,6 +60,8 @@
       </div>
     </el-card>
 
+    <MqProbePanel v-if="store.hasMqTasks" />
+
     <el-card shadow="never" class="exec-card exception-feed">
       <template #header>
         <div class="card-head">
@@ -108,6 +110,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useExecutionStore } from '@/stores/execution'
+import MqProbePanel from '@/components/execution/MqProbePanel.vue'
 
 const store = useExecutionStore()
 const router = useRouter()
@@ -172,7 +175,7 @@ watch(() => store.logLines.length, () => {
 <style scoped lang="scss">
 .monitor { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 14px; }
 .monitor > .exec-card:first-child, .console-card { grid-column: 1; }
-.exception-feed { grid-column: 2; grid-row: 1 / span 2; align-self: stretch; }
+.exception-feed { grid-column: 2; grid-row: 1 / -1; align-self: stretch; }
 .exec-card {
   border-radius: 8px;
   :deep(.el-card__header) { padding: 12px 14px; }

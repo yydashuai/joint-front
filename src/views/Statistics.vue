@@ -180,6 +180,75 @@
           </ChartCard>
         </el-tab-pane>
 
+        <!-- ====== MQ 中间件 ====== -->
+        <el-tab-pane label="MQ 中间件" name="mq">
+          <div class="kpi-grid">
+            <StatCard label="Broker 总数" :value="mq.kpis.totalBrokers" tone="primary" />
+            <StatCard label="健康率" :value="mq.kpis.healthRate" suffix="%" :tone="mq.kpis.healthRate >= 90 ? 'success' : 'warning'" />
+            <StatCard label="生产端通过率" :value="mq.kpis.producerPassRate" suffix="%" :tone="mq.kpis.producerPassRate >= 90 ? 'success' : 'warning'" />
+            <StatCard label="消费端在线率" :value="mq.kpis.consumerOnlineRate" suffix="%" :tone="mq.kpis.consumerOnlineRate >= 90 ? 'success' : 'warning'" />
+            <StatCard label="平均探测延迟" :value="mq.kpis.avgLatency" suffix="ms" />
+          </div>
+          <div class="chart-grid">
+            <ChartCard title="Broker 健康趋势（近7天）">
+              <LineChart :series="[{ name: '健康率', color: 'var(--el-color-success)', points: mq.healthTrend }]" unit="%" :y-max="100" />
+            </ChartCard>
+            <ChartCard title="各 Broker 探测延迟">
+              <BarChart :data="mq.latencyDistribution" horizontal unit="ms" color="var(--el-color-primary)" />
+            </ChartCard>
+          </div>
+          <ChartCard title="各 Broker 探测明细" full>
+            <el-table :data="mq.brokerDetails" size="small" max-height="320" empty-text="暂无 Broker 数据">
+              <el-table-column label="Broker" prop="name" min-width="160" show-overflow-tooltip />
+              <el-table-column label="类型" prop="brokerType" width="110" align="center" />
+              <el-table-column label="地址" width="170" align="center">
+                <template #default="{ row }">
+                  <span class="mono">{{ row.ip }}:{{ row.port }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="L1 端口" width="100" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.l1Status === 'pass' ? 'success' : row.l1Status === 'fail' ? 'danger' : 'info'" size="small">
+                    {{ row.l1Status === 'pass' ? '通过' : row.l1Status === 'fail' ? '失败' : '待检' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="L2 认证" width="100" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.l2Status === 'pass' ? 'success' : row.l2Status === 'fail' ? 'danger' : 'info'" size="small">
+                    {{ row.l2Status === 'pass' ? '通过' : row.l2Status === 'fail' ? '失败' : '待检' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="L3 集群" width="100" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.l3Status === 'pass' ? 'success' : row.l3Status === 'warning' ? 'warning' : row.l3Status === 'fail' ? 'danger' : 'info'" size="small">
+                    {{ row.l3Status === 'pass' ? '正常' : row.l3Status === 'warning' ? '告警' : row.l3Status === 'fail' ? '异常' : '待检' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="平均延迟" width="100" align="center">
+                <template #default="{ row }">{{ row.avgLatency }}ms</template>
+              </el-table-column>
+              <el-table-column label="队列数" prop="queueCount" width="80" align="center" />
+              <el-table-column label="消费者" prop="consumerCount" width="80" align="center" />
+              <el-table-column label="探测次数" prop="checkCount" width="90" align="right" sortable />
+              <el-table-column label="通过率" width="90" align="right" sortable :sort-by="(r) => r.passRate">
+                <template #default="{ row }">
+                  <span :class="row.passRate >= 95 ? 'ok' : 'warn'">{{ row.passRate }}%</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="综合" width="100" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.overall === 'healthy' ? 'success' : row.overall === 'warning' ? 'warning' : 'danger'" effect="dark" size="small">
+                    {{ row.overall === 'healthy' ? '健康' : row.overall === 'warning' ? '告警' : row.overall === 'error' ? '异常' : '未知' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+            </el-table>
+          </ChartCard>
+        </el-tab-pane>
+
         <!-- ====== 综合趋势 ====== -->
         <el-tab-pane label="综合趋势" name="trend">
           <div class="chart-grid">
@@ -209,7 +278,7 @@ import Histogram from '@/components/stats/Histogram.vue'
 import ChartCard from '@/components/stats/ChartCard.vue'
 import {
   aggregateOverview, aggregateExecution, aggregateRequest, aggregatePerformance,
-  aggregateException, aggregateInterface, aggregateTrend, exportRows, toCSV,
+  aggregateException, aggregateInterface, aggregateTrend, aggregateMq, exportRows, toCSV,
 } from '@/utils/statsAggregator'
 
 const route = useRoute()
@@ -263,6 +332,7 @@ const pf = computed(() => aggregatePerformance(filters.value))
 const ec = computed(() => aggregateException(filters.value))
 const itf = computed(() => aggregateInterface(filters.value))
 const tr = computed(() => aggregateTrend(filters.value))
+const mq = computed(() => aggregateMq(filters.value))
 
 const systemCompareBars = computed(() => tr.value.systemCompare.map((s) => ({
   label: systemStore.systems.find((x) => x.id === s.systemId)?.name || s.systemId || '未知',
@@ -343,4 +413,5 @@ const onExport = (cmd) => {
 .ok { color: var(--el-color-success); font-variant-numeric: tabular-nums; }
 .warn { color: var(--el-color-warning); font-variant-numeric: tabular-nums; }
 .danger { color: var(--el-color-danger); font-weight: 600; }
+.mono { font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; }
 </style>

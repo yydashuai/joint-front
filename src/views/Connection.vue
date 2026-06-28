@@ -9,6 +9,7 @@
       </div>
       <div class="header-actions">
         <el-tooltip content="打开被测系统管理对话框"><el-button :icon="Setting" @click="systemManagerVisible = true">管理系统</el-button></el-tooltip>
+        <el-tooltip content="新建一个 Broker 中间件节点"><el-button :icon="Coin" @click="openCreateBroker">新建 Broker</el-button></el-tooltip>
         <el-tooltip content="创建一个新的链路模块"><el-button type="primary" :icon="Plus" @click="openCreate">新建模块</el-button></el-tooltip>
       </div>
     </div>
@@ -31,12 +32,14 @@
           <template v-if="systemStore.current">
             <span class="sys-bar__chip"><b>负责人</b>{{ systemStore.current.owner || '—' }}</span>
             <span class="sys-bar__chip"><b>模块</b>{{ visibleModules.length }}</span>
+            <span class="sys-bar__chip"><b>Broker</b>{{ visibleBrokers.length }}</span>
             <span class="sys-bar__chip"><b>在线</b>{{ store.onlineCount }} / {{ visibleModules.length }}</span>
             <span class="sys-bar__desc">{{ systemStore.current.desc }}</span>
           </template>
           <template v-else>
             <span class="sys-bar__chip"><b>全部系统</b>跨系统总览</span>
             <span class="sys-bar__chip"><b>模块</b>{{ visibleModules.length }}</span>
+            <span class="sys-bar__chip"><b>Broker</b>{{ visibleBrokers.length }}</span>
             <span class="sys-bar__chip"><b>在线</b>{{ store.onlineCount }} / {{ visibleModules.length }}</span>
           </template>
           <span class="sys-bar__auto is-on">
@@ -80,8 +83,8 @@
           </PanZoomCanvas>
         </el-card>
 
-        <!-- 参数配置 -->
-        <el-card v-if="sel" shadow="never" class="cfg-card" :body-style="{ flex: '1', minHeight: '0', overflow: 'auto' }">
+        <!-- 参数配置（模块节点） -->
+        <el-card v-if="sel && !selIsBroker" shadow="never" class="cfg-card" :body-style="{ flex: '1', minHeight: '0', overflow: 'auto' }">
         <template #header>
           <div class="card-head">
             <span>链路参数配置 · {{ sel.name }}</span>
@@ -149,6 +152,9 @@
         </div>
       </el-card>
 
+        <!-- Broker 健康检查面板（Broker 节点） -->
+        <BrokerHealthPanel v-else-if="sel && selIsBroker" :broker="sel" @save="onBrokerSave" />
+
         <el-empty v-else class="detail-empty" description="当前系统下暂无模块，请新建模块或切换被测系统" />
       </div>
     </div>
@@ -186,6 +192,61 @@
       </template>
     </el-dialog>
 
+    <!-- 新建 Broker -->
+    <el-dialog v-model="brokerDialogVisible" title="新建 Broker" width="540px">
+      <el-form ref="brokerCreateRef" :model="brokerDraft" :rules="brokerRules" label-width="100px">
+        <el-form-item label="中间件类型" prop="brokerType">
+          <el-select v-model="brokerDraft.brokerType" class="w-full">
+            <el-option label="RabbitMQ" value="RabbitMQ" />
+            <el-option label="Kafka" value="Kafka" />
+            <el-option label="RocketMQ" value="RocketMQ" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Broker 名称" prop="name">
+          <el-input v-model="brokerDraft.name" placeholder="如 挂载管理 RabbitMQ" />
+        </el-form-item>
+        <el-form-item label="所属系统" prop="systemId">
+          <el-select v-model="brokerDraftSystemKey" class="w-full" placeholder="选择所属系统">
+            <el-option v-for="option in moduleSystemOptions" :key="option.value ?? 'none'" :label="option.label" :value="option.value" />
+          </el-select>
+        </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="14">
+            <el-form-item label="客户端 IP" prop="ip">
+              <el-input v-model="brokerDraft.ip" placeholder="192.168.10.x" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="10">
+            <el-form-item label="端口" prop="port" label-width="56px">
+              <el-input-number v-model="brokerDraft.port" :min="1" :max="65535" controls-position="right" class="w-full" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="管理端口" prop="managementPort">
+              <el-input-number v-model="brokerDraft.managementPort" :min="1" :max="65535" controls-position="right" class="w-full" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="认证用户" prop="authUsername">
+              <el-input v-model="brokerDraft.authUsername" placeholder="guest" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="认证密码">
+          <el-input v-model="brokerDraft.authPassword" type="password" show-password placeholder="认证密码" />
+        </el-form-item>
+        <el-form-item label="说明信息">
+          <el-input v-model="brokerDraft.desc" type="textarea" :rows="2" maxlength="120" show-word-limit placeholder="描述该 Broker 用途" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="brokerDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmCreateBroker">创建</el-button>
+      </template>
+    </el-dialog>
+
     <SystemManager v-model="systemManagerVisible" />
   </div>
 </template>
@@ -193,11 +254,12 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, Pointer, Delete, Setting } from '@element-plus/icons-vue'
+import { Plus, Pointer, Delete, Setting, Coin } from '@element-plus/icons-vue'
 import SystemManager from '@/components/SystemManager.vue'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import ConnectionTopology from '@/components/ConnectionTopology.vue'
 import PanZoomCanvas from '@/components/PanZoomCanvas.vue'
+import BrokerHealthPanel from '@/components/connection/BrokerHealthPanel.vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
 
@@ -225,6 +287,10 @@ const moduleSystemOptions = computed(() => [
   { label: '未分配', value: UNASSIGNED_KEY }
 ])
 const visibleModules = computed(() => store.modulesOf(systemStore.currentId))
+const visibleBrokers = computed(() => {
+  const sysId = systemStore.currentId
+  return sysId === null ? store.brokers : store.brokers.filter((b) => b.systemId === sysId)
+})
 
 // 全部系统模式：按系统分组（含"未分配"组）供拓扑图展示
 const topoGroups = computed(() => {
@@ -241,6 +307,7 @@ const onSelectSystem = (id) => {
   if (systemStore.systems.some((s) => s.id === id)) systemStore.setCurrent(id)
 }
 const sel = computed(() => visibleModules.value.find((module) => module.id === store.selectedId) || null)
+const selIsBroker = computed(() => sel.value?.nodeType === 'broker')
 
 // 层级树选中模块 → 同步到当前选中
 const onTreeSelect = (node) => {
@@ -334,6 +401,67 @@ const confirmCreate = async () => {
     store.select(created.id)
     dialogVisible.value = false
     ElMessage.success(`已新建模块 ${draft.name}`)
+  })
+}
+
+// Broker save from BrokerHealthPanel
+const onBrokerSave = (data) => {
+  const node = store.nodes.find((n) => n.id === data.id)
+  if (node) {
+    Object.assign(node, {
+      name: data.name,
+      ip: data.ip,
+      port: data.port,
+      managementPort: data.managementPort,
+      desc: data.desc,
+      authInfo: { username: data.authUsername, password: data.authPassword },
+    })
+    ElMessage.success('Broker 配置已保存')
+  }
+}
+
+// 新建 Broker
+const brokerDialogVisible = ref(false)
+const brokerCreateRef = ref()
+const blankBrokerDraft = () => ({
+  brokerType: 'RabbitMQ',
+  name: '',
+  systemId: defaultSystemId(),
+  ip: '192.168.10.',
+  port: 5672,
+  managementPort: 15672,
+  authUsername: 'guest',
+  authPassword: '',
+  desc: '',
+})
+const brokerDraft = reactive(blankBrokerDraft())
+const brokerDraftSystemKey = computed({
+  get: () => brokerDraft.systemId ?? UNASSIGNED_KEY,
+  set: (id) => {
+    brokerDraft.systemId = id === UNASSIGNED_KEY ? null : id
+  }
+})
+const brokerRules = {
+  name: [{ required: true, message: '请输入 Broker 名称', trigger: 'blur' }],
+  brokerType: [{ required: true, message: '请选择中间件类型', trigger: 'change' }],
+  ip: [{ required: true, validator: ipRule, trigger: 'blur' }],
+  port: [{ required: true, message: '请输入端口', trigger: 'blur' }],
+}
+const openCreateBroker = () => {
+  Object.assign(brokerDraft, blankBrokerDraft())
+  brokerCreateRef.value?.clearValidate()
+  brokerDialogVisible.value = true
+}
+const confirmCreateBroker = async () => {
+  await brokerCreateRef.value.validate((valid) => {
+    if (!valid) return
+    const created = store.addBroker({
+      ...brokerDraft,
+      authInfo: { username: brokerDraft.authUsername, password: brokerDraft.authPassword },
+    })
+    store.select(created.id)
+    brokerDialogVisible.value = false
+    ElMessage.success(`已新建 Broker ${brokerDraft.name}`)
   })
 }
 </script>
