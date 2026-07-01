@@ -14,7 +14,7 @@ const now = () => new Date().toISOString().slice(0, 16).replace('T', ' ')
  * ========================================================== */
 
 // 章节 kind 仅为内部字段，决定描述段能否「重新生成」，UI 不暴露
-const makeSection = (o = {}) => ({ key: uid('sec'), title: '', kind: 'gen', content: '', variants: [], vi: 0, ...o })
+const makeSection = (o = {}) => ({ key: uid('sec'), title: '', kind: 'gen', content: '', variants: [], vi: 0, comments: [], ...o })
 
 /* —— 由执行批次确定性组织硬数据章节 —— */
 const metricsTable = (run) => {
@@ -41,7 +41,9 @@ const resultsTable = (run) => {
 /* —— 描述性章节变体（轮换） —— */
 const overviewVariants = (run, sysName) => [
   `本次联试针对**${sysName}**开展全流程接口联试，共执行 ${run.stepResults.length} 个任务、${run.summary.totalRequests} 次请求，整体成功率 **${run.summary.passRate}%**，总体结论为 **${run.result}**。`,
-  `本轮联试围绕**${sysName}**的关键接口与链路稳定性展开，累计发送 ${run.summary.totalRequests} 次请求，平均延迟 ${run.summary.avgResponseTime} ms，成功率 ${run.summary.passRate}%，未出现阻断性故障，评定为 **${run.result}**。`
+  `本轮联试围绕**${sysName}**的关键接口与链路稳定性展开，累计发送 ${run.summary.totalRequests} 次请求，平均延迟 ${run.summary.avgResponseTime} ms，成功率 ${run.summary.passRate}%，未出现阻断性故障，评定为 **${run.result}**。`,
+  `从执行覆盖看，**${sysName}**本轮共纳入 ${run.stepResults.length} 个任务，覆盖 ${new Set(run.stepResults.map((r) => r.iface)).size} 个接口。请求总量 ${run.summary.totalRequests} 次，P95 延迟 ${run.summary.p95} ms，结果判定为 **${run.result}**。`,
+  `本报告依据选定执行批次生成，重点呈现**${sysName}**在接口响应、规则命中和异常捕捉方面的客观数据。本轮成功率为 **${run.summary.passRate}%**，平均响应 ${run.summary.avgResponseTime} ms，结论为 **${run.result}**。`
 ]
 
 const anomalyVariants = (run) => {
@@ -49,32 +51,42 @@ const anomalyVariants = (run) => {
   if (!exs.length) {
     return [
       '本次联试全程未捕获异常事件，各接口响应均通过类型、取值范围与超时校验。',
-      '本轮执行无异常记录，基础规则（类型 / 取值 / 边界 / 超时）判定全部通过。'
+      '本轮执行无异常记录，基础规则（类型 / 取值 / 边界 / 超时）判定全部通过。',
+      '当前批次未形成异常清单，说明返回数据在字段类型、边界值和响应时限方面均满足既定规则。',
+      '异常捕捉结果为空，本轮可直接进入归档或作为后续回归测试的对照基线。'
     ]
   }
   const lines = exs.map((e) => `- **[${e.level}] ${e.time}** — ${e.iface}：${e.message}`).join('\n')
   return [
     `本次联试共捕获 **${exs.length} 处异常**，明细如下：\n\n${lines}`,
-    `异常集中在少数接口，共 **${exs.length} 处**：\n\n${lines}\n\n建议结合接口超时与取值规则进一步定位。`
+    `异常集中在少数接口，共 **${exs.length} 处**：\n\n${lines}\n\n建议结合接口超时与取值规则进一步定位。`,
+    `从异常分布看，本轮问题主要暴露在接口响应稳定性和字段规则判定两类场景。记录如下：\n\n${lines}\n\n后续应优先复核高等级异常。`,
+    `本轮异常清单用于支撑处置闭环，共记录 **${exs.length} 条**可追溯事件：\n\n${lines}\n\n建议将上述接口纳入下一轮回归验证范围。`
   ]
 }
 
 const conclusionVariants = (run) => [
   `本次联试整体${run.result}。改进建议：\n\n1. 重点核查存在异常的接口，确认取值范围与超时阈值设置。\n2. 对平均延迟偏高的链路优化批量处理或引入结果缓存。\n3. 修复后重跑一轮全量联试以验证修复效果。`,
-  `综合评定为 **${run.result}**。后续建议：优先治理异常接口、复核延迟偏高的链路，并以本轮成功率 ${run.summary.passRate}% 作为后续回归的基线指标。`
+  `综合评定为 **${run.result}**。后续建议：优先治理异常接口、复核延迟偏高的链路，并以本轮成功率 ${run.summary.passRate}% 作为后续回归的基线指标。`,
+  `结论：本轮联试结果为 **${run.result}**。建议按“异常接口修复、规则阈值复核、同批次回归验证”的顺序推进，确保问题闭环后再交付归档。`,
+  `本轮数据已满足形成联试报告的条件，结论为 **${run.result}**。若用于验收演示，建议保留本版本并在下一版本中突出修复前后指标对比。`
 ]
 
 // 由 run + 系统名 组装一份报告的章节（硬数据确定性 + 描述段变体）
-const buildSections = (run, sysName) => {
+const buildSections = (run, sysName, seedIndex = 0) => {
   const ov = overviewVariants(run, sysName)
   const an = anomalyVariants(run)
   const co = conclusionVariants(run)
+  const pick = (items) => Math.abs(seedIndex) % items.length
+  const ovIndex = pick(ov)
+  const anIndex = pick(an)
+  const coIndex = pick(co)
   return [
-    makeSection({ key: 'overview', title: '联试概述', kind: 'gen', content: ov[0], variants: ov }),
+    makeSection({ key: 'overview', title: '联试概述', kind: 'gen', content: ov[ovIndex], variants: ov, vi: ovIndex }),
     makeSection({ key: 'metrics', title: '关键指标', kind: 'data', content: metricsTable(run) }),
     makeSection({ key: 'results', title: '接口测试结果', kind: 'data', content: resultsTable(run) }),
-    makeSection({ key: 'anomaly', title: '异常分析', kind: 'gen', content: an[0], variants: an }),
-    makeSection({ key: 'conclusion', title: '结论与建议', kind: 'gen', content: co[0], variants: co })
+    makeSection({ key: 'anomaly', title: '异常分析', kind: 'gen', content: an[anIndex], variants: an, vi: anIndex }),
+    makeSection({ key: 'conclusion', title: '结论与建议', kind: 'gen', content: co[coIndex], variants: co, vi: coIndex })
   ]
 }
 
@@ -207,7 +219,14 @@ export const useReportStore = defineStore('report', {
     runsOfSystem: (s) => (sysId) => (sysId == null ? s.runs : s.runs.filter((r) => r.systemId === sysId)),
     // 知识库统一管理，不按系统/模块过滤（保留 getter 名兼容旧调用）
     docsOfModule: (s) => () => s.knowledgeDocs,
-    reportsOfSystem: (s) => (sysId) => (sysId == null ? s.reports : s.reports.filter((r) => r.systemId === sysId))
+    reportsOfSystem: (s) => (sysId) => (sysId == null ? s.reports : s.reports.filter((r) => r.systemId === sysId)),
+    versionsOfReport: (s) => (report) => {
+      if (!report) return []
+      const lineageId = report.lineageId || report.id
+      return s.reports
+        .filter((r) => (r.lineageId || r.id) === lineageId)
+        .sort((a, b) => (a.version || 1) - (b.version || 1))
+    }
   },
 
   actions: {
@@ -279,10 +298,18 @@ export const useReportStore = defineStore('report', {
     },
 
     /* —— 生成报告（静态：进度模拟 + 按批次确定性组织 + 描述段变体） —— */
-    async generateReport({ systemId, runId, title, templateId, materials, sysName, generatorName } = {}) {
+    async generateReport({ systemId, runId, title, templateId, materials, sysName, generatorName, regenerateFromId } = {}) {
       if (this.generating) return null
       const run = this.runs.find((r) => r.id === runId)
       if (!run) return null
+      const sourceReport = regenerateFromId ? this.reports.find((r) => r.id === regenerateFromId) : null
+      const lineageId = sourceReport?.lineageId || sourceReport?.id || uid('line')
+      const version = sourceReport
+        ? Math.max(1, ...this.reports
+          .filter((r) => (r.lineageId || r.id) === lineageId)
+          .map((r) => r.version || 1)) + 1
+        : 1
+      const seedIndex = (version - 1) % 4
       this.generating = true
       this.genStage = 0
       for (let i = 0; i < REPORT_STAGES.length; i++) {
@@ -291,7 +318,9 @@ export const useReportStore = defineStore('report', {
       }
       const rep = {
         id: uid('rep'),
-        title: title || `${run.name}报告`,
+        lineageId,
+        version,
+        title: title || sourceReport?.title || `${run.name}报告`,
         systemId: systemId ?? run.systemId,
         runId: run.id,
         runName: run.name,
@@ -301,7 +330,9 @@ export const useReportStore = defineStore('report', {
         materials: (materials || []).map((m) => ({ ...m })),
         createdAt: now(),
         status: 'done',
-        sections: buildSections(run, sysName || '')
+        sections: buildSections(run, sysName || '', seedIndex),
+        sourceReportId: sourceReport?.id || null,
+        seedIndex
       }
       this.reports.unshift(rep)
       this.currentReportId = rep.id
@@ -311,9 +342,14 @@ export const useReportStore = defineStore('report', {
     },
 
     // 描述性章节轮换内容（不暴露 RAG，仅作为「重新生成」）
-    regenerateSection(report, sectionKey) {
+    regenerateSection(report, sectionKey, comment = '') {
       const sec = report?.sections.find((s) => s.key === sectionKey)
       if (!sec || sec.kind !== 'gen' || !sec.variants || sec.variants.length < 2) return
+      const text = String(comment || '').trim()
+      if (text) {
+        if (!Array.isArray(sec.comments)) sec.comments = []
+        sec.comments.push({ id: uid('cmt'), text, createdAt: now() })
+      }
       sec.vi = (sec.vi + 1) % sec.variants.length
       sec.content = sec.variants[sec.vi]
     },

@@ -9,6 +9,9 @@
           </div>
           <div class="step-actions">
             <el-button :icon="ArrowLeft" @click="$emit('back')">上一步</el-button>
+            <el-button type="primary" :icon="MagicStick" :loading="store.generating" :disabled="!run" @click="onGenerate">
+              {{ store.generating ? stageText : generateLabel }}
+            </el-button>
           </div>
         </div>
         <el-card shadow="never" class="prev">
@@ -32,7 +35,7 @@
         <div class="gen-zone">
           <div class="gen-zone__hint"><el-icon><MagicStick /></el-icon> 系统将组织硬数据（指标 / 结果表）并生成描述段落，汇编为结构化联试报告</div>
           <el-button type="success" size="large" :icon="MagicStick" :loading="store.generating" :disabled="!run" @click="onGenerate">
-            {{ store.generating ? stageText : '生成最终报告' }}
+            {{ store.generating ? stageText : generateLabel }}
           </el-button>
           <el-progress v-if="store.generating" :percentage="pct" :stroke-width="8" status="success" class="gen-zone__bar" />
         </div>
@@ -42,7 +45,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { FolderOpened, MagicStick, ArrowLeft } from '@element-plus/icons-vue'
 import { useReportStore, REPORT_STAGES } from '@/stores/report'
@@ -51,7 +54,9 @@ import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
   form: { type: Object, required: true },
-  materials: { type: Array, required: true }
+  materials: { type: Array, required: true },
+  regenerateFromId: { type: String, default: '' },
+  autoGenerateTick: { type: Number, default: 0 }
 })
 const emit = defineEmits(['back', 'done'])
 
@@ -65,6 +70,7 @@ const templateName = computed(() => store.templates.find((t) => t.id === props.f
 const generatorName = computed(() => authStore.currentUser?.realName || authStore.currentUser?.username || '当前用户')
 const stageText = computed(() => (store.genStage >= 0 ? REPORT_STAGES[store.genStage] : '生成中…'))
 const pct = computed(() => Math.round(((store.genStage + 1) / REPORT_STAGES.length) * 100))
+const generateLabel = computed(() => (props.regenerateFromId ? '重新生成报告' : '生成最终报告'))
 
 const onGenerate = async () => {
   if (!run.value) return
@@ -75,10 +81,16 @@ const onGenerate = async () => {
     templateId: props.form.templateId,
     materials: props.materials,
     sysName: sysName.value,
-    generatorName: generatorName.value
+    generatorName: generatorName.value,
+    regenerateFromId: props.regenerateFromId
   })
   if (rep) { ElMessage.success('报告已生成'); emit('done') }
 }
+
+watch(() => props.autoGenerateTick, (tick, oldTick) => {
+  if (!tick || tick === oldTick) return
+  onGenerate()
+})
 </script>
 
 <style scoped lang="scss">

@@ -160,7 +160,19 @@
           </div>
           <ChartCard title="接口排行明细" full>
             <el-table :data="itf.ranking" size="small" max-height="320" empty-text="暂无接口执行数据">
-              <el-table-column label="接口" prop="iface" min-width="160" show-overflow-tooltip />
+              <el-table-column label="接口" prop="iface" min-width="160" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <el-link
+                    v-if="interfaceRouteId(row)"
+                    type="primary"
+                    :underline="false"
+                    @click="openInterface(row)"
+                  >
+                    {{ row.iface }}
+                  </el-link>
+                  <span v-else>{{ row.iface }}</span>
+                </template>
+              </el-table-column>
               <el-table-column label="所属模块" prop="module" min-width="130" show-overflow-tooltip />
               <el-table-column label="请求数" prop="req" width="90" align="right" sortable />
               <el-table-column label="成功率" width="100" align="right" sortable :sort-by="(r) => r.successRate">
@@ -265,7 +277,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Download, ArrowDown, RefreshLeft } from '@element-plus/icons-vue'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
@@ -282,6 +294,7 @@ import {
 } from '@/utils/statsAggregator'
 
 const route = useRoute()
+const router = useRouter()
 const systemStore = useSystemStore()
 const connStore = useConnectionStore()
 const protoStore = useProtocolStore()
@@ -338,6 +351,17 @@ const systemCompareBars = computed(() => tr.value.systemCompare.map((s) => ({
   label: systemStore.systems.find((x) => x.id === s.systemId)?.name || s.systemId || '未知',
   value: s.passRate,
 })))
+
+const interfaceRouteId = (row) => {
+  if (row.interfaceId) return row.interfaceId
+  return protoStore.interfaces.find((i) => i.name === row.iface || i.path === row.iface)?.id || ''
+}
+
+const openInterface = (row) => {
+  const id = interfaceRouteId(row)
+  if (!id) return
+  router.push({ path: '/protocol', query: { interfaceId: String(id) } })
+}
 
 /* ===== 导出 ===== */
 const onExport = (cmd) => {
