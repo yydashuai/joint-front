@@ -30,28 +30,12 @@
       </el-select>
     </div>
 
-    <!-- ====== 区块1: 基础服务配置 ====== -->
-    <el-divider content-position="left">gRPC 服务配置</el-divider>
-    <div class="form-grid">
-      <div class="form-row">
-        <span class="form-label req">服务名</span>
-        <el-input v-model="cfg.serviceName" placeholder="如 TrackService" style="max-width: 300px" />
-      </div>
-      <div class="form-row">
-        <span class="form-label req">方法名</span>
-        <el-input v-model="cfg.methodName" placeholder="如 SubscribeTrack" style="max-width: 300px" />
-      </div>
-      <div class="form-row">
-        <span class="form-label">Proto 文件</span>
-        <el-input v-model="cfg.protoRef" placeholder="proto 文件路径引用" style="max-width: 400px">
-          <template #append>
-            <el-tooltip content="上传 Proto 文件"><el-button :icon="Upload" @click="$emit('uploadProto')" /></el-tooltip>
-          </template>
-        </el-input>
-      </div>
+    <!-- ====== 区块1: 流式模式 ====== -->
+    <el-divider content-position="left">gRPC 传输配置</el-divider>
+    <div class="section-hint">
+      协议只定义传输层规范（流模式、地址、超时）。具体的服务名、方法名、消息结构由引用此协议的接口定义。
     </div>
 
-    <el-divider content-position="left">流式模式</el-divider>
     <el-radio-group v-model="cfg.streamingMode" class="stream-modes">
       <el-radio-button value="unary">Unary（一元）</el-radio-button>
       <el-radio-button value="server-stream">Server Stream</el-radio-button>
@@ -60,123 +44,7 @@
     </el-radio-group>
     <div class="mode-hint">{{ streamHint }}</div>
 
-    <!-- ====== 区块2: 请求消息结构 ====== -->
-    <el-divider content-position="left">请求消息 (Request Message)</el-divider>
-    <el-table v-if="cfg.requestMessage.length" :data="cfg.requestMessage" border size="small" class="kv-table"
-      row-key="id" :tree-props="{ children: 'children' }" default-expand-all>
-      <el-table-column label="#" width="70" align="center">
-        <template #default="{ row }"><span class="field-num">{{ row.fieldNumber }}</span></template>
-      </el-table-column>
-      <el-table-column label="字段名" min-width="150">
-        <template #default="{ row }"><el-input v-model="row.name" size="small" placeholder="字段名" /></template>
-      </el-table-column>
-      <el-table-column label="类型" width="140">
-        <template #default="{ row }">
-          <el-select v-model="row.type" size="small" style="width: 120px" filterable allow-create
-            @change="(v) => { if (v !== 'message' && v !== 'map') row.children = [] }">
-            <el-option v-for="t in PROTO_FIELD_TYPES" :key="t" :label="t" :value="t" />
-          </el-select>
-        </template>
-      </el-table-column>
-      <el-table-column label="修饰符" width="120">
-        <template #default="{ row }">
-          <el-select v-model="row.modifier" size="small" style="width: 100px">
-            <el-option label="optional" value="optional" />
-            <el-option label="required" value="required" />
-            <el-option label="repeated" value="repeated" />
-          </el-select>
-        </template>
-      </el-table-column>
-      <el-table-column label="说明" min-width="160">
-        <template #default="{ row }"><el-input v-model="row.desc" size="small" placeholder="字段说明" /></template>
-      </el-table-column>
-      <el-table-column label="操作" width="100" align="center">
-        <template #default="{ row, $index }">
-          <el-tooltip content="添加子字段"><el-button v-if="row.type === 'message' || row.type === 'map'" text size="small" :icon="Plus"
-            @click="addProtoChild(row)" /></el-tooltip>
-          <el-popconfirm title="删除该字段？" @confirm="cfg.requestMessage.splice($index, 1)">
-            <template #reference><el-button text size="small" :icon="Delete" /></template>
-          </el-popconfirm>
-        </template>
-      </el-table-column>
-    </el-table>
-    <el-empty v-else description="定义请求消息的 Protobuf 字段" :image-size="48" />
-    <el-tooltip content="添加一个请求消息字段"><el-button size="small" :icon="Plus" @click="addReqField">添加字段</el-button></el-tooltip>
-
-    <!-- ====== 区块3: 响应消息结构 ====== -->
-    <el-divider content-position="left">响应消息 (Response Message)</el-divider>
-    <el-table v-if="cfg.responseMessage.length" :data="cfg.responseMessage" border size="small" class="kv-table"
-      row-key="id" :tree-props="{ children: 'children' }" default-expand-all>
-      <el-table-column label="#" width="70" align="center">
-        <template #default="{ row }"><span class="field-num">{{ row.fieldNumber }}</span></template>
-      </el-table-column>
-      <el-table-column label="字段名" min-width="150">
-        <template #default="{ row }"><el-input v-model="row.name" size="small" placeholder="字段名" /></template>
-      </el-table-column>
-      <el-table-column label="类型" width="140">
-        <template #default="{ row }">
-          <el-select v-model="row.type" size="small" style="width: 120px" filterable allow-create
-            @change="(v) => { if (v !== 'message' && v !== 'map') row.children = [] }">
-            <el-option v-for="t in PROTO_FIELD_TYPES" :key="t" :label="t" :value="t" />
-          </el-select>
-        </template>
-      </el-table-column>
-      <el-table-column label="修饰符" width="120">
-        <template #default="{ row }">
-          <el-select v-model="row.modifier" size="small" style="width: 100px">
-            <el-option label="optional" value="optional" />
-            <el-option label="required" value="required" />
-            <el-option label="repeated" value="repeated" />
-          </el-select>
-        </template>
-      </el-table-column>
-      <el-table-column label="说明" min-width="160">
-        <template #default="{ row }"><el-input v-model="row.desc" size="small" placeholder="字段说明" /></template>
-      </el-table-column>
-      <el-table-column label="操作" width="100" align="center">
-        <template #default="{ row, $index }">
-          <el-tooltip content="添加子字段"><el-button v-if="row.type === 'message' || row.type === 'map'" text size="small" :icon="Plus"
-            @click="addProtoChild(row)" /></el-tooltip>
-          <el-popconfirm title="删除该字段？" @confirm="cfg.responseMessage.splice($index, 1)">
-            <template #reference><el-button text size="small" :icon="Delete" /></template>
-          </el-popconfirm>
-        </template>
-      </el-table-column>
-    </el-table>
-    <el-empty v-else description="定义响应消息的 Protobuf 字段" :image-size="48" />
-    <el-tooltip content="添加一个响应消息字段"><el-button size="small" :icon="Plus" @click="addRespField">添加字段</el-button></el-tooltip>
-
-    <!-- ====== 区块4: Metadata 元数据 ====== -->
-    <el-divider content-position="left">Metadata（元数据）</el-divider>
-    <el-table :data="cfg.metadata" border size="small" class="kv-table">
-      <el-table-column label="Key" min-width="140">
-        <template #default="{ row }"><el-input v-model="row.key" size="small" placeholder="Metadata Key" /></template>
-      </el-table-column>
-      <el-table-column label="Value" min-width="180">
-        <template #default="{ row }"><el-input v-model="row.value" size="small" placeholder="Metadata Value" /></template>
-      </el-table-column>
-      <el-table-column label="模式" width="120">
-        <template #default="{ row }">
-          <el-select v-model="row.mode" size="small" style="width: 100px">
-            <el-option label="静态" value="static" />
-            <el-option label="动态" value="dynamic" />
-          </el-select>
-        </template>
-      </el-table-column>
-      <el-table-column label="说明" min-width="140">
-        <template #default="{ row }"><el-input v-model="row.desc" size="small" placeholder="用途说明" /></template>
-      </el-table-column>
-      <el-table-column label="操作" width="64" align="center">
-        <template #default="{ $index }">
-          <el-popconfirm title="删除该元数据？" @confirm="cfg.metadata.splice($index, 1)">
-            <template #reference><el-button text size="small" :icon="Delete" /></template>
-          </el-popconfirm>
-        </template>
-      </el-table-column>
-    </el-table>
-    <el-tooltip content="添加一条元数据"><el-button size="small" :icon="Plus" @click="cfg.metadata.push({ key: '', value: '', mode: 'static', desc: '' })">添加 Metadata</el-button></el-tooltip>
-
-    <!-- ====== 区块5: 运行时配置 ====== -->
+    <!-- ====== 区块2: 运行时配置 ====== -->
     <el-divider content-position="left">运行时配置</el-divider>
     <div class="form-grid">
       <div class="form-row">
@@ -213,15 +81,15 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { Delete, Plus, Check, Upload } from '@element-plus/icons-vue'
-import { PROTOCOL_TYPES, PROTO_FIELD_TYPES, makeProtoField } from '@/stores/protocol'
+import { Delete, Check } from '@element-plus/icons-vue'
+import { PROTOCOL_TYPES } from '@/stores/protocol'
 
 const props = defineProps({
   protocol: { type: Object, required: true },
   systemOptions: { type: Array, default: () => [] },
   moduleOptions: { type: Array, default: () => [] },
 })
-defineEmits(['delete', 'save', 'systemChange', 'switchType', 'uploadProto'])
+defineEmits(['delete', 'save', 'systemChange', 'switchType'])
 
 // ---- 脏数据追踪 ----
 const dirty = ref(false)
@@ -248,22 +116,6 @@ const streamHint = computed(() => {
   }
   return hints[cfg.value.streamingMode] || ''
 })
-
-const nextFieldNum = (fields) => {
-  if (!fields.length) return 1
-  return Math.max(...fields.map(f => f.fieldNumber || 0)) + 1
-}
-
-const addReqField = () => {
-  cfg.value.requestMessage.push(makeProtoField({ fieldNumber: nextFieldNum(cfg.value.requestMessage) }))
-}
-const addRespField = () => {
-  cfg.value.responseMessage.push(makeProtoField({ fieldNumber: nextFieldNum(cfg.value.responseMessage) }))
-}
-const addProtoChild = (row) => {
-  if (!row.children) row.children = []
-  row.children.push(makeProtoField({ fieldNumber: row.children.length + 1, name: 'subField' }))
-}
 </script>
 
 <style scoped lang="scss">
@@ -286,6 +138,5 @@ const addProtoChild = (row) => {
 .stream-modes { margin-bottom: 8px; }
 .mode-hint { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 8px; padding-left: 4px; }
 
-.kv-table { margin-bottom: 8px; }
-.field-num { font-family: monospace; font-weight: 600; color: var(--el-color-primary); }
+.section-hint { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 12px; line-height: 1.6; padding-left: 4px; border-left: 3px solid var(--el-color-primary-light-5); }
 </style>

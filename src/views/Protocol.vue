@@ -23,51 +23,33 @@
       />
 
       <div class="proto-detail">
-        <!-- v2 协议摘要: 传输/编码/消息数 -->
-        <div v-if="selectedKind === 'protocol' && curProto && protoSummary.transport" class="proto-summary">
+        <!-- 协议摘要: 数据结构信息 -->
+        <div v-if="selectedKind === 'protocol' && curProto" class="proto-summary">
           <span class="proto-summary__chip">
-            <el-icon><Promotion /></el-icon>
-            <b>{{ protoSummary.transport.host || '—' }}</b>
-            <em v-if="protoSummary.transport.port">:{{ protoSummary.transport.port }}</em>
+            <el-icon><Grid /></el-icon>
+            <b>{{ curProto.fields?.length || 0 }}</b> 个字段
           </span>
-          <span class="proto-summary__chip" :class="`is-${protoSummary.encoding}`">
-            <el-icon><Coin /></el-icon>
-            {{ protoSummary.encoding }}
+          <span v-if="curProto.endian" class="proto-summary__chip">
+            <el-icon><Setting /></el-icon>
+            {{ curProto.endian === 'big' ? '大端' : '小端' }}
           </span>
-          <span v-if="protoSummary.transport.tls" class="proto-summary__chip is-secure">
-            <el-icon><Lock /></el-icon>
-            TLS
+          <span v-if="curProto.framing" class="proto-summary__chip is-framing">
+            <el-icon><Box /></el-icon>
+            帧结构
           </span>
-          <span class="proto-summary__msg">
+          <span v-if="curProto.checksum" class="proto-summary__chip is-checksum">
+            <el-icon><Document /></el-icon>
+            校验
+          </span>
+          <span v-if="store.interfacesByProtocol(curProto.id).length" class="proto-summary__msg">
             <el-icon><List /></el-icon>
-            {{ protoSummary.messageCount }} 个消息
+            {{ store.interfacesByProtocol(curProto.id).length }} 个接口引用
           </span>
         </div>
 
-        <!-- v2 消息集合: 替代 v1 「切到 Interface 才能看」的模式 -->
-        <details v-if="selectedKind === 'protocol' && curProto && protoMessages.length" class="proto-messages" open>
-          <summary>
-            <el-icon><Tickets /></el-icon>
-            <span>消息集合</span>
-            <el-tag size="small" effect="plain">{{ protoMessages.length }}</el-tag>
-            <span class="proto-messages__hint">v2 概念: 协议下的操作/命令/事件</span>
-          </summary>
-          <div class="proto-messages__list">
-            <div v-for="m in protoMessages" :key="m.id" class="proto-msg" :class="`proto-msg--${m.direction}`">
-              <el-tag :type="msgTagType(m.direction)" size="small" effect="dark">{{ msgDirLabel(m.direction) }}</el-tag>
-              <span class="proto-msg__name">{{ m.name }}</span>
-              <span v-if="m.code !== null && m.code !== undefined" class="proto-msg__code">code={{ m.code }}</span>
-              <span v-if="m.http" class="proto-msg__http">{{ m.http.method }} <code>{{ m.http.path }}</code></span>
-              <span v-if="m.grpc" class="proto-msg__grpc">{{ m.grpc.serviceName }}.{{ m.grpc.methodName }} <em>({{ m.grpc.streaming }})</em></span>
-              <span v-if="m.mqtt" class="proto-msg__mqtt">topic <code>{{ m.mqtt.topic }}</code></span>
-              <span class="proto-msg__fields">字段 {{ m.fields?.length || 0 }}</span>
-            </div>
-          </div>
-        </details>
-
         <ByteFieldTree
           ref="byteTreeRef"
-          v-if="selectedKind === 'protocol' && curProto && isByteStream(curProto.type)"
+          v-if="selectedKind === 'protocol' && curProto && hasByteFields(curProto)"
           :protocol="curProto"
           :system-options="systemOptions"
           :module-options="moduleOptions(curProto.systemId)"
@@ -76,43 +58,16 @@
           @save="onSave"
           @delete="store.removeProtocol(curProto.id)"
           @system-change="onProtoSystemChange"
-          @switch-type="onTypeDropdown"
         />
 
-        <HttpConfigForm
-          ref="httpFormRef"
-          v-else-if="selectedKind === 'protocol' && curProto && curProto.type === 'HTTP'"
+        <StructFieldEditor
+          v-else-if="selectedKind === 'protocol' && curProto && !hasByteFields(curProto)"
           :protocol="curProto"
           :system-options="systemOptions"
           :module-options="moduleOptions(curProto.systemId)"
           @save="onSave"
           @delete="store.removeProtocol(curProto.id)"
           @system-change="onProtoSystemChange"
-          @switch-type="onTypeDropdown"
-        />
-
-        <GrpcConfigForm
-          ref="grpcFormRef"
-          v-else-if="selectedKind === 'protocol' && curProto && curProto.type === 'gRPC'"
-          :protocol="curProto"
-          :system-options="systemOptions"
-          :module-options="moduleOptions(curProto.systemId)"
-          @save="onSave"
-          @delete="store.removeProtocol(curProto.id)"
-          @system-change="onProtoSystemChange"
-          @switch-type="onTypeDropdown"
-        />
-
-        <MqConfigForm
-          ref="mqFormRef"
-          v-else-if="selectedKind === 'protocol' && curProto && curProto.type === 'MQ'"
-          :protocol="curProto"
-          :system-options="systemOptions"
-          :module-options="moduleOptions(curProto.systemId)"
-          @save="onSave"
-          @delete="store.removeProtocol(curProto.id)"
-          @system-change="onProtoSystemChange"
-          @switch-type="onTypeDropdown"
         />
 
         <InterfaceEditor
@@ -123,6 +78,7 @@
           :protocol-options="store.protocolOptions"
           @delete="store.removeInterface(curIf.id)"
           @system-change="onIfSystemChange"
+          @navigate-protocol="onNavigateProtocol"
         />
 
         <el-empty v-if="!curProto && !curIf" class="main main--empty" description="从左侧选择一个协议或接口进行编辑" />
@@ -138,16 +94,14 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Promotion, Coin, Lock, List, Tickets, InfoFilled } from '@element-plus/icons-vue'
-import { useProtocolStore, isByteStream } from '@/stores/protocol'
+import { Grid, Setting, Box, Document, List, InfoFilled } from '@element-plus/icons-vue'
+import { useProtocolStore } from '@/stores/protocol'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import ProtocolTypeDialog from '@/components/protocol/ProtocolTypeDialog.vue'
 import ByteFieldTree from '@/components/protocol/ByteFieldTree.vue'
-import HttpConfigForm from '@/components/protocol/HttpConfigForm.vue'
-import GrpcConfigForm from '@/components/protocol/GrpcConfigForm.vue'
-import MqConfigForm from '@/components/protocol/MqConfigForm.vue'
+import StructFieldEditor from '@/components/protocol/StructFieldEditor.vue'
 import InterfaceEditor from '@/components/protocol/InterfaceEditor.vue'
 
 const store = useProtocolStore()
@@ -167,24 +121,23 @@ if (!store.selectedInterfaceId) store.selectedInterfaceId = store.interfaces[0]?
 const curProto = computed(() => store.selectedProtocol)
 const curIf = computed(() => store.selectedInterface)
 
-// v2: 摘要 + 消息集合 (带防御默认值, 避免访问 undefined.transport)
-const EMPTY_SUMMARY = { transport: { host: '', port: '', tls: false }, encoding: 'unknown', messageCount: 0 }
+// v2: 摘要 (带防御默认值)
+const EMPTY_SUMMARY = { fieldCount: 0, hasFraming: false, hasChecksum: false, endian: 'big', isStruct: false }
 const protoSummary = computed(() => {
   if (!curProto.value) return EMPTY_SUMMARY
   return store.protocolSummary(curProto.value.id) || EMPTY_SUMMARY
 })
-const protoMessages = computed(() => {
-  if (!curProto.value) return []
-  return store.protocolMessages(curProto.value.id) || []
-})
 
-const msgDirLabel = (d) => ({ request: '请求', response: '响应', event: '事件', cmd: '命令' }[d] || d)
-const msgTagType = (d) => ({ request: 'primary', response: 'success', event: 'warning', cmd: 'info' }[d] || 'info')
+const hasByteFields = (p) => (p.fields || []).some(f => f.kind === 'byte' || f.kind === 'bit' || f.kind === 'repeat')
 
 const systemOptions = computed(() => systemStore.systems.map((s) => ({ label: s.name, value: s.id })))
 const moduleOptions = (systemId) => connStore.nodes.filter((n) => n.systemId === systemId).map((m) => ({ label: m.name, value: m.id }))
 const onProtoSystemChange = () => { if (curProto.value) curProto.value.moduleId = null }
 const onIfSystemChange = () => { if (curIf.value) curIf.value.moduleId = null }
+const onNavigateProtocol = (protocolId) => {
+  selectedKind.value = 'protocol'
+  store.selectedProtocolId = protocolId
+}
 
 const protocolLeafGroups = (module) => {
   const protos = store.protocols.filter((p) => p.moduleId === module.id)
@@ -241,7 +194,16 @@ const openTypeDialog = (module) => {
 const onTypeSelected = (type) => {
   const mod = pendingModule.value
   if (!mod) return
-  store.addProtocol({ name: DEFAULT_NAME.protocol, type, systemId: mod.systemId, moduleId: mod.id })
+  const isByteStream = type === 'TCP'
+  store.addProtocol({
+    name: DEFAULT_NAME.protocol,
+    systemId: mod.systemId,
+    moduleId: mod.id,
+    endian: isByteStream ? 'big' : undefined,
+    fields: [],
+    framing: isByteStream ? { mode: 'fixed', fixedLength: 0, lengthFieldId: null, lengthIncludesHeader: true, lengthIncludesSelf: true, headerBytes: '', footerBytes: '' } : null,
+    checksum: isByteStream ? { type: 'none', fieldId: null, rangeStart: 0, rangeEnd: 0, polynomial: '0x1021', initValue: '0xFFFF', reflectIn: false, reflectOut: false, xorOut: '0x0000' } : null,
+  })
   selectedKind.value = 'protocol'
 }
 
@@ -282,30 +244,12 @@ watch(() => route.query.interfaceId, (ifaceId) => {
   }
 }, { immediate: true })
 
-const onTypeDropdown = (newType) => {
-  if (!curProto.value || newType === curProto.value.type) return
-  ElMessageBox.confirm(
-    `从「${curProto.value.type}」切换到「${newType}」将清空当前配置，是否继续？`,
-    '切换协议类型',
-    { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
-  ).then(() => {
-    store.switchProtocolType(curProto.value, newType)
-    ElMessage.success(`已切换到 ${newType}`)
-  }).catch(() => {})
-}
-
 const byteTreeRef = ref()
-const httpFormRef = ref()
-const grpcFormRef = ref()
-const mqFormRef = ref()
 
 const onSave = () => {
   byteTreeRef.value?.fillAllGaps?.()
   nextTick(() => {
     byteTreeRef.value?.markClean?.()
-    httpFormRef.value?.markClean?.()
-    grpcFormRef.value?.markClean?.()
-    mqFormRef.value?.markClean?.()
     ElMessage.success('协议已保存')
   })
 }
@@ -357,8 +301,7 @@ const onImportFile = (e) => {
 .split { flex: 1; min-height: 0; display: flex; gap: 16px; overflow: hidden; }
 .proto-tree { width: 300px; flex-shrink: 0; min-height: 0; overflow: auto; }
 .proto-detail { display: flex; flex-direction: column; gap: 10px; width: 100%; min-width: 0; flex: 1; min-height: 0; overflow: hidden; }
-.proto-detail > :deep(.proto-summary),
-.proto-detail > :deep(.proto-messages) { flex-shrink: 0; }
+.proto-detail > :deep(.proto-summary) { flex-shrink: 0; }
 .proto-detail > :deep(.el-card.main) { flex: 1; min-height: 0; overflow: hidden; }
 .main--empty {
   flex: 1;
@@ -406,72 +349,6 @@ const onImportFile = (e) => {
     color: var(--el-color-primary);
     font-weight: 500;
     .el-icon { font-size: 12px; }
-  }
-}
-
-/* ============ v2 消息集合 ============ */
-.proto-messages {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  background: var(--el-bg-color);
-  overflow: hidden;
-
-  > summary {
-    list-style: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 14px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--el-text-color-primary);
-    background: var(--el-fill-color-light);
-    user-select: none;
-    &::-webkit-details-marker { display: none; }
-    .el-icon { color: var(--el-color-primary); }
-  }
-  &__hint {
-    font-size: 11px;
-    font-weight: 400;
-    color: var(--el-text-color-placeholder);
-    margin-left: 4px;
-  }
-  &__list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 8px 14px 12px;
-  }
-}
-.proto-msg {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: var(--el-fill-color-extra-light);
-  font-size: 12px;
-  border-left: 3px solid var(--el-color-info);
-
-  &--request  { border-left-color: var(--el-color-primary); }
-  &--response { border-left-color: var(--el-color-success); }
-  &--event    { border-left-color: var(--el-color-warning); }
-  &--cmd      { border-left-color: var(--el-color-info); }
-
-  &__name { font-weight: 600; color: var(--el-text-color-primary); }
-  &__code { font-family: ui-monospace, monospace; color: var(--el-color-warning); }
-  &__http, &__grpc, &__mqtt {
-    code { font-family: ui-monospace, monospace; color: var(--el-color-primary); background: var(--el-color-primary-light-9); padding: 0 4px; border-radius: 3px; }
-    em { font-style: normal; color: var(--el-text-color-secondary); font-size: 11px; }
-  }
-  &__fields {
-    margin-left: auto;
-    font-size: 11px;
-    color: var(--el-text-color-placeholder);
-    padding: 1px 8px;
-    background: var(--el-fill-color);
-    border-radius: 8px;
   }
 }
 </style>

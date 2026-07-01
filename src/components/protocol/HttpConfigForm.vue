@@ -30,22 +30,17 @@
       </el-select>
     </div>
 
-    <!-- ====== 区块1: 基础配置 ====== -->
-    <el-divider content-position="left">HTTP 基础配置</el-divider>
+    <!-- ====== 区块1: 基础传输配置 ====== -->
+    <el-divider content-position="left">HTTP 传输配置</el-divider>
+    <div class="section-hint">
+      协议只定义传输层规范（方法、编码、认证）。具体的请求路径、参数、响应由引用此协议的接口定义。
+    </div>
     <div class="form-grid">
       <div class="form-row">
         <span class="form-label req">请求方法</span>
         <el-select v-model="cfg.method" style="width: 140px">
           <el-option v-for="m in HTTP_METHODS" :key="m" :label="m" :value="m" />
         </el-select>
-      </div>
-      <div class="form-row">
-        <span class="form-label req">请求路径</span>
-        <el-input v-model="cfg.path" placeholder="/api/v1/users/{userId}/orders" style="max-width: 480px" />
-      </div>
-      <div class="form-row" v-if="extractedPathParams.length">
-        <span class="form-label">路径参数</span>
-        <el-tag v-for="p in extractedPathParams" :key="p" size="small" type="warning" class="path-tag">{{ '{' + p + '}' }}</el-tag>
       </div>
       <div class="form-row">
         <span class="form-label">Content-Type</span>
@@ -55,156 +50,7 @@
       </div>
     </div>
 
-    <!-- ====== 区块2: 请求参数 ====== -->
-    <el-divider content-position="left">请求参数</el-divider>
-    <el-tabs v-model="paramTab" class="param-tabs">
-      <!-- Tab 1: 路径参数 -->
-      <el-tab-pane :label="`路径参数 (${cfg.pathParams.length})`" name="path">
-        <el-table :data="cfg.pathParams" border size="small" class="kv-table" v-if="cfg.pathParams.length">
-          <el-table-column label="参数名" width="160">
-            <template #default="{ row }">
-              <el-input v-model="row.name" size="small" disabled />
-            </template>
-          </el-table-column>
-          <el-table-column label="数据类型" width="130">
-            <template #default="{ row }">
-              <el-select v-model="row.dataType" size="small" style="width: 110px">
-                <el-option label="string" value="string" />
-                <el-option label="integer" value="integer" />
-                <el-option label="number" value="number" />
-                <el-option label="boolean" value="boolean" />
-              </el-select>
-            </template>
-          </el-table-column>
-          <el-table-column label="默认值" min-width="140">
-            <template #default="{ row }">
-              <el-input v-model="row.defaultValue" size="small" placeholder="可选默认值" />
-            </template>
-          </el-table-column>
-          <el-table-column label="说明" min-width="180">
-            <template #default="{ row }">
-              <el-input v-model="row.desc" size="small" placeholder="参数说明" />
-            </template>
-          </el-table-column>
-        </el-table>
-        <el-empty v-else description="在路径中使用 {paramName} 格式自动提取参数" :image-size="48" />
-      </el-tab-pane>
-
-      <!-- Tab 2: 查询参数 -->
-      <el-tab-pane :label="`查询参数 (${cfg.queryParams.length})`" name="query">
-        <el-table :data="cfg.queryParams" border size="small" class="kv-table">
-          <el-table-column label="参数名" width="160">
-            <template #default="{ row }">
-              <el-input v-model="row.name" size="small" placeholder="参数名" />
-            </template>
-          </el-table-column>
-          <el-table-column label="数据类型" width="130">
-            <template #default="{ row }">
-              <el-select v-model="row.dataType" size="small" style="width: 110px">
-                <el-option label="string" value="string" />
-                <el-option label="integer" value="integer" />
-                <el-option label="number" value="number" />
-                <el-option label="boolean" value="boolean" />
-                <el-option label="array" value="array" />
-              </el-select>
-            </template>
-          </el-table-column>
-          <el-table-column label="必填" width="64" align="center">
-            <template #default="{ row }">
-              <el-checkbox v-model="row.required" />
-            </template>
-          </el-table-column>
-          <el-table-column label="默认值" min-width="120">
-            <template #default="{ row }">
-              <el-input v-model="row.defaultValue" size="small" placeholder="默认值" />
-            </template>
-          </el-table-column>
-          <el-table-column label="说明" min-width="160">
-            <template #default="{ row }">
-              <el-input v-model="row.desc" size="small" placeholder="参数说明" />
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="64" align="center">
-            <template #default="{ $index }">
-              <el-popconfirm title="删除该查询参数？" @confirm="cfg.queryParams.splice($index, 1)">
-                <template #reference><el-button text size="small" :icon="Delete" /></template>
-              </el-popconfirm>
-            </template>
-          </el-table-column>
-        </el-table>
-        <el-tooltip content="添加一个查询参数"><el-button size="small" :icon="Plus" @click="cfg.queryParams.push(makeHttpParam())">添加查询参数</el-button></el-tooltip>
-      </el-tab-pane>
-
-      <!-- Tab 3: 请求体 -->
-      <el-tab-pane label="请求体" name="body">
-        <div class="body-mode-row">
-          <span class="form-label">内容格式</span>
-          <el-radio-group v-model="bodyMode" size="small">
-            <el-radio-button value="json">JSON 字段</el-radio-button>
-            <el-radio-button value="form">Form 表单</el-radio-button>
-            <el-radio-button value="file">文件上传</el-radio-button>
-          </el-radio-group>
-        </div>
-
-        <!-- JSON / Form 模式 -->
-        <template v-if="bodyMode !== 'file'">
-          <el-table :data="cfg.requestBody.fields" border size="small" class="kv-table" row-key="id" :tree-props="{ children: 'children' }">
-            <el-table-column label="字段名" min-width="160" prop="name">
-              <template #default="{ row }">
-                <el-input v-model="row.name" size="small" placeholder="字段名" />
-              </template>
-            </el-table-column>
-            <el-table-column label="数据类型" width="130">
-              <template #default="{ row }">
-                <el-select v-model="row.dataType" size="small" style="width: 110px">
-                  <el-option label="string" value="string" />
-                  <el-option label="integer" value="integer" />
-                  <el-option label="number" value="number" />
-                  <el-option label="boolean" value="boolean" />
-                  <el-option label="object" value="object" />
-                  <el-option label="array" value="array" />
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column label="必填" width="64" align="center">
-              <template #default="{ row }">
-                <el-checkbox v-model="row.required" />
-              </template>
-            </el-table-column>
-            <el-table-column label="说明" min-width="180">
-              <template #default="{ row }">
-                <el-input v-model="row.desc" size="small" placeholder="字段说明" />
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="100" align="center">
-              <template #default="{ row, $index }">
-                <el-tooltip content="添加子字段"><el-button v-if="row.dataType === 'object'" text size="small" :icon="Plus" @click="row.children.push(makeBodyField({ name: 'subField' }))" /></el-tooltip>
-                <el-popconfirm title="删除该字段？" @confirm="removeBodyField($index)">
-                  <template #reference><el-button text size="small" :icon="Delete" /></template>
-                </el-popconfirm>
-              </template>
-            </el-table-column>
-          </el-table>
-          <el-tooltip content="添加一个请求体字段"><el-button size="small" :icon="Plus" @click="cfg.requestBody.fields.push(makeBodyField())">添加字段</el-button></el-tooltip>
-        </template>
-
-        <!-- 文件上传模式 -->
-        <template v-else>
-          <div class="form-grid" style="margin-top: 8px">
-            <div class="form-row">
-              <span class="form-label">文件字段名</span>
-              <el-input v-model="cfg.requestBody.fieldName" placeholder="如 file / attachment" style="max-width: 300px" />
-            </div>
-            <div class="form-row">
-              <span class="form-label">文件类型</span>
-              <el-input v-model="cfg.requestBody.fileType" placeholder="如 image/png, application/pdf" style="max-width: 300px" />
-            </div>
-          </div>
-        </template>
-      </el-tab-pane>
-    </el-tabs>
-
-    <!-- ====== 区块3: 请求头 ====== -->
+    <!-- ====== 区块2: 请求头 ====== -->
     <el-divider content-position="left">请求头 (Headers)</el-divider>
     <el-table :data="cfg.headers" border size="small" class="kv-table">
       <el-table-column label="Key" min-width="160">
@@ -234,7 +80,7 @@
       </el-dropdown>
     </div>
 
-    <!-- ====== 区块4: 认证配置 ====== -->
+    <!-- ====== 区块3: 认证配置 ====== -->
     <el-divider content-position="left">认证 (Auth)</el-divider>
     <div class="form-grid">
       <div class="form-row">
@@ -291,91 +137,6 @@
         <el-input v-model="cfg.auth.token" placeholder="描述签名算法，如 HMAC-SHA256 + timestamp" style="max-width: 480px" />
       </div>
     </div>
-
-    <!-- ====== 区块5: 响应配置 ====== -->
-    <el-divider content-position="left">响应配置</el-divider>
-    <el-collapse v-model="activeResponses" class="resp-collapse">
-      <el-collapse-item v-for="(resp, ri) in cfg.responses" :key="resp.id" :name="resp.id">
-        <template #title>
-          <div class="resp-title">
-            <el-tag :type="statusColor(resp.statusCode)" size="small">{{ resp.statusCode }}</el-tag>
-            <span class="resp-desc">{{ resp.desc || '未描述' }}</span>
-          </div>
-        </template>
-        <div class="form-grid">
-          <div class="form-row">
-            <span class="form-label">状态码</span>
-            <el-input-number v-model="resp.statusCode" :min="100" :max="599" size="small" style="width: 140px" />
-          </div>
-          <div class="form-row">
-            <span class="form-label">描述</span>
-            <el-input v-model="resp.desc" placeholder="响应描述" size="small" style="max-width: 400px" />
-          </div>
-        </div>
-
-        <div class="sub-section">
-          <div class="sub-section__head">响应头</div>
-          <el-table :data="resp.headers" border size="small" class="kv-table" v-if="resp.headers.length">
-            <el-table-column label="Key" min-width="160">
-              <template #default="{ row }"><el-input v-model="row.key" size="small" placeholder="Header Name" /></template>
-            </el-table-column>
-            <el-table-column label="Value" min-width="200">
-              <template #default="{ row }"><el-input v-model="row.value" size="small" placeholder="示例值" /></template>
-            </el-table-column>
-            <el-table-column label="操作" width="64" align="center">
-              <template #default="{ $index }">
-                <el-popconfirm title="删除该响应头？" @confirm="resp.headers.splice($index, 1)">
-                  <template #reference><el-button text size="small" :icon="Delete" /></template>
-                </el-popconfirm>
-              </template>
-            </el-table-column>
-          </el-table>
-          <el-tooltip content="添加一个响应头"><el-button size="small" :icon="Plus" text @click="resp.headers.push({ key: '', value: '' })">添加响应头</el-button></el-tooltip>
-        </div>
-
-        <div class="sub-section">
-          <div class="sub-section__head">响应体字段</div>
-          <el-table :data="resp.bodyFields" border size="small" class="kv-table" row-key="id" :tree-props="{ children: 'children' }" v-if="resp.bodyFields.length">
-            <el-table-column label="字段名" min-width="160">
-              <template #default="{ row }"><el-input v-model="row.name" size="small" placeholder="字段名" /></template>
-            </el-table-column>
-            <el-table-column label="数据类型" width="130">
-              <template #default="{ row }">
-                <el-select v-model="row.dataType" size="small" style="width: 110px">
-                  <el-option label="string" value="string" />
-                  <el-option label="integer" value="integer" />
-                  <el-option label="number" value="number" />
-                  <el-option label="boolean" value="boolean" />
-                  <el-option label="object" value="object" />
-                  <el-option label="array" value="array" />
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column label="说明" min-width="180">
-              <template #default="{ row }"><el-input v-model="row.desc" size="small" placeholder="字段说明" /></template>
-            </el-table-column>
-            <el-table-column label="操作" width="100" align="center">
-              <template #default="{ row, $index }">
-                <el-tooltip content="添加子字段"><el-button v-if="row.dataType === 'object'" text size="small" :icon="Plus" @click="row.children.push(makeBodyField({ name: 'subField' }))" /></el-tooltip>
-                <el-popconfirm title="删除该字段？" @confirm="resp.bodyFields.splice($index, 1)">
-                  <template #reference><el-button text size="small" :icon="Delete" /></template>
-                </el-popconfirm>
-              </template>
-            </el-table-column>
-          </el-table>
-          <el-tooltip content="添加一个响应体字段"><el-button size="small" :icon="Plus" text @click="resp.bodyFields.push(makeBodyField())">添加字段</el-button></el-tooltip>
-        </div>
-
-        <div class="resp-actions">
-          <el-popconfirm title="删除该响应？" @confirm="cfg.responses.splice(ri, 1)">
-            <template #reference>
-              <el-button size="small" :icon="Delete" text type="danger">删除此响应</el-button>
-            </template>
-          </el-popconfirm>
-        </div>
-      </el-collapse-item>
-    </el-collapse>
-    <el-tooltip content="添加一个响应状态码"><el-button size="small" :icon="Plus" @click="addResponse">添加响应状态码</el-button></el-tooltip>
   </el-card>
 </template>
 
@@ -384,7 +145,7 @@ import { computed, ref, watch } from 'vue'
 import { Delete, Plus, Check } from '@element-plus/icons-vue'
 import {
   PROTOCOL_TYPES, HTTP_METHODS, HTTP_CONTENT_TYPES,
-  COMMON_HEADERS, makeHttpParam, makeBodyField, makeHttpResponse,
+  COMMON_HEADERS,
 } from '@/stores/protocol'
 
 const props = defineProps({
@@ -410,53 +171,11 @@ defineExpose({ markClean })
 const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'auto' }
 const cfg = computed(() => props.protocol.config)
 
-// ---- Tab & Collapse state ----
-const paramTab = ref('path')
-const bodyMode = ref('json')
-const activeResponses = ref([])
-
-// ---- 路径参数自动提取 ----
-const extractedPathParams = computed(() => {
-  const matches = (cfg.value.path || '').match(/\{(\w+)\}/g)
-  return matches ? matches.map(m => m.slice(1, -1)) : []
-})
-
-// 路径变化时同步 pathParams 数组
-watch(extractedPathParams, (params) => {
-  const current = cfg.value.pathParams
-  // 保留已有参数的 desc / dataType / defaultValue，新增缺少的，删除多余的
-  const existing = new Map(current.map(p => [p.name, p]))
-  const next = params.map(name => {
-    if (existing.has(name)) return existing.get(name)
-    return makeHttpParam({ name })
-  })
-  cfg.value.pathParams.splice(0, cfg.value.pathParams.length, ...next)
-})
-
-// ---- Body 字段操作 ----
-const removeBodyField = (index) => {
-  cfg.value.requestBody.fields.splice(index, 1)
-}
-
 // ---- Header 快捷添加 ----
 const addCommonHeader = (name) => {
   if (!cfg.value.headers.some(h => h.key === name)) {
     cfg.value.headers.push({ key: name, value: '' })
   }
-}
-
-// ---- 响应管理 ----
-const statusColor = (code) => {
-  if (code >= 200 && code < 300) return 'success'
-  if (code >= 300 && code < 400) return 'warning'
-  if (code >= 400) return 'danger'
-  return 'info'
-}
-
-const addResponse = () => {
-  const r = makeHttpResponse({ statusCode: 400, desc: '' })
-  cfg.value.responses.push(r)
-  activeResponses.value.push(r.id)
 }
 </script>
 
@@ -477,19 +196,8 @@ const addResponse = () => {
 .form-label { font-size: 13px; color: var(--el-text-color-regular); min-width: 100px; flex-shrink: 0; }
 .form-label.req::before { content: '*'; color: var(--el-color-danger); margin-right: 2px; }
 
-.path-tag { margin-right: 6px; }
-
-.param-tabs { margin-bottom: 4px; }
-.body-mode-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.section-hint { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 12px; line-height: 1.6; padding-left: 4px; border-left: 3px solid var(--el-color-primary-light-5); }
 
 .kv-table { margin-bottom: 8px; }
 .header-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-
-/* 响应配置 */
-.resp-collapse { margin-bottom: 8px; }
-.resp-title { display: flex; align-items: center; gap: 8px; }
-.resp-desc { font-size: 13px; color: var(--el-text-color-regular); }
-.sub-section { margin-top: 12px; padding-left: 4px; }
-.sub-section__head { font-size: 13px; font-weight: 500; color: var(--el-text-color-secondary); margin-bottom: 6px; }
-.resp-actions { margin-top: 8px; text-align: right; }
 </style>

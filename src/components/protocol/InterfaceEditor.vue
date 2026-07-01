@@ -9,133 +9,145 @@
       </div>
     </template>
 
-    <div class="field-label">备注说明</div>
-    <el-input v-model="iface.desc" placeholder="可选，描述该接口的用途" class="proto-desc" />
+    <el-scrollbar class="editor-scroll">
+      <div class="field-label">备注说明</div>
+      <el-input v-model="iface.desc" placeholder="可选，描述该接口的用途" class="proto-desc" />
 
-    <div class="meta-row">
-      <el-input v-model="iface.path" class="meta-path" placeholder="接口路径，如 /device/status">
-        <template #prepend>路径</template>
-      </el-input>
-    </div>
-
-    <!-- MQ 接口操作类型 -->
-    <div class="meta-row" v-if="hasMqProtocol">
-      <span class="meta-row__label">操作类型</span>
-      <el-select v-model="iface.operationType" placeholder="选择 MQ 操作类型" style="width: 200px" clearable>
-        <el-option v-for="op in MQ_OPERATION_TYPES" :key="op.value" :label="op.label" :value="op.value">
-          <span>{{ op.label }}</span>
-          <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px">{{ op.desc }}</span>
-        </el-option>
-      </el-select>
-    </div>
-
-    <div class="meta-row">
-      <span class="meta-row__label req">所属系统</span>
-      <el-select v-model="iface.systemId" placeholder="选择系统" class="meta-sel" @change="$emit('systemChange')">
-        <el-option v-for="s in systemOptions" :key="s.value" :label="s.label" :value="s.value" />
-      </el-select>
-      <span class="meta-row__label req">模块</span>
-      <el-select v-model="iface.moduleId" placeholder="选择模块" class="meta-sel" :disabled="!iface.systemId">
-        <el-option v-for="m in moduleOptions" :key="m.value" :label="m.label" :value="m.value" />
-      </el-select>
-    </div>
-
-    <!-- 签名预览（带分隔线 + 可点击标签） -->
-    <SignaturePreview :iface="iface" @navigate="scrollToField" />
-
-    <el-scrollbar class="tree-scroll">
-      <div class="struct">
-        <div class="struct__head">
-          <span class="struct__title">接口参数</span>
-          <el-tooltip content="添加一个接口请求参数"><el-button size="small" :icon="Plus" @click="addRootParam(iface.request)">添加参数</el-button></el-tooltip>
-        </div>
-        <div class="struct__tree">
-          <div v-for="p in iface.request" :key="p.id" class="struct__row" :data-field-id="p.id">
-            <FieldNode :node="p" />
-          </div>
-          <el-empty v-if="!iface.request.length" description="无参数" :image-size="60" />
-        </div>
+      <div class="meta-row">
+        <span class="meta-row__label req">传输类型</span>
+        <el-select v-model="iface.transportType" placeholder="选择传输类型" class="meta-sel" clearable style="width: 160px" @change="onTransportTypeChange">
+          <el-option v-for="t in TRANSPORT_TYPES" :key="t.value" :label="t.label" :value="t.value">
+            <span>{{ t.label }}</span>
+            <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px">{{ t.desc }}</span>
+          </el-option>
+        </el-select>
       </div>
 
-      <div class="struct">
-        <div class="struct__head">
-          <span class="struct__title">接口响应</span>
-          <el-tooltip content="添加一个接口响应字段"><el-button size="small" :icon="Plus" @click="addRootParam(iface.response)">添加字段</el-button></el-tooltip>
+      <!-- MQ 接口操作类型 -->
+      <div class="meta-row" v-if="hasMqProtocol">
+        <span class="meta-row__label">操作类型</span>
+        <el-select v-model="iface.operationType" placeholder="选择 MQ 操作类型" style="width: 200px" clearable>
+          <el-option v-for="op in MQ_OPERATION_TYPES" :key="op.value" :label="op.label" :value="op.value">
+            <span>{{ op.label }}</span>
+            <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px">{{ op.desc }}</span>
+          </el-option>
+        </el-select>
+      </div>
+
+      <div class="meta-row">
+        <span class="meta-row__label req">所属系统</span>
+        <el-select v-model="iface.systemId" placeholder="选择系统" class="meta-sel" @change="$emit('systemChange')">
+          <el-option v-for="s in systemOptions" :key="s.value" :label="s.label" :value="s.value" />
+        </el-select>
+        <span class="meta-row__label req">模块</span>
+        <el-select v-model="iface.moduleId" placeholder="选择模块" class="meta-sel" :disabled="!iface.systemId">
+          <el-option v-for="m in moduleOptions" :key="m.value" :label="m.label" :value="m.value" />
+        </el-select>
+      </div>
+
+      <!-- 传输配置（根据传输类型动态渲染） -->
+      <TransportConfigForm
+        :transport-config="iface.transportConfig"
+        :transport-type="iface.transportType"
+      />
+
+      <!-- 请求协议 -->
+      <div class="proto-refs-section proto-refs-section--request">
+        <div class="section-head">
+          <span class="section-title section-title--request">请求协议</span>
+          <el-button size="small" type="primary" plain :icon="Plus" @click="openPicker('request')">添加</el-button>
         </div>
-        <div class="struct__tree">
-          <div v-for="p in iface.response" :key="p.id" class="struct__row" :data-field-id="p.id">
-            <FieldNode :node="p" />
+        <el-table v-if="requestProtocols.length" :data="requestProtocols" border size="small">
+          <el-table-column label="协议" min-width="200">
+            <template #default="{ row }">
+              <span style="font-weight:500">{{ protocolName(row.protocolId) }}</span>
+              <span class="proto-sys-tag" v-if="getProtocolSys(row.protocolId)">{{ getProtocolSys(row.protocolId) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="60" align="center">
+            <template #default="{ row }">
+              <el-button text size="small" :icon="Delete" @click="removeRef(row)" />
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="暂无请求协议" :image-size="40" />
+      </div>
+
+      <!-- 响应协议 -->
+      <div class="proto-refs-section proto-refs-section--response">
+        <div class="section-head">
+          <span class="section-title section-title--response">响应协议</span>
+          <el-button size="small" type="success" plain :icon="Plus" @click="openPicker('response')">添加</el-button>
+        </div>
+        <el-table v-if="responseProtocols.length" :data="responseProtocols" border size="small">
+          <el-table-column label="协议" min-width="200">
+            <template #default="{ row }">
+              <span style="font-weight:500">{{ protocolName(row.protocolId) }}</span>
+              <span class="proto-sys-tag" v-if="getProtocolSys(row.protocolId)">{{ getProtocolSys(row.protocolId) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="60" align="center">
+            <template #default="{ row }">
+              <el-button text size="small" :icon="Delete" @click="removeRef(row)" />
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="暂无响应协议" :image-size="40" />
+      </div>
+
+      <!-- 协议选择弹窗 -->
+      <el-dialog v-model="pickerVisible" :title="pickerTitle" width="520px" :append-to-body="true">
+        <div class="picker-filter">
+          <el-input v-model="pickerSearch" placeholder="搜索协议名称..." clearable size="small" :prefix-icon="Search" style="flex:1" />
+          <el-checkbox v-model="showAllProtocols" size="small">显示全部（不限模块）</el-checkbox>
+        </div>
+        <div class="picker-list">
+          <div v-for="p in filteredPickerList" :key="p.value" class="picker-item" @click="onPickProtocol(p.value)">
+            <div class="picker-item__info">
+              <span class="picker-item__name">{{ p.label }}</span>
+              <span class="picker-item__meta">{{ p.fieldCount }} 字段 · {{ p.systemName || '未分配' }}</span>
+            </div>
+            <el-tag size="small" :type="p.isInline ? 'warning' : 'info'" effect="plain">{{ p.isInline ? '内联' : '通用' }}</el-tag>
           </div>
-          <el-empty v-if="!iface.response.length" description="无返回字段" :image-size="60" />
+          <el-empty v-if="!filteredPickerList.length" :description="showAllProtocols ? '无匹配协议' : '当前模块无可引用协议，尝试开启「显示全部」'" :image-size="50" />
+        </div>
+        <template #footer>
+          <el-button @click="pickerVisible = false">关闭</el-button>
+        </template>
+      </el-dialog>
+
+      <!-- 数据预览（只读，展示引用协议的字段结构） -->
+      <div class="data-preview" v-if="iface.protocolRefs.length">
+        <div class="section-head">
+          <span class="section-title">数据预览</span>
+          <span class="preview-hint">只读 · 点击协议名可跳转编辑</span>
+        </div>
+        <div v-for="ref in iface.protocolRefs" :key="ref.protocolId" class="preview-block">
+          <div class="preview-header" @click="$emit('navigateProtocol', ref.protocolId)">
+            <el-tag size="small" :type="roleTagType(ref.role)">{{ roleLabel(ref.role) }}</el-tag>
+            <span class="preview-name">{{ protocolName(ref.protocolId) }}</span>
+          </div>
+          <div class="preview-fields" v-if="getProtocolFields(ref.protocolId).length">
+            <div v-for="f in getProtocolFields(ref.protocolId)" :key="f.id" class="preview-field">
+              <span class="field-name">{{ f.name }}</span>
+              <el-tag size="small" effect="plain" :type="fieldTypeTag(f)">{{ fieldDisplay(f) }}</el-tag>
+              <span class="field-desc" v-if="f.desc">{{ f.desc }}</span>
+            </div>
+          </div>
         </div>
       </div>
     </el-scrollbar>
-
-    <!-- 字段编辑弹窗 (五类数据规则: scalar/bitstream/struct/matrix/file) -->
-    <el-dialog v-model="nodeDlg" title="编辑字段" width="500px">
-      <el-form v-if="editing" label-width="100px">
-        <el-form-item label="字段名"><el-input v-model="editing.name" placeholder="如 deviceId" /></el-form-item>
-        <el-form-item label="数据规则类别">
-          <el-select v-model="editing.type" class="w-full" @change="onTypeChange(editing)">
-            <el-option v-for="t in DATA_RULE_CATEGORIES" :key="t.value" :value="t.value">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <el-icon :style="{ color: t.color }"><component :is="t.icon" /></el-icon>
-                <span style="font-weight: 500;">{{ t.label }}</span>
-                <span style="color: var(--el-text-color-secondary); font-size: 12px; margin-left: auto;">{{ t.desc }}</span>
-              </div>
-            </el-option>
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="editing.type === 'scalar'" label="数据类型">
-          <el-select v-model="editing.encoding" class="w-full" filterable>
-            <el-option-group
-              v-for="grp in groupedScalarEncodings"
-              :key="grp.group"
-              :label="grp.group"
-            >
-              <el-option v-for="s in grp.items" :key="s.value" :label="s.label" :value="s.value" />
-            </el-option-group>
-          </el-select>
-          <div class="form-tip">标量：单一数值，选择具体数据类型（整数/浮点/字符等）</div>
-        </el-form-item>
-        <el-form-item v-if="editing.type === 'bitstream'" label="绑定协议">
-          <el-select v-model="editing.protocolRef" class="w-full" placeholder="选择解析协议" clearable>
-            <el-option v-for="o in protocolOptions" :key="o.value" :label="o.label" :value="o.value" />
-          </el-select>
-          <div class="form-tip">位组序流：连续二进制位序列，需绑定协议进行字节/位级解析</div>
-        </el-form-item>
-        <el-form-item v-if="editing.type === 'struct'" label="提示">
-          <span class="muted">共识体：多字段结构化数据块，保存后通过树上的「+」添加子字段，最终都落到标量</span>
-        </el-form-item>
-        <el-form-item v-if="editing.type === 'matrix'" label="提示">
-          <span class="muted">结构矩阵：二维表格数据，保存后通过树上的「+」添加列定义</span>
-        </el-form-item>
-        <el-form-item v-if="editing.type === 'file'" label="文件名">
-          <el-input v-model="editing.fileName" placeholder="上传后自动填充" />
-          <div class="form-tip">流文件：持久化二进制/文本文件，以文件整体为操作单元</div>
-        </el-form-item>
-        <el-form-item label="必填">
-          <el-switch v-model="editing.required" />
-        </el-form-item>
-        <el-form-item label="单位">
-          <el-input v-model="editing.unit" placeholder="如 kg / m/s / °" />
-        </el-form-item>
-        <el-form-item label="备注说明"><el-input v-model="editing.desc" type="textarea" :rows="2" /></el-form-item>
-      </el-form>
-      <template #footer><el-button type="primary" @click="nodeDlg = false">完成</el-button></template>
-    </el-dialog>
   </el-card>
 </template>
 
 <script setup>
-import { ref, provide, computed } from 'vue'
-import { Plus, Delete } from '@element-plus/icons-vue'
+import { computed, ref } from 'vue'
+import { Plus, Delete, Search } from '@element-plus/icons-vue'
 import {
-  DATA_RULE_CATEGORIES, SCALAR_ENCODINGS, MQ_OPERATION_TYPES,
-  makeParam, useProtocolStore
+  TRANSPORT_TYPES, PROTOCOL_ROLES, MQ_OPERATION_TYPES,
+  makeTransportConfig, useProtocolStore, makeProtocolRef,
 } from '@/stores/protocol'
-import FieldNode from '@/components/FieldNode.vue'
-import SignaturePreview from './SignaturePreview.vue'
+import TransportConfigForm from './TransportConfigForm.vue'
 
 const props = defineProps({
   iface: { type: Object, required: true },
@@ -143,65 +155,143 @@ const props = defineProps({
   moduleOptions: { type: Array, default: () => [] },
   protocolOptions: { type: Array, default: () => [] },
 })
-defineEmits(['delete', 'systemChange'])
+defineEmits(['delete', 'systemChange', 'navigateProtocol'])
 
-const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'auto' }
-
+const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }
 const protoStore = useProtocolStore()
 
-// 检查当前模块是否有 MQ 协议，决定是否显示操作类型选择器
-const hasMqProtocol = computed(() => {
-  if (!props.iface.moduleId) return false
-  return protoStore.protocols.some(p => p.moduleId === props.iface.moduleId && p.type === 'MQ')
+const hasMqProtocol = computed(() => props.iface.transportType === 'MQ')
+
+// Split protocol refs by role
+const requestProtocols = computed(() =>
+  props.iface.protocolRefs.filter(r => r.role === 'request')
+)
+const responseProtocols = computed(() =>
+  props.iface.protocolRefs.filter(r => r.role === 'response')
+)
+
+// Protocol name lookup
+const protocolName = (id) => protoStore.protocols.find(p => p.id === id)?.name || '未知协议'
+
+// Protocol system name (for display in table)
+const getProtocolSys = (id) => {
+  const p = protoStore.protocols.find(x => x.id === id)
+  if (!p || !p.systemId) return ''
+  const sys = props.systemOptions.find(s => s.value === p.systemId)
+  return sys?.label || ''
+}
+
+// Protocol fields for preview
+const getProtocolFields = (id) => {
+  const p = protoStore.protocols.find(x => x.id === id)
+  return p?.fields || []
+}
+
+// Remove a protocol ref
+const removeRef = (row) => {
+  const idx = props.iface.protocolRefs.indexOf(row)
+  if (idx !== -1) props.iface.protocolRefs.splice(idx, 1)
+}
+
+// ── 协议选择弹窗 ──
+const pickerVisible = ref(false)
+const pickerSearch = ref('')
+const showAllProtocols = ref(false)
+const pickerRole = ref('request')
+
+const pickerTitle = computed(() =>
+  pickerRole.value === 'request' ? '添加请求协议' : '添加响应协议'
+)
+
+const openPicker = (role) => {
+  pickerRole.value = role
+  pickerSearch.value = ''
+  pickerVisible.value = true
+}
+
+// Build enriched protocol list with metadata
+const enrichedProtocols = computed(() => {
+  const usedIds = new Set(props.iface.protocolRefs.map(r => r.protocolId))
+  return protoStore.protocols
+    .filter(p => !usedIds.has(p.id))
+    .map(p => {
+      const sysOpt = props.systemOptions.find(s => s.value === p.systemId)
+      return {
+        value: p.id,
+        label: p.name,
+        fieldCount: (p.fields || []).length,
+        systemId: p.systemId,
+        moduleId: p.moduleId,
+        systemName: sysOpt?.label || '',
+        isInline: !!p.__inline,
+      }
+    })
 })
 
-// scalar 编码方式按 group 聚合(整数/浮点/字符/编码/时间/其他)
-const groupedScalarEncodings = computed(() => {
-  const groups = {}
-  for (const s of SCALAR_ENCODINGS) {
-    if (!groups[s.group]) groups[s.group] = []
-    groups[s.group].push(s)
-  }
-  return Object.entries(groups).map(([group, items]) => ({ group, items }))
-})
-
-const addRootParam = (list) => list.push(makeParam({ name: `field${list.length + 1}` }))
-
-const removeById = (lists, id) => {
-  for (const list of lists) {
-    const i = list.findIndex((n) => n.id === id)
-    if (i >= 0) { list.splice(i, 1); return true }
-    for (const n of list) {
-      if (n.children?.length && removeById([n.children], id)) return true
+// Filtered list for picker dialog
+const filteredPickerList = computed(() => {
+  let list = enrichedProtocols.value
+  // 按当前系统/模块过滤（除非开启"全部协议"）
+  if (!showAllProtocols.value) {
+    const sysId = props.iface.systemId
+    const modId = props.iface.moduleId
+    if (sysId && modId) {
+      list = list.filter(p => p.systemId === sysId && p.moduleId === modId)
+    } else if (sysId) {
+      list = list.filter(p => p.systemId === sysId)
     }
   }
-  return false
-}
-
-// 树节点编辑弹窗
-const nodeDlg = ref(false)
-const editing = ref(null)
-provide('treeActions', {
-  onEdit: (node) => { editing.value = node; nodeDlg.value = true },
-  onAddChild: (node) => node.children.push(makeParam({ name: `field${node.children.length + 1}` })),
-  onRemove: (node) => removeById([props.iface.request, props.iface.response], node.id)
+  // 搜索过滤
+  const kw = pickerSearch.value.trim().toLowerCase()
+  if (kw) {
+    list = list.filter(p => p.label.toLowerCase().includes(kw))
+  }
+  return list
 })
 
-const onTypeChange = (row) => {
-  // 五类数据规则切换: 清理不再相关的字段
-  if (row.type !== 'struct' && row.type !== 'matrix') row.children = []
-  if (row.type !== 'bitstream') row.protocolRef = null
-  if (row.type === 'scalar' && !row.encoding) row.encoding = 'uint8'
-  if (row.type !== 'file') { row.fileName = ''; row.fileSize = 0 }
+const onPickProtocol = (protocolId) => {
+  props.iface.protocolRefs.push(makeProtocolRef(protocolId, pickerRole.value))
+  pickerVisible.value = false
+  pickerSearch.value = ''
 }
 
-// 签名标签点击导航
-const scrollToField = (paramId) => {
-  const el = document.querySelector(`[data-field-id="${paramId}"]`)
-  if (el) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    el.classList.add('field-highlight')
-    setTimeout(() => el.classList.remove('field-highlight'), 1500)
+// Role display helpers
+const roleLabel = (role) => {
+  const r = PROTOCOL_ROLES.find(x => x.value === role)
+  return r ? r.label : role
+}
+
+const roleTagType = (role) => {
+  const map = { request: 'warning', response: 'success' }
+  return map[role] || 'info'
+}
+
+// Field display helpers for preview
+const fieldDisplay = (f) => {
+  if (f.type === 'scalar') return f.encoding || 'uint8'
+  if (f.type === 'bitstream') return '位组序流'
+  if (f.type === 'struct') return `共识体 (${(f.children || []).length} 字段)`
+  if (f.type === 'matrix') return '结构矩阵'
+  if (f.type === 'file') return '流文件'
+  // Handle byte fields (from byte-stream protocols)
+  if (f.kind === 'byte') return f.dataType || 'uint8'
+  if (f.kind === 'bit') return `bit[${f.bitStart}:${f.bitEnd}]`
+  if (f.kind === 'repeat') return `重复组 ×${f.repeatCount || '?'}`
+  return f.type || f.dataType || '—'
+}
+
+const fieldTypeTag = (f) => {
+  const t = f.type || f.kind
+  const map = { scalar: 'primary', bitstream: 'warning', struct: 'success', matrix: 'danger', file: 'info', byte: 'primary', bit: 'warning', repeat: 'info' }
+  return map[t] || 'info'
+}
+
+// Transport type change
+const onTransportTypeChange = (type) => {
+  if (type) {
+    props.iface.transportConfig = makeTransportConfig(type)
+  } else {
+    props.iface.transportConfig = {}
   }
 }
 </script>
@@ -216,27 +306,56 @@ const scrollToField = (paramId) => {
 .meta-row__label { font-size: 13px; color: var(--el-text-color-regular); }
 .meta-row__label.req::before { content: '*'; color: var(--el-color-danger); margin-right: 2px; }
 .meta-sel { width: 200px; }
-.meta-path { max-width: 440px; }
 
-.tree-scroll { flex: 1; min-height: 0; }
-.struct {
-  & + & { margin-top: 8px; }
-  &__head { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
-  &__title { font-size: 14px; font-weight: 600; padding-left: 8px; border-left: 3px solid var(--el-color-primary); }
-  &__tree { display: flex; flex-direction: column; gap: 14px; padding: 8px 4px; }
-  &__row { display: flex; transition: background 0.3s; border-radius: 6px; }
+.editor-scroll { flex: 1; min-height: 0; }
+
+.proto-refs-section { margin-bottom: 12px; }
+.proto-refs-section--request {
+  .section-title { border-left-color: #E6A23C; }
+}
+.proto-refs-section--response {
+  .section-title { border-left-color: #67C23A; }
+}
+.section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.section-title { font-size: 14px; font-weight: 600; padding-left: 8px; border-left: 3px solid var(--el-color-primary); }
+.section-title--request { border-left-color: #E6A23C; }
+.section-title--response { border-left-color: #67C23A; }
+
+.proto-sys-tag {
+  display: inline-block; font-size: 11px; color: var(--el-text-color-secondary);
+  background: var(--el-fill-color); padding: 1px 6px; border-radius: 3px; margin-left: 6px;
 }
 
-.field-highlight {
-  background: var(--el-color-warning-light-8) !important;
-  animation: highlightFade 1.5s ease-out forwards;
+// 协议选择弹窗
+.picker-filter { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.picker-list { max-height: 360px; overflow-y: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
+.picker-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--el-border-color-extra-light);
+  transition: background 0.15s;
+  &:hover { background: var(--el-color-primary-light-9); }
+  &:last-child { border-bottom: none; }
 }
-@keyframes highlightFade {
-  0% { background: var(--el-color-warning-light-7); }
-  100% { background: transparent; }
-}
+.picker-item__info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.picker-item__name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-item__meta { font-size: 11px; color: var(--el-text-color-secondary); }
 
-.muted { color: var(--el-text-color-secondary); font-size: 13px; }
-.form-tip { font-size: 12px; color: var(--el-text-color-placeholder); margin-top: 4px; line-height: 1.4; }
-.w-full { width: 100%; }
+.data-preview { margin-bottom: 8px; }
+.preview-hint { font-size: 12px; color: var(--el-text-color-placeholder); }
+.preview-block {
+  margin-top: 8px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; overflow: hidden;
+}
+.preview-header {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  background: var(--el-fill-color-lighter); cursor: pointer;
+  &:hover { background: var(--el-fill-color); }
+}
+.preview-name { font-size: 13px; font-weight: 500; }
+.preview-fields { padding: 6px 12px; }
+.preview-field {
+  display: flex; align-items: center; gap: 8px; padding: 3px 0;
+  font-size: 12px;
+}
+.field-name { font-family: ui-monospace, monospace; color: var(--el-text-color-primary); min-width: 100px; }
+.field-desc { color: var(--el-text-color-secondary); font-size: 11px; }
 </style>

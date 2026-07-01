@@ -14,14 +14,8 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <el-tooltip content="切换协议类型（会清空当前配置）">
-            <el-select :model-value="protocol.type" class="proto-type-sel" @change="(v) => $emit('switchType', v)">
-              <template #prefix><span class="proto-prefix">类型</span></template>
-              <el-option v-for="t in PROTOCOL_TYPES" :key="t.value" :label="t.label" :value="t.value" />
-            </el-select>
-          </el-tooltip>
           <el-tooltip content="切换字节序">
-            <el-select v-model="protocol.config.endian" class="proto-endian-sel">
+            <el-select v-model="protocol.endian" class="proto-endian-sel">
               <template #prefix><span class="proto-prefix">字节序</span></template>
               <el-option v-for="e in ENDIANS" :key="e.value" :label="e.label" :value="e.value" />
             </el-select>
@@ -76,11 +70,7 @@
       <span class="summary-bar__sep" />
       <span class="summary-bar__item">
         <span class="summary-bar__lbl">字节序</span>
-        <b>{{ protocol.config.endian === 'big' ? '大端 BE' : '小端 LE' }}</b>
-      </span>
-      <span class="summary-bar__item">
-        <span class="summary-bar__lbl">类型</span>
-        <b>{{ protocol.type }}</b>
+        <b>{{ protocol.endian === 'big' ? '大端 BE' : '小端 LE' }}</b>
       </span>
       <span class="summary-bar__progress">
         <el-progress
@@ -95,9 +85,9 @@
 
     <!-- ========== 帧结构 & 拆包规则 ========== -->
     <FramingPanel
-      v-if="protocol.type === 'TCP' || protocol.type === 'UDP'"
+      v-if="protocol.framing"
       :protocol="protocol"
-      :fields="protocol.config.fields"
+      :fields="protocol.fields"
       :highlight-field-id="highlightFieldId"
       @highlight="(id) => highlightFieldId = id"
     />
@@ -106,7 +96,7 @@
     <el-table
       :key="tableKey"
       ref="tableRef"
-      :data="protocol.config.fields"
+      :data="protocol.fields"
       row-key="id"
       border
       size="small"
@@ -432,7 +422,7 @@ import {
 } from '@element-plus/icons-vue'
 import Sortable from 'sortablejs'
 import {
-  PROTOCOL_TYPES, ENDIANS, BYTE_DATA_TYPES, BIT_DATA_TYPES,
+  TRANSPORT_TYPES, ENDIANS, BYTE_DATA_TYPES, BIT_DATA_TYPES,
   makeByteField, makeBitField, makeRepeatGroup,
   defaultConstraint, isNumericType, isStringType,
   range, fixed, enumConstraint, noneConstraint,
@@ -446,7 +436,7 @@ const props = defineProps({
   systemOptions: { type: Array, default: () => [] },
   moduleOptions: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['import', 'export', 'delete', 'save', 'systemChange', 'switchType'])
+const emit = defineEmits(['import', 'export', 'delete', 'save', 'systemChange'])
 
 const onIoCommand = (cmd) => {
   if (cmd === 'import') emit('import')
@@ -490,12 +480,12 @@ const flatDataTypes = BYTE_DATA_TYPES
 
 // ─── 总字节数 ───
 const totalBytes = computed(() => {
-  return computeTotalBytes(props.protocol.config.fields)
+  return computeTotalBytes(props.protocol.fields)
 })
-const topLevelFieldCount = computed(() => props.protocol.config.fields.length)
+const topLevelFieldCount = computed(() => props.protocol.fields.length)
 // 最后偏移（按协议配置推断帧长度：固定长度模式用 fixedLength，否则用 totalBytes）
 const frameMaxBytes = computed(() => {
-  const framing = props.protocol.config.framing || {}
+  const framing = props.protocol.framing || {}
   if (framing.mode === 'fixed' && framing.fixedLength) return Number(framing.fixedLength) || 0
   return Math.max(totalBytes.value, 1024)
 })
@@ -510,8 +500,8 @@ const frameUsagePct = computed(() => {
 const highlightFieldId = ref(null)
 
 // ─── 偏移量自动重算 ───
-watch(() => props.protocol.config.fields, () => {
-  const fields = props.protocol.config.fields
+watch(() => props.protocol.fields, () => {
+  const fields = props.protocol.fields
 
   // 解析动态重复次数
   const resolveDynamic = (fieldId) => {
@@ -552,7 +542,7 @@ const findParentByteField = (bitRow) => {
     }
     return null
   }
-  return search(props.protocol.config.fields)
+  return search(props.protocol.fields)
 }
 
 const getBitsUsedInField = (byteField) => {
@@ -660,7 +650,7 @@ const onFieldChange = () => { /* 偏移在 watch 中自动重算 */ }
 const formatHex = (offset) => formatHexOffset(offset ?? 0)
 
 const addByteRow = () => {
-  const fields = props.protocol.config.fields
+  const fields = props.protocol.fields
   // 防呆：上一个字节如有位子段，先补全
   if (fields.length > 0) {
     const prev = fields[fields.length - 1]
@@ -672,11 +662,11 @@ const addByteRow = () => {
 }
 
 const addRepeatRow = () => {
-  props.protocol.config.fields.push(makeRepeatGroup({ name: `重复组${props.protocol.config.fields.filter(f => f.kind === 'repeat').length + 1}` }))
+  props.protocol.fields.push(makeRepeatGroup({ name: `重复组${props.protocol.fields.filter(f => f.kind === 'repeat').length + 1}` }))
 }
 
 const addRepeatAfter = (afterRow) => {
-  const fields = props.protocol.config.fields
+  const fields = props.protocol.fields
   const idx = fields.findIndex(f => f.id === afterRow.id)
   if (idx >= 0) {
     fields.splice(idx + 1, 0, makeRepeatGroup({ name: `重复组${fields.filter(f => f.kind === 'repeat').length + 1}` }))
@@ -758,7 +748,7 @@ const fillRemainingBits = (byteField) => {
 }
 
 const removeField = (id) => {
-  const fields = props.protocol.config.fields
+  const fields = props.protocol.fields
   const i = fields.findIndex(f => f.id === id)
   if (i >= 0) fields.splice(i, 1)
 }
@@ -783,7 +773,7 @@ const removeBitChild = (bitRow) => {
 
 const duplicateField = (row) => {
   if (!row) return
-  const fields = props.protocol.config.fields
+  const fields = props.protocol.fields
   if (row.kind === 'byte') {
     const copy = makeByteField({
       ...row, name: row.name + '(副本)',
@@ -800,16 +790,16 @@ const duplicateField = (row) => {
 }
 
 const isFirstField = (row) => {
-  const fields = props.protocol.config.fields
+  const fields = props.protocol.fields
   return fields.length > 0 && fields[0].id === row.id
 }
 const isLastField = (row) => {
-  const fields = props.protocol.config.fields
+  const fields = props.protocol.fields
   return fields.length > 0 && fields[fields.length - 1].id === row.id
 }
 
 const moveField = (id, direction) => {
-  const fields = props.protocol.config.fields
+  const fields = props.protocol.fields
   const idx = fields.findIndex(f => f.id === id)
   if (idx < 0) return
   const newIdx = direction === 'up' ? idx - 1 : idx + 1
@@ -837,7 +827,7 @@ const removeRepeatChild = (group, childId) => {
 }
 
 // ─── 数值字段（供动态重复次数引用） ───
-const numericFieldsBefore = (targetId) => getNumericFieldsBefore(props.protocol.config.fields, targetId)
+const numericFieldsBefore = (targetId) => getNumericFieldsBefore(props.protocol.fields, targetId)
 
 // ─── 表格行样式 ───
 const tableRowClass = ({ row }) => {
@@ -902,23 +892,23 @@ const initSortable = () => {
       if (oldIndex === newIndex || oldIndex == null) return
 
       // ── 1. 计算新顺序并替换数组，触发 Vue 响应式更新 ──
-      const fields = [...props.protocol.config.fields]
+      const fields = [...props.protocol.fields]
       const [moved] = fields.splice(oldIndex, 1)
       if (!moved) return
       fields.splice(newIndex, 0, moved)
-      props.protocol.config.fields.splice(0, props.protocol.config.fields.length, ...fields)
+      props.protocol.fields.splice(0, props.protocol.fields.length, ...fields)
 
       // ── 2. 显式重算偏移（含 bit children 的显示偏移） ──
       const resolveDynamic = (fieldId) => {
-        const f = props.protocol.config.fields.find(x => x.id === fieldId)
+        const f = props.protocol.fields.find(x => x.id === fieldId)
         if (f && f.kind === 'byte' && isNumericType(f.dataType)) {
           const val = f.constraint.mode === 'fixed' ? f.constraint.value : f.constraint.min
           return Math.max(1, val || 1)
         }
         return 1
       }
-      computeOffsets(props.protocol.config.fields, resolveDynamic)
-      for (const f of props.protocol.config.fields) {
+      computeOffsets(props.protocol.fields, resolveDynamic)
+      for (const f of props.protocol.fields) {
         if (f.kind === 'byte' && f.children?.length) computeBitOffsets(f)
       }
 
@@ -974,7 +964,7 @@ const fillAllGaps = () => {
       }
     }
   }
-  fillRecursive(props.protocol.config.fields)
+  fillRecursive(props.protocol.fields)
 }
 defineExpose({ fillAllGaps, markClean })
 </script>

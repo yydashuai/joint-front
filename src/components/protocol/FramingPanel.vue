@@ -5,7 +5,7 @@
       <el-collapse-item name="framing" title="帧结构与拆包规则">
         <div class="fp-section">
           <!-- TCP 拆包模式 -->
-          <div v-if="protocol.type === 'TCP'" class="fp-block">
+          <div v-if="isByteStream" class="fp-block">
             <div class="fp-label">拆包模式</div>
             <el-radio-group v-model="framing.mode" size="small" class="fp-radio-group">
               <el-radio value="fixed">固定长度帧</el-radio>
@@ -146,27 +146,32 @@ const props = defineProps({
 })
 const emit = defineEmits(['highlight'])
 
-// 确保 config 中有 framing 和 checksum
+// 判断是否为字节流协议（有帧结构/校验和）
+const isByteStream = computed(() =>
+  (props.protocol.fields || []).some(f => f.kind === 'byte' || f.kind === 'bit' || f.kind === 'repeat')
+)
+
+// framing/checksum 是协议的直接属性（重构后不再嵌套在 config 下）
 const framing = computed(() => {
-  if (!props.protocol.config.framing) {
-    props.protocol.config.framing = {
+  if (!props.protocol.framing) {
+    props.protocol.framing = {
       mode: 'fixed', fixedLength: 0, lengthFieldId: null,
       lengthIncludesHeader: true, lengthIncludesSelf: true,
       headerBytes: '', footerBytes: ''
     }
   }
-  return props.protocol.config.framing
+  return props.protocol.framing
 })
 
 const checksum = computed(() => {
-  if (!props.protocol.config.checksum) {
-    props.protocol.config.checksum = {
+  if (!props.protocol.checksum) {
+    props.protocol.checksum = {
       type: 'none', fieldId: null, rangeStart: 0, rangeEnd: 0,
       polynomial: '0x1021', initValue: '0xFFFF',
       reflectIn: false, reflectOut: false, xorOut: '0x0000'
     }
   }
-  return props.protocol.config.checksum
+  return props.protocol.checksum
 })
 
 const activePanels = ref(['framing'])

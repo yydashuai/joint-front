@@ -1,21 +1,21 @@
 <template>
-  <el-dialog v-model="visible" title="选择协议类型" width="560px" :close-on-click-modal="false" @close="onClose">
+  <el-dialog v-model="visible" title="选择协议类别" width="560px" :close-on-click-modal="false" @close="onClose">
     <div class="type-grid">
       <div
-        v-for="t in PROTOCOL_TYPES"
+        v-for="t in PROTOCOL_CATEGORIES"
         :key="t.value"
         class="type-card"
         :class="{ 'is-active': selected === t.value }"
         @click="selected = t.value"
       >
         <div class="type-card__icon">
-          <el-icon :size="24"><component :is="iconMap[t.value]" /></el-icon>
+          <el-icon :size="24"><component :is="t.icon" /></el-icon>
         </div>
         <div class="type-card__body">
           <div class="type-card__name">{{ t.label }}</div>
           <div class="type-card__desc">{{ t.desc }}</div>
         </div>
-        <el-tag size="small" :type="catTagType[t.category]" effect="plain" class="type-card__cat">{{ catLabel[t.category] }}</el-tag>
+        <el-tag size="small" :type="t.tagType" effect="plain" class="type-card__cat">{{ t.catLabel }}</el-tag>
       </div>
     </div>
     <template #footer>
@@ -27,8 +27,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { PROTOCOL_TYPES } from '@/stores/protocol'
-import { Connection, Position, Promotion, SetUp, MessageBox } from '@element-plus/icons-vue'
+import { Connection, Grid } from '@element-plus/icons-vue'
 
 const props = defineProps({ modelValue: Boolean })
 const emit = defineEmits(['update:modelValue', 'select'])
@@ -39,9 +38,10 @@ const selected = ref('TCP')
 watch(() => props.modelValue, (v) => { visible.value = v }, { immediate: true })
 watch(visible, (v) => { if (!v) emit('update:modelValue', false) })
 
-const iconMap = { TCP: 'Connection', UDP: 'Position', HTTP: 'Promotion', gRPC: 'SetUp', MQ: 'MessageBox' }
-const catLabel = { 'byte-stream': '字节流', 'request-response': '请求/响应', rpc: 'RPC', 'message-queue': '消息队列' }
-const catTagType = { 'byte-stream': 'warning', 'request-response': 'success', rpc: 'primary', 'message-queue': 'danger' }
+const PROTOCOL_CATEGORIES = [
+  { value: 'TCP', label: '字节流协议', desc: '按字节/位定义字段，支持帧结构和校验和', icon: Connection, catLabel: '二进制', tagType: 'warning' },
+  { value: 'STRUCT', label: '共识体协议', desc: '使用五类数据规则定义结构化字段，可被多个接口复用', icon: Grid, catLabel: '结构化', tagType: 'success' },
+]
 
 const onConfirm = () => {
   emit('select', selected.value)

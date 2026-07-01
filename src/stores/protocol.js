@@ -4,16 +4,27 @@ import { protocols as seedProtocols, interfaces as seedInterfaces } from '@/mock
 let seq = 2000
 export const uid = () => ++seq
 
-// ─── 协议类型 ───
-export const PROTOCOL_TYPES = [
-  { value: 'TCP', label: 'TCP', category: 'byte-stream', desc: '面向连接的字节流协议' },
-  { value: 'UDP', label: 'UDP', category: 'byte-stream', desc: '无连接的数据报协议' },
-  { value: 'HTTP', label: 'HTTP', category: 'request-response', desc: '超文本传输协议' },
-  { value: 'gRPC', label: 'gRPC', category: 'rpc', desc: '高性能远程过程调用框架' },
-  { value: 'MQ', label: '消息队列', category: 'message-queue', desc: '异步消息中间件协议' },
+export const makeProtocolRef = (protocolId, role = 'frame') => ({ protocolId, role })
+
+// ─── 传输类型（接口使用） ───
+export const TRANSPORT_TYPES = [
+  { value: 'TCP', label: 'TCP', desc: '面向连接的字节流传输' },
+  { value: 'HTTP', label: 'HTTP', desc: '超文本传输协议' },
+  { value: 'gRPC', label: 'gRPC', desc: '高性能远程过程调用' },
+  { value: 'MQ', label: '消息队列', desc: '异步消息中间件' },
 ]
 
-export const isByteStream = (type) => type === 'TCP' || type === 'UDP'
+// ─── 协议角色（接口引用协议时标注其在通信中的作用）───
+// 统一两种角色，所有传输类型通用
+export const PROTOCOL_ROLES = [
+  { value: 'request', label: '请求', desc: '发送方向的数据结构' },
+  { value: 'response', label: '响应', desc: '接收方向的数据结构' },
+]
+// 向后兼容
+export const TRANSPORT_ROLES = {
+  HTTP: PROTOCOL_ROLES, TCP: PROTOCOL_ROLES, gRPC: PROTOCOL_ROLES, MQ: PROTOCOL_ROLES,
+}
+export const ALL_TRANSPORT_ROLES = ['request', 'response']
 
 // ─── 五类数据规则（便携式智能联试工具设计文档 V7.4 定义）───
 // 用户定义协议字段时，必须先选择数据规则类别，再选择具体数据类型：
@@ -376,61 +387,36 @@ export const MQ_KEY_DATA_TYPES = [
   { value: 'int64',   label: 'int64' },
 ]
 
-// ─── 类型专用 config 工厂 ───
-export const makeConfig = (type) => {
-  switch (type) {
+// ── 接口传输配置工厂 ───
+export const makeTransportConfig = (transportType) => {
+  switch (transportType) {
     case 'TCP':
-      return {
-        endian: 'big',
-        fields: [],
-        framing: makeFraming(),
-        checksum: makeChecksum(),
-      }
-    case 'UDP':
-      return {
-        endian: 'big',
-        fields: [],
-        framing: makeFraming({ mode: 'delimiter' }),
-        checksum: makeChecksum(),
-      }
+      return { port: 0, timeout: 3000 }
     case 'HTTP':
       return {
         method: 'GET',
         path: '',
         contentType: 'application/json',
-        pathParams: [],
-        queryParams: [],
-        requestBody: {
-          fields: [],
-          fileType: '',
-          fieldName: '',
-        },
         headers: [],
         auth: { type: 'none', username: '', password: '', token: '', keyName: '', keyLocation: 'header', keyValue: '' },
-        responses: [makeHttpResponse({ statusCode: 200, desc: '成功响应' })],
       }
     case 'gRPC':
       return {
+        serverAddress: '',
         serviceName: '',
         methodName: '',
-        protoRef: '',
         streamingMode: 'unary',
-        requestMessage: [],
-        responseMessage: [],
-        metadata: [],
-        serverAddress: '',
         tls: { enabled: false, certPath: '' },
         timeout: 30,
         compression: 'none',
       }
     case 'MQ':
       return {
-        brokerType: 'RabbitMQ', brokerAddress: '',
-        topic: '', queueName: '', exchangeName: '', routingKey: '',
-        consumerGroup: '', qos: 0, ackMode: 'auto', messageFormat: 'JSON',
-        messageBody: [],
-        messageHeaders: [],
-        messageKey: { dataType: 'utf8', pattern: '', desc: '' },
+        topic: '',
+        brokerType: 'RabbitMQ',
+        qos: 0,
+        ackMode: 'auto',
+        messageFormat: 'JSON',
       }
     default:
       return {}
@@ -522,18 +508,20 @@ const migrateV1Param = (p) => {
   }
 }
 
-const migrateV1Interface = (iface) => ({
-  ...iface,
-  request: Array.isArray(iface.request) ? iface.request.map(migrateV1Param) : [],
-  response: Array.isArray(iface.response) ? iface.response.map(migrateV1Param) : [],
-})
+const migrateV1Interface = (iface) => {
+  // Convert old flat protocolRefs (number[]) to ProtocolRef[] with default role
+  // Do NOT strip request/response/path yet — migrateAllFromV1 uses them to generate inline protocols
+  const migratedRefs = Array.isArray(iface.protocolRefs)
+    ? iface.protocolRefs.map(id => typeof id === 'object' ? id : { protocolId: id, role: 'request' })
+    : []
+  return { ...iface, protocolRefs: migratedRefs }
+}
 
 export const useProtocolStore = defineStore('protocol', {
   state: () => ({
     protocols: JSON.parse(JSON.stringify(seedProtocols)),
-    // v2: interfaces 的概念已合并到 protocol.messages,
-    //     这里保留旧 interfaces 数组以兼容 v1 UI,
-    //     但推荐用 protocol.messages 表达"操作"
+    // 协议 = 纯数据结构定义（可复用字段模板）
+    // 接口 = 传输类型 + 传输配置 + 协议引用组合
     interfaces: JSON.parse(JSON.stringify(seedInterfaces)).map(migrateV1Interface),
     selectedProtocolId: null,
     selectedInterfaceId: null
@@ -545,76 +533,129 @@ export const useProtocolStore = defineStore('protocol', {
     selectedInterface: (s) => s.interfaces.find((i) => i.id === s.selectedInterfaceId) || null,
     protocolName: (s) => (id) => s.protocols.find((p) => p.id === id)?.name || '—',
 
-    /**
-     * v2: 提取协议下的所有消息(操作/命令/事件)
-     * 优先返回 protocol.messages; 若为空, 从 v1 config 兜底提取:
-     *   - HTTP: responses[] 里的每个 statusCode + bodyFields
-     *   - gRPC: requestMessage + responseMessage
-     *   - MQ:   messageBody (整体作为一个 message)
-     *   - TCP/UDP binary: 不在 v1 范围, 空数组
-     */
-    protocolMessages: (s) => (id) => {
-      const p = s.protocols.find((x) => x.id === id)
-      if (!p) return []
-      if (Array.isArray(p.messages) && p.messages.length) return p.messages
-      // 兜底: 从 v1 config 提取
-      const cfg = p.config || {}
-      const fallback = []
-      if (p.type === 'HTTP') {
-        const method = cfg.method || 'GET'
-        const path = cfg.path || '/'
-        const req = { id: uid(), name: `${method} ${path}`, direction: 'request', desc: 'HTTP 请求', http: { method, path, contentType: cfg.contentType }, fields: cfg.pathParams?.concat(cfg.queryParams || []).concat(cfg.requestBody?.fields || []).map(migrateV1Param) || [] }
-        fallback.push(req)
-        if (Array.isArray(cfg.responses)) {
-          for (const r of cfg.responses) {
-            fallback.push({ id: uid(), name: `响应 ${r.statusCode}`, direction: 'response', desc: r.desc || `HTTP ${r.statusCode}`, http: { method, path, contentType: r.headers?.find(h => h.key === 'Content-Type')?.value || cfg.contentType }, fields: (r.bodyFields || []).map(migrateV1Param) })
-          }
-        }
-      } else if (p.type === 'gRPC') {
-        const svc = cfg.serviceName || 'Service'
-        const mth = cfg.methodName || 'Method'
-        fallback.push({ id: uid(), name: `${svc}.${mth} (请求)`, direction: 'request', desc: 'gRPC 请求消息', grpc: { serviceName: svc, methodName: mth, streaming: cfg.streamingMode }, fields: (cfg.requestMessage || []).map(migrateV1Param) })
-        fallback.push({ id: uid(), name: `${svc}.${mth} (响应)`, direction: 'response', desc: 'gRPC 响应消息', grpc: { serviceName: svc, methodName: mth, streaming: cfg.streamingMode }, fields: (cfg.responseMessage || []).map(migrateV1Param) })
-      } else if (p.type === 'MQ') {
-        const topic = cfg.topic || cfg.queueName || ''
-        const op = cfg.exchangeName ? 'publish' : (cfg.queueName ? 'subscribe' : 'publish')
-        fallback.push({ id: uid(), name: topic || '消息', direction: op === 'publish' ? 'cmd' : 'event', desc: `${cfg.brokerType || 'MQ'} 消息`, mqtt: { qos: cfg.qos ?? 0, retain: false, topic }, fields: (cfg.messageBody || []).map(migrateV1Param) })
-      } else if (p.type === 'TCP' || p.type === 'UDP') {
-        // 二进制协议: v1 没有"操作"概念, v2 设计稿建议按 code 区分
-        // 暂时从 framing.fixedLength 和 fields 推断一个默认 message
-        const fixedLen = cfg.framing?.fixedLength || (cfg.fields?.length || 0)
-        fallback.push({ id: uid(), name: '默认帧', direction: 'event', desc: '二进制协议帧 (v1 暂用单 message, 后续按 code 拆分)', code: 0, fields: (cfg.fields || []).map(migrateV1Param) })
-      }
-      return fallback
-    },
+    /** 查询引用了某协议的接口列表 */
+    interfacesByProtocol: (s) => (protocolId) => s.interfaces.filter((i) =>
+      (i.protocolRefs || []).some(ref => (typeof ref === 'object' ? ref.protocolId : ref) === protocolId)
+    ),
 
     /**
-     * v2: 协议头部"传输与编码"配置(用于 Protocol.vue 头部摘要)
-     * 返回 { transport, encoding, framing, messageCount }
+     * 协议摘要: 数据结构信息（用于 Protocol.vue 头部摘要）
+     * 返回 { fieldCount, hasFraming, hasChecksum, endian }
      */
     protocolSummary: (s) => (id) => {
       const p = s.protocols.find((x) => x.id === id)
       if (!p) return null
-      const cfg = p.config || {}
-      const transport = {
-        host: cfg.host || cfg.brokerAddress || cfg.serverAddress || '',
-        port: cfg.port || '',
-        tls: cfg.tls?.enabled || false,
+      const fieldCount = (p.fields || []).length
+      return {
+        fieldCount,
+        hasFraming: !!p.framing,
+        hasChecksum: !!p.checksum,
+        endian: p.endian || 'big',
+        isStruct: !p.fields?.some?.(f => f.kind === 'byte' || f.kind === 'bit'),
       }
-      const encodingMap = { TCP: 'binary', UDP: 'binary', HTTP: 'json', gRPC: 'protobuf', MQ: 'json' }
-      const messageCount = (p.messages?.length) ||
-        (p.type === 'HTTP' ? 1 + (cfg.responses?.length || 0) :
-         p.type === 'gRPC' ? 2 :
-         p.type === 'MQ' ? 1 :
-         p.type === 'TCP' || p.type === 'UDP' ? 1 : 0)
-      return { transport, encoding: encodingMap[p.type] || 'unknown', framing: cfg.framing, messageCount }
     },
   },
 
   actions: {
     /* ---- v1 → v2 数据迁移 ---- */
     migrateAllFromV1() {
-      this.interfaces = this.interfaces.map(migrateV1Interface)
+      // ── 阶段1: 从接口的 request/response 生成内联协议 ──
+      let inlineSeq = 3000
+      const inlinePid = () => ++inlineSeq
+      const inlineProtocols = []
+
+      // 角色映射：统一使用 request/response
+      const REQUEST_ROLES = { HTTP: 'request', TCP: 'request', gRPC: 'request', MQ: 'request' }
+      const RESPONSE_ROLES = { HTTP: 'response', TCP: 'response', gRPC: 'response', MQ: 'response' }
+
+      const migrateParamTree = (params) => {
+        if (!Array.isArray(params)) return []
+        return params.map(p => ({
+          ...migrateV1Param(p),
+          id: p.id || inlinePid(),
+          children: Array.isArray(p.children) ? migrateParamTree(p.children) : [],
+        }))
+      }
+
+      this.interfaces = this.interfaces.map((iface) => {
+        const newRefs = [...(iface.protocolRefs || [])]
+        const tc = { ...(iface.transportConfig || {}) }
+        const tt = iface.transportType
+
+        // ── 移动 path 到 transportConfig ──
+        if (iface.path) {
+          if (tt === 'HTTP') tc.path = iface.path
+          else if (tt === 'gRPC') {
+            const parts = iface.path.replace(/^\//, '').split('/')
+            tc.serviceName = parts[0] || ''
+            tc.methodName = parts.slice(1).join('/') || ''
+          } else if (tt === 'MQ') tc.topic = iface.path
+          else if (tt === 'TCP') tc.port = tc.port || 0  // TCP path was decorative
+        }
+
+        // ── 从 request 生成内联协议 ──
+        if (Array.isArray(iface.request) && iface.request.length > 0) {
+          const reqFields = migrateParamTree(iface.request)
+          const reqProto = {
+            id: inlinePid(),
+            name: `${iface.name} — 请求`,
+            systemId: iface.systemId,
+            moduleId: iface.moduleId,
+            desc: `${iface.name} 请求参数`,
+            endian: 'big',
+            fields: reqFields,
+            framing: null,
+            checksum: null,
+            __inline: true,
+          }
+          inlineProtocols.push(reqProto)
+          const role = REQUEST_ROLES[tt] || 'request'
+          newRefs.push({ protocolId: reqProto.id, role })
+        }
+
+        // ── 从 response 生成内联协议 ──
+        if (Array.isArray(iface.response) && iface.response.length > 0) {
+          const resFields = migrateParamTree(iface.response)
+          const resProto = {
+            id: inlinePid(),
+            name: `${iface.name} — 响应`,
+            systemId: iface.systemId,
+            moduleId: iface.moduleId,
+            desc: `${iface.name} 响应参数`,
+            endian: 'big',
+            fields: resFields,
+            framing: null,
+            checksum: null,
+            __inline: true,
+          }
+          inlineProtocols.push(resProto)
+          const role = RESPONSE_ROLES[tt] || 'response'
+          newRefs.push({ protocolId: resProto.id, role })
+        }
+
+        // ── 给已有的 protocolRefs 补角色（默认 request） ──
+        const finalRefs = newRefs.map(ref => {
+          if (typeof ref === 'object' && ref.protocolId) return ref
+          return { protocolId: ref, role: 'request' }
+        })
+
+        return {
+          ...iface,
+          transportConfig: tc,
+          protocolRefs: finalRefs,
+          // 清除遗留字段
+          request: undefined,
+          response: undefined,
+          path: undefined,
+        }
+      })
+
+      // ── 将内联协议追加到协议列表 ──
+      if (inlineProtocols.length) {
+        this.protocols.push(...inlineProtocols)
+      }
+
+      // ── 阶段2: 协议字段迁移 ──
       this.protocols.forEach((p) => {
         if (Array.isArray(p.config?.requestBody?.fields)) {
           p.config.requestBody.fields = p.config.requestBody.fields.map(migrateV1Param)
@@ -633,31 +674,27 @@ export const useProtocolStore = defineStore('protocol', {
         if (Array.isArray(p.config?.messageBody)) {
           p.config.messageBody = p.config.messageBody.map(migrateV1Param)
         }
+        if (p.config?.fields && !p.fields) {
+          p.fields = p.config.fields.map(migrateV1Param)
+        }
+        if (p.config?.framing && !p.framing) p.framing = p.config.framing
+        if (p.config?.checksum && !p.checksum) p.checksum = p.config.checksum
+        if (p.config?.endian && !p.endian) p.endian = p.config.endian
       })
     },
 
     /* ---- 协议 ---- */
     addProtocol(p = {}) {
-      const type = p.type || 'TCP'
       const np = {
         id: uid(),
         name: p.name || '新建协议',
-        type,
         systemId: p.systemId ?? null,
         moduleId: p.moduleId ?? null,
         desc: p.desc || '',
-        config: p.config || makeConfig(type),
-        // v2: 协议下的消息集合。HTTP/gRPC/MQ 一个协议可有多个
-        // message(每个对应一个 method+path / service.method / topic),
-        // TCP/UDP 二进制协议用 message.code 区分命令码。
-        // v1 模式下该字段可为空, 由 UI 从 interfaces/config 提取展示。
-        messages: p.messages || [],
-      }
-      // 兼容旧种子数据：确保 TCP/UDP config 有 framing/checksum
-      if (isByteStream(type)) {
-        if (!np.config.framing) np.config.framing = makeFraming()
-        if (!np.config.checksum) np.config.checksum = makeChecksum()
-        if (!np.config.fields) np.config.fields = []
+        endian: p.endian || 'big',
+        fields: p.fields || [],
+        framing: p.framing || null,
+        checksum: p.checksum || null,
       }
       this.protocols.unshift(np)
       this.selectedProtocolId = np.id
@@ -669,15 +706,9 @@ export const useProtocolStore = defineStore('protocol', {
       if (this.selectedProtocolId === id) this.selectedProtocolId = this.protocols[0]?.id ?? null
     },
 
-    // 切换协议类型（清空 config）
-    switchProtocolType(protocol, newType) {
-      protocol.type = newType
-      protocol.config = makeConfig(newType)
-    },
-
     // 添加字节字段（末尾追加或指定位置后插入）
     addByteField(protocol, afterId = null) {
-      const fields = protocol.config.fields
+      const fields = protocol.fields || (protocol.fields = [])
       const f = makeByteField({ name: `字段${fields.length + 1}` })
       if (afterId != null) {
         const idx = fields.findIndex(x => x.id === afterId)
@@ -699,7 +730,7 @@ export const useProtocolStore = defineStore('protocol', {
 
     // 添加重复字段组
     addRepeatGroup(protocol, afterId = null) {
-      const fields = protocol.config.fields
+      const fields = protocol.fields || (protocol.fields = [])
       const g = makeRepeatGroup({ name: `重复组${fields.filter(f => f.kind === 'repeat').length + 1}` })
       if (afterId != null) {
         const idx = fields.findIndex(x => x.id === afterId)
@@ -711,7 +742,7 @@ export const useProtocolStore = defineStore('protocol', {
 
     // 上移/下移字段
     moveField(protocol, id, direction) {
-      const fields = protocol.config.fields
+      const fields = protocol.fields
       const idx = fields.findIndex(f => f.id === id)
       if (idx < 0) return
       const newIdx = direction === 'up' ? idx - 1 : idx + 1
@@ -723,7 +754,7 @@ export const useProtocolStore = defineStore('protocol', {
 
     // 递归删除字段（含 repeat 内部）
     removeFieldById(protocol, id) {
-      const fields = protocol.config.fields
+      const fields = protocol.fields
       const i = fields.findIndex((f) => f.id === id)
       if (i >= 0) {
         fields.splice(i, 1)
@@ -761,77 +792,30 @@ export const useProtocolStore = defineStore('protocol', {
 
     // 更新帧结构配置
     updateFraming(protocol, patch) {
-      Object.assign(protocol.config.framing, patch)
+      if (!protocol.framing) protocol.framing = makeFraming()
+      Object.assign(protocol.framing, patch)
     },
 
     // 更新校验配置
     updateChecksum(protocol, patch) {
-      Object.assign(protocol.config.checksum, patch)
-    },
-
-    /* ---- MQ 消息体 ---- */
-    addMqBodyField(protocol, parentId = null) {
-      const config = protocol.config
-      if (!config.messageBody) config.messageBody = []
-      const f = makeMqBodyField({ name: `field${config.messageBody.length + 1}` })
-      if (parentId) {
-        const parent = this._findMqField(config.messageBody, parentId)
-        // 支持新类型名(struct/matrix)和旧类型名(object/array)
-        if (parent && (parent.dataType === 'object' || parent.dataType === 'array' || parent.dataType === 'struct' || parent.dataType === 'matrix' || parent.dataType === '共识体')) {
-          if (!parent.children) parent.children = []
-          parent.children.push(f)
-          return f
-        }
-      }
-      config.messageBody.push(f)
-      return f
-    },
-
-    removeMqBodyField(protocol, fieldId) {
-      const fields = protocol.config.messageBody
-      if (!fields) return false
-      const i = fields.findIndex(f => f.id === fieldId)
-      if (i >= 0) { fields.splice(i, 1); return true }
-      for (const f of fields) {
-        if (f.children?.length) {
-          const ci = f.children.findIndex(c => c.id === fieldId)
-          if (ci >= 0) { f.children.splice(ci, 1); return true }
-        }
-      }
-      return false
-    },
-
-    addMqHeader(protocol) {
-      const config = protocol.config
-      if (!config.messageHeaders) config.messageHeaders = []
-      const h = makeMqHeader({ key: `header${config.messageHeaders.length + 1}` })
-      config.messageHeaders.push(h)
-      return h
-    },
-
-    removeMqHeader(protocol, headerId) {
-      const headers = protocol.config.messageHeaders
-      if (!headers) return false
-      const i = headers.findIndex(h => h.id === headerId)
-      if (i >= 0) { headers.splice(i, 1); return true }
-      return false
-    },
-
-    // 内部：在 MQ 消息体字段树中查找节点
-    _findMqField(fields, id) {
-      for (const f of (fields || [])) {
-        if (f.id === id) return f
-        if (f.children?.length) {
-          const found = this._findMqField(f.children, id)
-          if (found) return found
-        }
-      }
-      return null
+      if (!protocol.checksum) protocol.checksum = makeChecksum()
+      Object.assign(protocol.checksum, patch)
     },
 
     /* ---- 接口 ---- */
     addInterface(it = {}) {
-      const ni = { id: uid(), name: it.name || '新建接口', path: '', systemId: null, moduleId: null, desc: '', operationType: '', request: [], response: [], ...it }
+      const transportType = it.transportType || null
+      const ni = {
+        id: uid(),
+        name: it.name || '新建接口',
+        transportType,
+        transportConfig: it.transportConfig || (transportType ? makeTransportConfig(transportType) : {}),
+        protocolRefs: it.protocolRefs || [],
+        systemId: it.systemId ?? null,
+        moduleId: it.moduleId ?? null,
+        desc: it.desc || '',
+        operationType: it.operationType || '',
+      }
       this.interfaces.unshift(ni)
       this.selectedInterfaceId = ni.id
       return ni
