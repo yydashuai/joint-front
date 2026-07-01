@@ -407,7 +407,8 @@ const onUserCommand = (cmd) => {
 
 .workspace {
   flex: 1;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
   padding: 16px;
   background: var(--jt-workspace-bg);
 }

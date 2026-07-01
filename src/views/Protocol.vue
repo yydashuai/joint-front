@@ -351,7 +351,7 @@ const onImportFile = (e) => {
 </script>
 
 <style scoped lang="scss">
-.page { min-height: 0; }
+.page { height: 100%; min-height: 0; }
 .proto { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .page__header { flex-shrink: 0; margin-bottom: 12px; }
 .split { flex: 1; min-height: 0; display: flex; gap: 16px; overflow: hidden; }
