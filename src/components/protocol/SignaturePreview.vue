@@ -51,13 +51,20 @@
 
 <script setup>
 import { computed } from 'vue'
+import { DATA_RULE_CATEGORY_MAP } from '@/stores/protocol'
 
 const props = defineProps({
   iface: { type: Object, required: true },
 })
 defineEmits(['navigate'])
 
-const typeShort = (p) => (p.type === '常量' ? p.dataType : p.type)
+// 使用五类数据规则中文名称显示
+const typeShort = (p) => {
+  // 兼容旧类型名
+  if (p.type === '常量') return p.dataType
+  // 使用五类数据规则的中文标签
+  return DATA_RULE_CATEGORY_MAP[p.type]?.label || p.type
+}
 
 const signature = computed(() => {
   const it = props.iface
