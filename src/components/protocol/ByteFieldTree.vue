@@ -453,7 +453,7 @@ const onIoCommand = (cmd) => {
   if (cmd === 'export') emit('export')
 }
 
-const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'auto' }
 
 // ─── 脏数据追踪 ───
 const dirty = ref(false)

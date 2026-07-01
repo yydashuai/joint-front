@@ -356,7 +356,10 @@ const onImportFile = (e) => {
 .page__header { flex-shrink: 0; margin-bottom: 12px; }
 .split { flex: 1; min-height: 0; display: flex; gap: 16px; overflow: hidden; }
 .proto-tree { width: 300px; flex-shrink: 0; min-height: 0; overflow: auto; }
-.proto-detail { display: flex; flex-direction: column; gap: 10px; width: 100%; min-width: 0; flex: 1; min-height: 0; overflow: auto; }
+.proto-detail { display: flex; flex-direction: column; gap: 10px; width: 100%; min-width: 0; flex: 1; min-height: 0; overflow: hidden; }
+.proto-detail > :deep(.proto-summary),
+.proto-detail > :deep(.proto-messages) { flex-shrink: 0; }
+.proto-detail > :deep(.el-card.main) { flex: 1; min-height: 0; overflow: hidden; }
 .main--empty {
   flex: 1;
   min-width: 0;

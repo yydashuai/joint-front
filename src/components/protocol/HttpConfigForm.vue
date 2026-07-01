@@ -407,7 +407,7 @@ watch(() => props.protocol.id, () => {
 const markClean = () => { snapshot.value = JSON.stringify(props.protocol); dirty.value = false }
 defineExpose({ markClean })
 
-const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'auto' }
 const cfg = computed(() => props.protocol.config)
 
 // ---- Tab & Collapse state ----
