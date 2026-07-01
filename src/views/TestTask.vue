@@ -160,8 +160,8 @@
                     </template>
                   </el-table-column>
                   <el-table-column label="操作" width="80" align="center">
-                    <template #default>
-                      <el-button link type="primary" size="small" disabled>日志</el-button>
+                    <template #default="{ row }">
+                      <el-button link type="primary" size="small" @click="openRunLog(row)">日志</el-button>
                     </template>
                   </el-table-column>
                 </el-table>
@@ -183,6 +183,53 @@
       :module="createModule"
       @created="onCreateTask"
     />
+
+    <el-drawer v-model="logDrawerVisible" size="520px" title="执行日志">
+      <template v-if="activeRun">
+        <div class="run-log">
+          <div class="run-log__summary">
+            <div>
+              <span>任务</span>
+              <strong>{{ currentTask?.name || '未命名任务' }}</strong>
+            </div>
+            <div>
+              <span>结果</span>
+              <el-tag :type="activeRun.result === '通过' ? 'success' : activeRun.result ? 'danger' : 'warning'" size="small">
+                {{ activeRun.result || '执行中' }}
+              </el-tag>
+            </div>
+            <div>
+              <span>开始时间</span>
+              <strong class="mono">{{ activeRun.startedAt || '—' }}</strong>
+            </div>
+            <div>
+              <span>结束时间</span>
+              <strong class="mono">{{ activeRun.finishedAt || '—' }}</strong>
+            </div>
+            <div>
+              <span>耗时</span>
+              <strong class="mono">{{ activeRun.duration || '—' }}</strong>
+            </div>
+          </div>
+
+          <div class="run-log__panel">
+            <div class="run-log__title">事件流</div>
+            <div class="run-log__lines">
+              <div v-for="(line, index) in runLogLines" :key="index" class="run-log__line">
+                <span class="run-log__time">{{ line.time }}</span>
+                <span class="run-log__level" :class="`run-log__level--${line.level}`">{{ line.levelText }}</span>
+                <span class="run-log__text">{{ line.text }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="run-log__raw">
+            <div class="run-log__title">摘要</div>
+            <pre>{{ activeRun.log || '执行记录已创建，等待执行编排模块写入结果摘要。' }}</pre>
+          </div>
+        </div>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -211,6 +258,8 @@ const connStore = useConnectionStore()
 const selectedKey = ref('')
 const taskSearch = ref('')
 const activeTab = ref('info')
+const logDrawerVisible = ref(false)
+const activeRun = ref(null)
 
 const leafGroups = (module) => {
   let tasks = taskStore.tasksOfModule(module.id)
@@ -343,6 +392,34 @@ const onBindingsChange = (bindings) => {
   if (!currentTask.value) return
   taskStore.updateBindings(currentTask.value.id, bindings)
 }
+
+/* ========== 执行日志（静态闭环） ========== */
+const openRunLog = (row) => {
+  activeRun.value = row
+  logDrawerVisible.value = true
+}
+
+const runLogLines = computed(() => {
+  if (!activeRun.value) return []
+  const run = activeRun.value
+  const start = run.startedAt || '待记录'
+  const finish = run.finishedAt || '未结束'
+  const result = run.result || '执行中'
+  const lines = [
+    { time: start, level: 'info', levelText: 'INFO', text: '任务进入执行队列，加载资源绑定与运行策略。' },
+    { time: start, level: 'info', levelText: 'INFO', text: `目标模块：${moduleName.value || '未绑定模块'}。` },
+    { time: start, level: 'info', levelText: 'INFO', text: '检查接口、测试数据集与规则集绑定状态。' },
+  ]
+
+  if (result === '执行中') {
+    lines.push({ time: '当前', level: 'warn', levelText: 'WAIT', text: '执行编排尚未返回完成结果，持续等待监控数据写入。' })
+  } else {
+    lines.push({ time: finish, level: result === '通过' ? 'success' : 'error', levelText: result === '通过' ? 'PASS' : 'WARN', text: run.log || `执行结束，结果为${result}。` })
+    lines.push({ time: finish, level: 'info', levelText: 'INFO', text: '结果已回写到任务执行记录，可继续生成统计或联试报告。' })
+  }
+
+  return lines
+})
 
 /* ========== 提交执行 ========== */
 const canSubmit = computed(() => {
@@ -587,4 +664,87 @@ watch(currentTask, (t) => {
 /* 通用 */
 .text-ph { color: var(--el-text-color-placeholder); }
 .mono { font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; }
+
+.run-log {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.run-log__summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-extra-light);
+}
+.run-log__summary div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.run-log__summary span {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.run-log__summary strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+}
+.run-log__panel,
+.run-log__raw {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+}
+.run-log__title {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  font-weight: 650;
+  font-size: 13px;
+}
+.run-log__lines {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.run-log__line {
+  display: grid;
+  grid-template-columns: 132px 48px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.run-log__time {
+  color: var(--el-text-color-secondary);
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+.run-log__level {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-weight: 700;
+}
+.run-log__level--info { color: var(--el-color-primary); }
+.run-log__level--success { color: var(--el-color-success); }
+.run-log__level--warn { color: var(--el-color-warning); }
+.run-log__level--error { color: var(--el-color-danger); }
+.run-log__text {
+  min-width: 0;
+  color: var(--el-text-color-regular);
+}
+.run-log__raw pre {
+  margin: 0;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--el-text-color-regular);
+  font: 12px/1.6 'Consolas', 'Monaco', monospace;
+}
 </style>

@@ -3,12 +3,34 @@ import { datasets as seedDatasets, files as seedFiles } from '@/mock/testData'
 
 let _dsSeq = 100
 let _rowSeq = 1000
+let _historyRowSeq = 5000
 let _fileSeq = 100
+
+const clone = (data) => JSON.parse(JSON.stringify(data))
+
+const historyRowsFromDataset = (dataset) => {
+  return (dataset.rows || []).map((row, index) => ({
+    id: ++_historyRowSeq,
+    label: row.label || `历史行 ${index + 1}`,
+    values: clone(row.values || {}),
+    source: '历史优秀案例',
+    savedAt: dataset.createdAt || '2026-06-25'
+  }))
+}
+
+const normalizeDatasets = () => {
+  return clone(seedDatasets).map(dataset => ({
+    ...dataset,
+    historyRows: Array.isArray(dataset.historyRows) && dataset.historyRows.length
+      ? dataset.historyRows
+      : historyRowsFromDataset(dataset)
+  }))
+}
 
 export const useTestDataStore = defineStore('testData', {
   state: () => ({
-    datasets: JSON.parse(JSON.stringify(seedDatasets)),
-    files: JSON.parse(JSON.stringify(seedFiles)),
+    datasets: normalizeDatasets(),
+    files: clone(seedFiles),
     selectedDatasetId: null
   }),
 
@@ -52,7 +74,8 @@ export const useTestDataStore = defineStore('testData', {
         linkedInterface: data.linkedInterface || null,
         desc: data.desc || '',
         createdAt: new Date().toISOString().slice(0, 10),
-        rows: []
+        rows: [],
+        historyRows: []
       }
       this.datasets.unshift(ds)
       this.selectedDatasetId = ds.id
@@ -85,6 +108,7 @@ export const useTestDataStore = defineStore('testData', {
       }
       // 重新分配行 ID
       dup.rows = dup.rows.map(r => ({ ...r, id: ++_rowSeq }))
+      dup.historyRows = (dup.historyRows || []).map(r => ({ ...r, id: ++_historyRowSeq }))
       // 插入到源数据集后面
       const idx = this.datasets.findIndex(d => d.id === id)
       this.datasets.splice(idx + 1, 0, dup)
@@ -210,6 +234,29 @@ export const useTestDataStore = defineStore('testData', {
     clearRows(datasetId) {
       const ds = this.datasets.find(d => d.id === datasetId)
       if (ds) ds.rows = []
+    },
+
+    ensureHistoryRows(datasetId) {
+      const ds = this.datasets.find(d => d.id === datasetId)
+      if (!ds) return []
+      if (!Array.isArray(ds.historyRows)) {
+        ds.historyRows = historyRowsFromDataset(ds)
+      }
+      return ds.historyRows
+    },
+
+    removeHistoryRow(datasetId, rowId) {
+      const ds = this.datasets.find(d => d.id === datasetId)
+      if (!ds?.historyRows) return
+      const idx = ds.historyRows.findIndex(r => r.id === rowId)
+      if (idx >= 0) ds.historyRows.splice(idx, 1)
+    },
+
+    removeHistoryRowsBatch(datasetId, rowIds) {
+      const ds = this.datasets.find(d => d.id === datasetId)
+      if (!ds?.historyRows) return
+      const idSet = new Set(rowIds)
+      ds.historyRows = ds.historyRows.filter(r => !idSet.has(r.id))
     },
 
     /* ========== 资源文件 ========== */
