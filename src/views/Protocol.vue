@@ -91,7 +91,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useProtocolStore, isByteStream } from '@/stores/protocol'
@@ -110,6 +110,10 @@ const systemStore = useSystemStore()
 const connStore = useConnectionStore()
 const router = useRouter()
 const route = useRoute()
+
+// 进入协议页时, 自动跑一次 v1→v2 数据迁移(幂等)
+// 未来 v2 概念完全接管后, 可删除此调用
+onMounted(() => store.migrateAllFromV1())
 
 const selectedKind = ref('protocol')
 if (!store.selectedProtocolId) store.selectedProtocolId = store.protocols[0]?.id ?? null

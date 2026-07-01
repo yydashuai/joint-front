@@ -15,9 +15,52 @@ export const PROTOCOL_TYPES = [
 
 export const isByteStream = (type) => type === 'TCP' || type === 'UDP'
 
-// 5 种接口参数数据类型（保留不变）
-export const FIELD_TYPES = ['常量', '位组序流', '共识体', '流文件', '结构矩阵']
-export const CONST_SUBTYPES = ['int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'float', 'double', 'string']
+// ─── v2 接口参数节点类型（标准概念，替换 v1 自创 5 分类）───
+// v1 用了「常量 / 位组序流 / 共识体 / 流文件 / 结构矩阵」5 种自创
+// 分类, 不符合任何 RFC/标准协议, 演示时常被问「位组序流是什么」。
+// v2 改为 RFC/工业标准分类, 同时保留中文 label 方便过渡:
+//
+//   scalar: 单个标量值(整数/浮点/字符串/布尔), 长度 1/2/4/8 字节
+//           或变长(UTF-8 字符串)
+//   bytes:  原始字节流, 不解析(可用于「绑定具体协议」或二进制透传)
+//   struct: 嵌套结构体, 用 children[] 表达
+//   file:   文件流(图片/二进制/CSV 等), 上传后用 url 引用
+//   array:  数组, 用 children[] 表达数组元素 schema
+//
+// v1 → v2 映射: 常量→scalar / 位组序流→bytes / 共识体→struct /
+//                流文件→file / 结构矩阵→array
+export const FIELD_TYPES = [
+  { value: 'scalar', label: '基本类型',  desc: '单个标量值(整数/浮点/字符串/布尔)' },
+  { value: 'bytes',  label: '原始字节',  desc: '二进制透传, 可绑定到具体协议解析' },
+  { value: 'struct', label: '结构体',    desc: '嵌套字段集合, 用 children 表达' },
+  { value: 'array',  label: '数组',      desc: '重复元素集合, 用 children 表达元素 schema' },
+  { value: 'file',   label: '文件流',    desc: '上传文件(图片/CSV/二进制等)' },
+]
+export const FIELD_TYPE_VALUES = FIELD_TYPES.map(t => t.value)
+
+// scalar 类型的子类型(编码方式)
+export const SCALAR_ENCODINGS = [
+  { value: 'uint8',  label: 'uint8',  group: '整数', bytes: 1 },
+  { value: 'int8',   label: 'int8',   group: '整数', bytes: 1 },
+  { value: 'uint16', label: 'uint16', group: '整数', bytes: 2 },
+  { value: 'int16',  label: 'int16',  group: '整数', bytes: 2 },
+  { value: 'uint32', label: 'uint32', group: '整数', bytes: 4 },
+  { value: 'int32',  label: 'int32',  group: '整数', bytes: 4 },
+  { value: 'uint64', label: 'uint64', group: '整数', bytes: 8 },
+  { value: 'int64',  label: 'int64',  group: '整数', bytes: 8 },
+  { value: 'float32',label: 'float32',group: '浮点', bytes: 4 },
+  { value: 'float64',label: 'float64',group: '浮点', bytes: 8 },
+  { value: 'utf8',   label: 'UTF-8',  group: '字符', bytes: 0 },
+  { value: 'gbk',    label: 'GBK',    group: '字符', bytes: 0 },
+  { value: 'ascii',  label: 'ASCII',  group: '字符', bytes: 0 },
+  { value: 'bcd',    label: 'BCD',    group: '编码', bytes: 0 },
+  { value: 'bool',   label: '布尔',   group: '其他', bytes: 1 },
+  { value: 'unix-sec',label: 'Unix秒',group: '时间', bytes: 4 },
+  { value: 'unix-ms', label: 'Unix毫秒',group: '时间', bytes: 8 },
+]
+
+// v1 兼容常量(老代码可能直接 import)
+export const CONST_SUBTYPES = SCALAR_ENCODINGS.map(s => s.value)
 export const ENDIANS = [
   { label: '大端 (BE)', value: 'big' },
   { label: '小端 (LE)', value: 'little' }
@@ -145,17 +188,43 @@ export const makeRepeatGroup = (o = {}) => ({
   ...o
 })
 
-// ─── 接口参数节点（保留不变） ───
+// ─── v2 接口参数节点 ───
+// 标准 5 种类型: scalar / bytes / struct / array / file
+// v1 的「常量/位组序流/共识体/流文件/结构矩阵」会在
+// migrateV1Interface() 中自动映射
 export const makeParam = (o = {}) => ({
   id: uid(),
   name: '',
-  type: '常量',
-  dataType: 'uint8',
-  protocolRef: null,
-  children: [],
+  type: 'scalar',                  // scalar | bytes | struct | array | file
+  encoding: 'uint8',               // 仅 scalar 用, 来自 SCALAR_ENCODINGS
+  protocolRef: null,               // 仅 bytes 用, 引用 protocol id
+  fileName: '', fileSize: 0,       // 仅 file 用
+  required: true,
+  defaultValue: null,
+  constraint: noneConstraint(),
+  unit: '',                        // 字段单位, 如 "kg" / "m/s" / "Hz"
+  align: 1,                        // 字节对齐, 仅 struct/array 用
+  children: [],                    // struct/array 用
   desc: '',
   ...o
 })
+
+// v1 → v2 类型映射常量
+const V1_TO_V2_TYPE = {
+  '常量': 'scalar',
+  '位组序流': 'bytes',
+  '共识体': 'struct',
+  '流文件': 'file',
+  '结构矩阵': 'array',
+}
+// v2 → v1 显示文本(只用于老 UI 兼容渲染, 不建议新代码使用)
+export const V2_TO_V1_LABEL = {
+  scalar: '基本类型',
+  bytes: '原始字节',
+  struct: '结构体',
+  array: '数组',
+  file: '文件流',
+}
 
 // ─── HTTP 参数工厂 ───
 export const makeHttpParam = (o = {}) => ({
@@ -422,10 +491,35 @@ export const getNumericFieldsBefore = (fields, targetId) => {
   return result
 }
 
+// ─── v1 → v2 数据迁移 ───
+// 把老 type='常量'/'位组序流'/'共识体'/'流文件'/'结构矩阵'
+// 自动映射到 v2 5 种标准类型
+// 幂等: 已经是 v2 type (scalar/bytes/struct/array/file) 时保留原样
+const V2_TYPES = new Set(['scalar', 'bytes', 'struct', 'array', 'file'])
+const migrateV1Param = (p) => {
+  if (!p) return p
+  const targetType = V2_TYPES.has(p.type) ? p.type : (V1_TO_V2_TYPE[p.type] || 'scalar')
+  return {
+    ...p,
+    type: targetType,
+    encoding: p.encoding || p.dataType || 'uint8',
+    children: Array.isArray(p.children) ? p.children.map(migrateV1Param) : [],
+  }
+}
+
+const migrateV1Interface = (iface) => ({
+  ...iface,
+  request: Array.isArray(iface.request) ? iface.request.map(migrateV1Param) : [],
+  response: Array.isArray(iface.response) ? iface.response.map(migrateV1Param) : [],
+})
+
 export const useProtocolStore = defineStore('protocol', {
   state: () => ({
     protocols: JSON.parse(JSON.stringify(seedProtocols)),
-    interfaces: JSON.parse(JSON.stringify(seedInterfaces)),
+    // v2: interfaces 的概念已合并到 protocol.messages,
+    //     这里保留旧 interfaces 数组以兼容 v1 UI,
+    //     但推荐用 protocol.messages 表达"操作"
+    interfaces: JSON.parse(JSON.stringify(seedInterfaces)).map(migrateV1Interface),
     selectedProtocolId: null,
     selectedInterfaceId: null
   }),
@@ -438,6 +532,30 @@ export const useProtocolStore = defineStore('protocol', {
   },
 
   actions: {
+    /* ---- v1 → v2 数据迁移 ---- */
+    migrateAllFromV1() {
+      this.interfaces = this.interfaces.map(migrateV1Interface)
+      this.protocols.forEach((p) => {
+        if (Array.isArray(p.config?.requestBody?.fields)) {
+          p.config.requestBody.fields = p.config.requestBody.fields.map(migrateV1Param)
+        }
+        if (Array.isArray(p.config?.responses)) {
+          p.config.responses.forEach((r) => {
+            if (Array.isArray(r.bodyFields)) r.bodyFields = r.bodyFields.map(migrateV1Param)
+          })
+        }
+        if (Array.isArray(p.config?.requestMessage)) {
+          p.config.requestMessage = p.config.requestMessage.map(migrateV1Param)
+        }
+        if (Array.isArray(p.config?.responseMessage)) {
+          p.config.responseMessage = p.config.responseMessage.map(migrateV1Param)
+        }
+        if (Array.isArray(p.config?.messageBody)) {
+          p.config.messageBody = p.config.messageBody.map(migrateV1Param)
+        }
+      })
+    },
+
     /* ---- 协议 ---- */
     addProtocol(p = {}) {
       const type = p.type || 'TCP'

@@ -71,27 +71,45 @@
       </div>
     </el-scrollbar>
 
-    <!-- 字段编辑弹窗 -->
+    <!-- 字段编辑弹窗 (v2 类型: scalar/bytes/struct/array/file) -->
     <el-dialog v-model="nodeDlg" title="编辑字段" width="460px">
       <el-form v-if="editing" label-width="88px">
-        <el-form-item label="字段名"><el-input v-model="editing.name" /></el-form-item>
-        <el-form-item label="数据类型">
+        <el-form-item label="字段名"><el-input v-model="editing.name" placeholder="如 deviceId" /></el-form-item>
+        <el-form-item label="字段类型">
           <el-select v-model="editing.type" class="w-full" @change="onTypeChange(editing)">
-            <el-option v-for="t in FIELD_TYPES" :key="t" :label="t" :value="t" />
+            <el-option v-for="t in FIELD_TYPES" :key="t.value" :value="t.value">
+              <span style="float: left">{{ t.label }}</span>
+              <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px">{{ t.desc }}</span>
+            </el-option>
           </el-select>
         </el-form-item>
-        <el-form-item v-if="editing.type === '常量'" label="子类型">
-          <el-select v-model="editing.dataType" class="w-full">
-            <el-option v-for="d in CONST_SUBTYPES" :key="d" :label="d" :value="d" />
+        <el-form-item v-if="editing.type === 'scalar'" label="编码方式">
+          <el-select v-model="editing.encoding" class="w-full" filterable>
+            <el-option-group
+              v-for="grp in groupedScalarEncodings"
+              :key="grp.group"
+              :label="grp.group"
+            >
+              <el-option v-for="s in grp.items" :key="s.value" :label="s.label" :value="s.value" />
+            </el-option-group>
           </el-select>
         </el-form-item>
-        <el-form-item v-if="editing.type === '位组序流'" label="绑定协议">
+        <el-form-item v-if="editing.type === 'bytes'" label="绑定协议">
           <el-select v-model="editing.protocolRef" class="w-full" placeholder="选择解析协议" clearable>
             <el-option v-for="o in protocolOptions" :key="o.value" :label="o.label" :value="o.value" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="editing.type === '共识体'" label="提示">
-          <span class="muted">可在树上用 ＋ 为其添加子字段</span>
+        <el-form-item v-if="editing.type === 'struct' || editing.type === 'array'" label="提示">
+          <span class="muted">保存后, 树上的「+」可为 {{ editing.type === 'struct' ? '结构体' : '数组' }} 添加子字段</span>
+        </el-form-item>
+        <el-form-item v-if="editing.type === 'file'" label="文件名">
+          <el-input v-model="editing.fileName" placeholder="上传后自动填充" />
+        </el-form-item>
+        <el-form-item label="必填">
+          <el-switch v-model="editing.required" />
+        </el-form-item>
+        <el-form-item label="单位">
+          <el-input v-model="editing.unit" placeholder="如 kg / m/s / °" />
         </el-form-item>
         <el-form-item label="备注说明"><el-input v-model="editing.desc" type="textarea" :rows="2" /></el-form-item>
       </el-form>
@@ -103,7 +121,10 @@
 <script setup>
 import { ref, provide, computed } from 'vue'
 import { Plus, Delete } from '@element-plus/icons-vue'
-import { FIELD_TYPES, CONST_SUBTYPES, MQ_OPERATION_TYPES, makeParam, useProtocolStore } from '@/stores/protocol'
+import {
+  FIELD_TYPES, SCALAR_ENCODINGS, MQ_OPERATION_TYPES,
+  makeParam, useProtocolStore
+} from '@/stores/protocol'
 import FieldNode from '@/components/FieldNode.vue'
 import SignaturePreview from './SignaturePreview.vue'
 
@@ -123,6 +144,16 @@ const protoStore = useProtocolStore()
 const hasMqProtocol = computed(() => {
   if (!props.iface.moduleId) return false
   return protoStore.protocols.some(p => p.moduleId === props.iface.moduleId && p.type === 'MQ')
+})
+
+// scalar 编码方式按 group 聚合(整数/浮点/字符/编码/时间/其他)
+const groupedScalarEncodings = computed(() => {
+  const groups = {}
+  for (const s of SCALAR_ENCODINGS) {
+    if (!groups[s.group]) groups[s.group] = []
+    groups[s.group].push(s)
+  }
+  return Object.entries(groups).map(([group, items]) => ({ group, items }))
 })
 
 const addRootParam = (list) => list.push(makeParam({ name: `field${list.length + 1}` }))
@@ -148,8 +179,11 @@ provide('treeActions', {
 })
 
 const onTypeChange = (row) => {
-  if (row.type !== '共识体') row.children = []
-  if (row.type !== '位组序流') row.protocolRef = null
+  // v2 类型切换: 清理不再相关的字段
+  if (row.type !== 'struct' && row.type !== 'array') row.children = []
+  if (row.type !== 'bytes') row.protocolRef = null
+  if (row.type === 'scalar' && !row.encoding) row.encoding = 'uint8'
+  if (row.type !== 'file') { row.fileName = ''; row.fileSize = 0 }
 }
 
 // 签名标签点击导航
