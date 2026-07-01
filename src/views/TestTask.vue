@@ -50,12 +50,6 @@
                   @blur="onNameBlur"
                   @keyup.enter="$event.target.blur()"
                 />
-                <el-tag :type="statusTag(currentTask.status)" size="small" effect="dark">
-                  {{ statusLabel(currentTask.status) }}
-                </el-tag>
-                <el-tag :type="priorityTag(currentTask.priority)" size="small" effect="plain">
-                  {{ priorityLabel(currentTask.priority) }}
-                </el-tag>
               </div>
               <div class="task-head__right">
                 <el-button
@@ -71,6 +65,13 @@
               </div>
             </div>
             <div class="task-head__meta">
+              <el-tag :type="statusTag(currentTask.status)" size="small" effect="dark">
+                {{ statusLabel(currentTask.status) }}
+              </el-tag>
+              <el-tag :type="priorityTag(currentTask.priority)" size="small" effect="plain">
+                {{ priorityLabel(currentTask.priority) }}
+              </el-tag>
+              <span class="task-head__meta-sep" />
               <span class="meta-item">
                 <el-icon><Connection /></el-icon>
                 {{ moduleName }}
@@ -78,6 +79,10 @@
               <span class="meta-item">
                 <el-icon><Clock /></el-icon>
                 创建于 {{ currentTask.createdAt }}<template v-if="currentTask.updatedAt"> · 更新于 {{ currentTask.updatedAt }}</template>
+              </span>
+              <span v-if="currentTask.runs?.length" class="meta-item">
+                <el-icon><Histogram /></el-icon>
+                已执行 {{ currentTask.runs.length }} 次
               </span>
             </div>
           </el-card>
@@ -187,7 +192,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Share, CaretRight, CopyDocument, Delete,
-  Connection, Clock
+  Connection, Clock, Histogram
 } from '@element-plus/icons-vue'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import TaskBindings from '@/components/testtask/TaskBindings.vue'
@@ -512,10 +517,19 @@ watch(currentTask, (t) => {
 }
 .task-head__meta {
   display: flex;
-  gap: 18px;
+  align-items: center;
+  gap: 12px;
   margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--el-border-color-lighter);
   font-size: 12px;
   color: var(--el-text-color-secondary);
+
+  &-sep {
+    width: 1px;
+    height: 14px;
+    background: var(--el-border-color-lighter);
+  }
 }
 .meta-item {
   display: inline-flex;
