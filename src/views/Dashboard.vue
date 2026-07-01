@@ -39,7 +39,11 @@
     <div v-if="isAll" class="health-section">
       <div class="section-head">
         <h3 class="section-title">系统健康概览</h3>
-        <span class="section-hint">点击系统卡片可快速切换查看</span>
+        <span class="section-hint">点击系统卡片可快速切换查看 · 异常数多的优先</span>
+        <span v-if="lastSyncedAt" class="section-sync">
+          <el-icon><Refresh /></el-icon>
+          {{ lastSyncedAt }} 已同步
+        </span>
       </div>
       <el-scrollbar ref="healthScrollRef" class="health-scroll" @wheel.prevent="onHealthWheel">
         <div class="health-track">
@@ -265,19 +269,21 @@
 </template>
 
 <script setup>
-import { computed, markRaw, ref, watch } from 'vue'
+import { computed, markRaw, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Upload, WarningFilled, Tickets, Back, Cpu, Connection, Document, Warning, FolderOpened } from '@element-plus/icons-vue'
+import { Plus, Upload, WarningFilled, Tickets, Back, Cpu, Connection, Document, Warning, FolderOpened, Refresh } from '@element-plus/icons-vue'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
 import { useExceptionStore } from '@/stores/exception'
-import { tasks } from '@/mock/seed-data'
+import { useTestTaskStore } from '@/stores/testTask'
+import { bus, EVENTS } from '@/utils/bus'
 import RemarkCell from '@/components/RemarkCell.vue'
 
 const router = useRouter()
 const systemStore = useSystemStore()
 const connStore = useConnectionStore()
 const exceptionStore = useExceptionStore()
+const taskStore = useTestTaskStore()
 const treeIcons = {
   cpu: markRaw(Cpu),
   connection: markRaw(Connection),
@@ -301,7 +307,7 @@ const onHealthWheel = (e) => {
 
 /* ========== 过滤 ========== */
 const visibleTasks = computed(() =>
-  isAll.value ? tasks : tasks.filter(t => t.systemId === currentId.value)
+  isAll.value ? taskStore.tasks : taskStore.tasks.filter(t => t.systemId === currentId.value)
 )
 const visibleAlerts = computed(() =>
   isAll.value ? exceptionStore.exceptions : exceptionStore.exceptions.filter(a => a.systemId === currentId.value)
@@ -402,6 +408,25 @@ const clearScope = () => {
 
 watch(currentId, clearScope)
 
+/* ========== 实时联动：执行/异常状态变化自动刷新 ========== */
+const lastSyncedAt = ref('')
+const formatNow = () => {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+}
+const markSynced = (source) => {
+  lastSyncedAt.value = `${formatNow()} (${source})`
+}
+const unsubs = []
+onMounted(() => {
+  markSynced('初始化')
+  unsubs.push(bus.on(EVENTS.TASK_RUN_FINISHED, () => markSynced('执行完成')))
+  unsubs.push(bus.on(EVENTS.TASK_RUN_STARTED,  () => markSynced('执行开始')))
+  unsubs.push(bus.on(EVENTS.EXCEPTION_CREATED,  () => markSynced('新异常')))
+  unsubs.push(bus.on(EVENTS.EXCEPTION_UPDATED,  () => markSynced('异常已处理')))
+})
+onBeforeUnmount(() => { unsubs.forEach((u) => u && u()) })
+
 const activeDomain = computed(() => selectedScope.value.domain || 'all')
 const scopeTitle = computed(() => {
   const scope = selectedScope.value
@@ -446,11 +471,15 @@ const systemCards = computed(() =>
       owner: sys.owner,
       moduleCount: mods.length,
       onlineCount: mods.filter(m => m.status === 'online').length,
-      taskCount: tasks.filter(t => t.systemId === sys.id).length,
+      taskCount: taskStore.tasks.filter(t => t.systemId === sys.id).length,
       alertCount: exceptionStore.exceptions.filter(a => a.systemId === sys.id).length,
       brokerCount: brokers.length,
       brokerHealthy,
     }
+  }).sort((a, b) => {
+    if (b.alertCount !== a.alertCount) return b.alertCount - a.alertCount
+    if (b.onlineCount !== a.onlineCount) return b.onlineCount - a.onlineCount
+    return a.name.localeCompare(b.name, 'zh-CN')
   })
 )
 
@@ -518,6 +547,27 @@ const stateTag = s => ({ '待处理': 'danger', '已处理': 'success', '已修�
 }
 .section-title { margin: 0; font-size: 15px; font-weight: 600; }
 .section-hint { font-size: 12px; color: var(--el-text-color-placeholder); }
+.section-sync {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--el-color-success);
+  background: var(--el-color-success-light-9);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-variant-numeric: tabular-nums;
+
+  .el-icon {
+    font-size: 12px;
+    animation: rotate 1s linear;
+  }
+}
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
 
 .health-scroll {
   :deep(.el-scrollbar__wrap) { overflow-y: hidden; }

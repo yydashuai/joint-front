@@ -24,3 +24,4 @@ docs
 
 # 本地开发脚本（与项目无关）
 .start-dev.bat
+.playwright-mcp
