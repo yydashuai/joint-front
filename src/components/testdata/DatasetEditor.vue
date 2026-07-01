@@ -74,6 +74,16 @@
       <div class="matrix-toolbar__left">
         <span class="matrix-title">数据矩阵</span>
         <el-tag size="small" type="info" effect="plain">{{ ds.rows.length }} 行</el-tag>
+        <el-tag v-if="fieldColumnCount" size="small" type="info" effect="plain">{{ fieldColumnCount }} 列</el-tag>
+        <el-tooltip content="总单元格数">
+          <el-tag size="small" type="info" effect="plain">{{ ds.rows.length * fieldColumnCount }} 格</el-tag>
+        </el-tooltip>
+        <el-tooltip v-if="editedCellCount > 0" content="相对默认值有变化的单元格数">
+          <el-tag size="small" type="warning" effect="plain">已编辑 {{ editedCellCount }}</el-tag>
+        </el-tooltip>
+        <el-tooltip v-if="outOfRangeCount > 0" content="超出约束范围的单元格数">
+          <el-tag size="small" type="danger" effect="dark">超限 {{ outOfRangeCount }}</el-tag>
+        </el-tooltip>
       </div>
       <div class="matrix-toolbar__right">
         <!-- 批量操作 -->
@@ -349,6 +359,35 @@ const dynamicFields = computed(() => {
     return Object.keys(d.rows[0].values).map(k => ({ name: k, constraint: null }))
   }
   return []
+})
+/* ========== 数据集统计 ========== */
+const fieldColumnCount = computed(() => dynamicFields.value.length)
+const editedCellCount = computed(() => {
+  const d = ds.value
+  if (!d.rows.length) return 0
+  let count = 0
+  for (const row of d.rows) {
+    for (const f of dynamicFields.value) {
+      const v = row.values?.[f.name]
+      if (v !== undefined && v !== null && v !== '' && v !== 0) count++
+    }
+  }
+  return count
+})
+const outOfRangeCount = computed(() => {
+  const d = ds.value
+  let count = 0
+  for (const row of d.rows) {
+    for (const f of dynamicFields.value) {
+      const c = f.constraint
+      if (!c) continue
+      const v = Number(row.values?.[f.name])
+      if (Number.isNaN(v)) continue
+      if (c.mode === 'range' && (v < c.min || v > c.max)) count++
+      else if (c.mode === 'enum' && !(c.entries || []).some(e => String(e.value ?? e) === String(v))) count++
+    }
+  }
+  return count
 })
 
 /* ========== 字段类型判断 ========== */
