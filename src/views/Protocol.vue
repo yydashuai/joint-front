@@ -24,7 +24,7 @@
 
       <div class="proto-detail">
         <!-- v2 协议摘要: 传输/编码/消息数 -->
-        <div v-if="selectedKind === 'protocol' && curProto" class="proto-summary">
+        <div v-if="selectedKind === 'protocol' && curProto && protoSummary.transport" class="proto-summary">
           <span class="proto-summary__chip">
             <el-icon><Promotion /></el-icon>
             <b>{{ protoSummary.transport.host || '—' }}</b>
@@ -167,9 +167,16 @@ if (!store.selectedInterfaceId) store.selectedInterfaceId = store.interfaces[0]?
 const curProto = computed(() => store.selectedProtocol)
 const curIf = computed(() => store.selectedInterface)
 
-// v2: 摘要 + 消息集合
-const protoSummary = computed(() => curProto.value ? (store.protocolSummary(curProto.value.id) || { transport: {}, encoding: 'unknown', messageCount: 0 }) : { transport: {}, encoding: 'unknown', messageCount: 0 })
-const protoMessages = computed(() => curProto.value ? store.protocolMessages(curProto.value.id) : [])
+// v2: 摘要 + 消息集合 (带防御默认值, 避免访问 undefined.transport)
+const EMPTY_SUMMARY = { transport: { host: '', port: '', tls: false }, encoding: 'unknown', messageCount: 0 }
+const protoSummary = computed(() => {
+  if (!curProto.value) return EMPTY_SUMMARY
+  return store.protocolSummary(curProto.value.id) || EMPTY_SUMMARY
+})
+const protoMessages = computed(() => {
+  if (!curProto.value) return []
+  return store.protocolMessages(curProto.value.id) || []
+})
 
 const msgDirLabel = (d) => ({ request: '请求', response: '响应', event: '事件', cmd: '命令' }[d] || d)
 const msgTagType = (d) => ({ request: 'primary', response: 'success', event: 'warning', cmd: 'info' }[d] || 'info')
