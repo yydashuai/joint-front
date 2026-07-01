@@ -8,9 +8,9 @@
           <div v-if="protocol.type === 'TCP'" class="fp-block">
             <div class="fp-label">拆包模式</div>
             <el-radio-group v-model="framing.mode" size="small" class="fp-radio-group">
-              <el-radio label="fixed">固定长度帧</el-radio>
-              <el-radio label="lengthField">长度域分包</el-radio>
-              <el-radio label="delimiter">分隔符分包</el-radio>
+              <el-radio value="fixed">固定长度帧</el-radio>
+              <el-radio value="lengthField">长度域分包</el-radio>
+              <el-radio value="delimiter">分隔符分包</el-radio>
             </el-radio-group>
 
             <!-- 固定长度 -->

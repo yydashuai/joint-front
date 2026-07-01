@@ -5,19 +5,39 @@
       <div class="proto-head">
         <el-input v-model="protocol.name" class="proto-name" placeholder="协议名称" />
         <div class="proto-head__right">
-          <span class="lbl">当前类型</span>
-          <el-select :model-value="protocol.type" style="width:100px" @change="(v) => $emit('switchType', v)">
-            <el-option v-for="t in PROTOCOL_TYPES" :key="t.value" :label="t.label" :value="t.value" />
-          </el-select>
-          <span class="lbl">字节序</span>
-          <el-select v-model="protocol.config.endian" style="width:120px">
-            <el-option v-for="e in ENDIANS" :key="e.value" :label="e.label" :value="e.value" />
-          </el-select>
-          <el-tooltip content="导入协议配置"><el-button :icon="Upload" @click="$emit('import')">导入</el-button></el-tooltip>
-          <el-tooltip content="导出协议配置"><el-button :icon="Download" @click="$emit('export')">导出</el-button></el-tooltip>
-          <el-tooltip content="保存当前协议配置"><el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button></el-tooltip>
+          <el-dropdown trigger="click" @command="onIoCommand">
+            <el-button :icon="Operation" plain>导入 / 导出</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="import" :icon="Upload">导入协议 JSON</el-dropdown-item>
+                <el-dropdown-item command="export" :icon="Download">导出当前协议</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-tooltip content="切换协议类型（会清空当前配置）">
+            <el-select :model-value="protocol.type" class="proto-type-sel" @change="(v) => $emit('switchType', v)">
+              <template #prefix><span class="proto-prefix">类型</span></template>
+              <el-option v-for="t in PROTOCOL_TYPES" :key="t.value" :label="t.label" :value="t.value" />
+            </el-select>
+          </el-tooltip>
+          <el-tooltip content="切换字节序">
+            <el-select v-model="protocol.config.endian" class="proto-endian-sel">
+              <template #prefix><span class="proto-prefix">字节序</span></template>
+              <el-option v-for="e in ENDIANS" :key="e.value" :label="e.label" :value="e.value" />
+            </el-select>
+          </el-tooltip>
+          <el-tooltip content="保存当前协议配置">
+            <el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button>
+          </el-tooltip>
+          <transition name="saved-hint-fade">
+            <span v-if="showSavedHint" class="saved-hint">
+              <el-icon><Check /></el-icon>已保存
+            </span>
+          </transition>
           <el-popconfirm title="删除该协议？" @confirm="$emit('delete')">
-            <template #reference><el-button :icon="Delete" plain>删除</el-button></template>
+            <template #reference>
+              <el-button :icon="Delete" plain>删除</el-button>
+            </template>
           </el-popconfirm>
         </div>
       </div>
@@ -37,12 +57,40 @@
       </el-select>
     </div>
 
-    <!-- ========== 总长度摘要 ========== -->
+    <!-- ========== 总长度摘要（实时预览） ========== -->
     <div class="summary-bar">
-      <span class="summary-bar__item">总长度：<b>{{ totalBytes }}</b> 字节</span>
-      <span class="summary-bar__item">字段数：<b>{{ topLevelFieldCount }}</b></span>
-      <span class="summary-bar__item">字节序：<b>{{ protocol.config.endian === 'big' ? '大端 BE' : '小端 LE' }}</b></span>
-      <span class="summary-bar__item">类型：<b>{{ protocol.type }}</b></span>
+      <span class="summary-bar__item">
+        <span class="summary-bar__lbl">总长度</span>
+        <b>{{ totalBytes }}</b>
+        <em>字节</em>
+      </span>
+      <span class="summary-bar__item">
+        <span class="summary-bar__lbl">字段</span>
+        <b>{{ topLevelFieldCount }}</b>
+        <em>个</em>
+      </span>
+      <span class="summary-bar__item">
+        <span class="summary-bar__lbl">最后偏移</span>
+        <b>{{ lastOffset }}</b>
+      </span>
+      <span class="summary-bar__sep" />
+      <span class="summary-bar__item">
+        <span class="summary-bar__lbl">字节序</span>
+        <b>{{ protocol.config.endian === 'big' ? '大端 BE' : '小端 LE' }}</b>
+      </span>
+      <span class="summary-bar__item">
+        <span class="summary-bar__lbl">类型</span>
+        <b>{{ protocol.type }}</b>
+      </span>
+      <span class="summary-bar__progress">
+        <el-progress
+          :percentage="frameUsagePct"
+          :color="frameUsagePct > 90 ? '#fa541c' : frameUsagePct > 60 ? '#faad14' : '#52c41a'"
+          :stroke-width="6"
+          :show-text="false"
+        />
+        <span class="summary-bar__progress-text">帧内占用 {{ frameUsagePct }}%</span>
+      </span>
     </div>
 
     <!-- ========== 帧结构 & 拆包规则 ========== -->
@@ -400,6 +448,11 @@ const props = defineProps({
 })
 const emit = defineEmits(['import', 'export', 'delete', 'save', 'systemChange', 'switchType'])
 
+const onIoCommand = (cmd) => {
+  if (cmd === 'import') emit('import')
+  if (cmd === 'export') emit('export')
+}
+
 const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
 
 // ─── 脏数据追踪 ───
@@ -412,9 +465,16 @@ watch(() => props.protocol.id, () => {
   snapshot.value = JSON.stringify(props.protocol)
   dirty.value = false
 }, { immediate: true })
+// ─── 保存提示（2.2 秒后自动消失） ───
+const showSavedHint = ref(false)
+let savedHintTimer = null
+onBeforeUnmount(() => { if (savedHintTimer) clearTimeout(savedHintTimer) })
 const markClean = () => {
   snapshot.value = JSON.stringify(props.protocol)
   dirty.value = false
+  showSavedHint.value = true
+  if (savedHintTimer) clearTimeout(savedHintTimer)
+  savedHintTimer = window.setTimeout(() => { showSavedHint.value = false }, 2200)
 }
 
 // ─── 数据类型分组 ───
@@ -433,6 +493,18 @@ const totalBytes = computed(() => {
   return computeTotalBytes(props.protocol.config.fields)
 })
 const topLevelFieldCount = computed(() => props.protocol.config.fields.length)
+// 最后偏移（按协议配置推断帧长度：固定长度模式用 fixedLength，否则用 totalBytes）
+const frameMaxBytes = computed(() => {
+  const framing = props.protocol.config.framing || {}
+  if (framing.mode === 'fixed' && framing.fixedLength) return Number(framing.fixedLength) || 0
+  return Math.max(totalBytes.value, 1024)
+})
+const lastOffset = computed(() => Math.max(0, totalBytes.value - 1))
+const frameUsagePct = computed(() => {
+  const max = frameMaxBytes.value
+  if (!max) return 0
+  return Math.min(100, Math.round((totalBytes.value / max) * 100))
+})
 
 // ─── 高亮字段（framing 引用） ───
 const highlightFieldId = ref(null)
@@ -912,6 +984,23 @@ defineExpose({ fillAllGaps, markClean })
 .proto-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .proto-name { max-width: 280px; :deep(.el-input__wrapper) { font-weight: 600; } }
 .proto-head__right { display: flex; align-items: center; gap: 8px; .lbl { font-size: 13px; color: var(--el-text-color-secondary); } }
+.proto-type-sel { width: 122px; }
+.proto-endian-sel { width: 132px; }
+.proto-prefix {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-right: 4px;
+  font-weight: 400;
+}
+.saved-hint {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--el-color-success);
+  background: var(--el-color-success-light-9);
+  padding: 2px 8px; border-radius: 10px;
+  .el-icon { font-size: 12px; }
+}
+.saved-hint-fade-enter-active, .saved-hint-fade-leave-active { transition: opacity 0.3s, transform 0.3s; }
+.saved-hint-fade-enter-from, .saved-hint-fade-leave-to { opacity: 0; transform: translateX(4px); }
 .field-label { font-size: 13px; font-weight: 500; color: var(--el-text-color-regular); margin-bottom: 4px; }
 .proto-desc { margin-bottom: 12px; }
 .meta-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -920,9 +1009,16 @@ defineExpose({ fillAllGaps, markClean })
 .meta-sel { width: 200px; }
 
 .summary-bar {
-  display: flex; gap: 20px; padding: 8px 12px; margin-bottom: 12px;
-  background: var(--el-fill-color-light); border-radius: 6px; font-size: 13px;
-  &__item { color: var(--el-text-color-secondary); b { color: var(--el-text-color-primary); } }
+  display: flex; align-items: center; gap: 18px; padding: 10px 14px; margin-bottom: 12px;
+  background: linear-gradient(90deg, var(--el-color-primary-light-9), var(--el-fill-color-light));
+  border: 1px solid var(--el-color-primary-light-6);
+  border-radius: 6px; font-size: 13px;
+  flex-wrap: wrap;
+  &__item { display: inline-flex; align-items: baseline; gap: 4px; color: var(--el-text-color-secondary); b { color: var(--el-color-primary); font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; } em { font-style: normal; font-size: 11px; } }
+  &__lbl { font-size: 11px; color: var(--el-text-color-placeholder); }
+  &__sep { width: 1px; height: 16px; background: var(--el-border-color-lighter); }
+  &__progress { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 200px; }
+  &__progress-text { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
 }
 
 .byte-tree {
