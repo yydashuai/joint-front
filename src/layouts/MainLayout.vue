@@ -63,6 +63,11 @@
           </el-menu-item>
         </el-menu>
         <div class="topbar__user">
+          <el-tooltip content="通知中心">
+            <el-badge :value="notificationCount" :hidden="!notificationCount" :max="99" class="topbar__notify">
+              <el-button circle size="small" :icon="Bell" @click="notifyDrawerVisible = true" />
+            </el-badge>
+          </el-tooltip>
           <el-tag size="small" type="success" effect="plain">在线</el-tag>
           <el-dropdown @command="onUserCommand">
             <span class="topbar__avatar">
@@ -95,23 +100,67 @@
     </div>
 
     <SystemManager v-model="systemManagerVisible" />
+    <el-drawer v-model="notifyDrawerVisible" title="通知中心" size="420px" @open="activeNotifyTab = 'alert'">
+      <div class="notify-panel">
+        <el-tabs v-model="activeNotifyTab" class="notify-tabs">
+          <el-tab-pane name="alert">
+            <template #label>
+              <span class="notify-tab-label">异常告警 <b>{{ alertNotificationItems.length }}</b></span>
+            </template>
+          </el-tab-pane>
+          <el-tab-pane name="offline">
+            <template #label>
+              <span class="notify-tab-label">离线告警 <b>{{ offlineNotificationItems.length }}</b></span>
+            </template>
+          </el-tab-pane>
+        </el-tabs>
+
+        <div v-if="visibleNotificationItems.length" class="notify-list">
+          <button
+            v-for="item in visibleNotificationItems"
+            :key="item.id"
+            type="button"
+            class="notify-item"
+            :class="`notify-item--${item.tone}`"
+            @click="jumpNotification(item)"
+          >
+            <span class="notify-item__dot" />
+            <span class="notify-item__main">
+              <strong>{{ item.title }}</strong>
+              <span>{{ item.desc }}</span>
+              <em>{{ item.time }}</em>
+            </span>
+          </button>
+        </div>
+
+        <el-empty v-else :description="notifyEmptyText" :image-size="72" />
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Setting, User, Lock, SwitchButton } from '@element-plus/icons-vue'
+import { Bell, Setting, User, Lock, SwitchButton } from '@element-plus/icons-vue'
 import SystemManager from '@/components/SystemManager.vue'
 import { navRoutes } from '@/router'
 import { useSystemStore } from '@/stores/system'
 import { useAuthStore } from '@/stores/auth'
+import { useConnectionStore } from '@/stores/connection'
+import { useExceptionStore } from '@/stores/exception'
+import { useConfigStore } from '@/stores/config'
 
 const route = useRoute()
 const router = useRouter()
 const systemStore = useSystemStore()
 const authStore = useAuthStore()
+const connStore = useConnectionStore()
+const exceptionStore = useExceptionStore()
+const configStore = useConfigStore()
 const systemManagerVisible = ref(false)
+const notifyDrawerVisible = ref(false)
+const activeNotifyTab = ref('alert')
 const ALL_SYSTEM_KEY = '__all__'
 
 const isActive = (item) => route.path === item.path
@@ -127,6 +176,65 @@ const currentSystemKey = computed({
   get: () => systemStore.currentId ?? ALL_SYSTEM_KEY,
   set: (id) => systemStore.setCurrent(id === ALL_SYSTEM_KEY ? null : id)
 })
+
+const systemName = (id) => systemStore.systems.find((item) => item.id === id)?.name || '未归属系统'
+const moduleName = (id) => connStore.nodes.find((item) => item.id === id)?.name || '未归属模块'
+const inCurrentScope = (systemId) => systemStore.currentId == null || systemId === systemStore.currentId
+
+const alertNotificationItems = computed(() => {
+  if (!configStore.notification.alertNotify) return []
+  return exceptionStore.exceptions
+    .filter((item) => inCurrentScope(item.systemId))
+    .filter((item) => item.state === '待处理')
+    .map((item) => ({
+      id: `alert-${item.id}`,
+      kind: 'alert',
+      tone: item.level === '高' ? 'danger' : 'warning',
+      title: `${item.level}级 ${item.type}`,
+      desc: `${systemName(item.systemId)} / ${moduleName(item.moduleId)} / ${item.iface}`,
+      time: item.capturedTime || '待记录',
+      target: item,
+    }))
+})
+
+const offlineNotificationItems = computed(() => {
+  if (!configStore.notification.offlineNotify) return []
+  return connStore.nodes
+    .filter((item) => inCurrentScope(item.systemId))
+    .filter((item) => item.status === 'offline')
+    .map((item) => ({
+      id: `offline-${item.id}`,
+      kind: 'offline',
+      tone: 'offline',
+      title: `${item.name} 链路不通`,
+      desc: `${systemName(item.systemId)} / ${item.ip}:${item.port}`,
+      time: '自动检测',
+      target: item,
+    }))
+})
+
+const visibleNotificationItems = computed(() =>
+  activeNotifyTab.value === 'alert' ? alertNotificationItems.value : offlineNotificationItems.value
+)
+
+const notifyEmptyText = computed(() => {
+  if (activeNotifyTab.value === 'alert') {
+    return configStore.notification.alertNotify ? '当前范围暂无异常告警' : '异常告警通知已关闭'
+  }
+  return configStore.notification.offlineNotify ? '当前范围暂无离线告警' : '离线告警通知已关闭'
+})
+
+const notificationCount = computed(() => alertNotificationItems.value.length + offlineNotificationItems.value.length)
+
+const jumpNotification = (item) => {
+  notifyDrawerVisible.value = false
+  if (item.kind === 'alert') {
+    router.push({ path: '/exception', query: { id: item.target.id } })
+    return
+  }
+  systemStore.setCurrent(item.target.systemId || null)
+  router.push('/connection')
+}
 
 /** 用户下拉菜单命令处理 */
 const onUserCommand = (cmd) => {
@@ -266,6 +374,14 @@ const onUserCommand = (cmd) => {
     border-bottom: none !important;
     overflow: hidden;
   }
+  &__notify {
+    :deep(.el-badge__content) {
+      font-size: 10px;
+      height: 16px;
+      min-width: 16px;
+      line-height: 16px;
+    }
+  }
   &__user { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
   &__avatar {
     display: inline-flex;
@@ -298,4 +414,88 @@ const onUserCommand = (cmd) => {
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.15s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.notify-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.notify-tabs {
+  flex-shrink: 0;
+  :deep(.el-tabs__header) {
+    margin: 0;
+  }
+  :deep(.el-tabs__content) {
+    display: none;
+  }
+}
+.notify-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.notify-tab-label b {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+.notify-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.notify-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .16s, background .16s;
+}
+.notify-item:hover {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-fill-color-extra-light);
+}
+.notify-item__dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--el-color-warning);
+}
+.notify-item--danger .notify-item__dot { background: var(--el-color-danger); }
+.notify-item--offline .notify-item__dot { background: var(--el-text-color-placeholder); }
+.notify-item__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.notify-item__main strong {
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+}
+.notify-item__main span {
+  overflow: hidden;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notify-item__main em {
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+  font-style: normal;
+}
 </style>

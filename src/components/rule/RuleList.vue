@@ -69,7 +69,7 @@
               <el-tooltip content="编辑该规则"><el-button link type="primary" size="small" @click="$emit('edit', row)">编辑</el-button></el-tooltip>
               <el-tooltip content="跳转到关联的协议配置"><el-button v-if="row.target?.interfaceId" link type="primary" size="small" @click="$emit('jump-protocol', row.target.interfaceId)">协议</el-button></el-tooltip>
               <el-popconfirm title="确认删除该规则？" @confirm="store.removeRule(ruleSet.id, row.id)">
-                <template #reference><el-button link type="danger" size="small">删</el-button></template>
+                <template #reference><el-button link type="danger" size="small">删除</el-button></template>
               </el-popconfirm>
             </template>
           </el-table-column>

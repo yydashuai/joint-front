@@ -127,19 +127,20 @@ import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import ModelConfig from '@/components/report/ModelConfig.vue'
 import { useExceptionStore } from '@/stores/exception'
-import { systemConfig as seedConfig } from '@/mock/users'
+import { useConfigStore } from '@/stores/config'
 
 const activeTab = ref('system')
 const exceptionStore = useExceptionStore()
-const netConfig = reactive({ ...seedConfig.network })
-const logConfig = reactive({ ...seedConfig.log })
-const notifConfig = reactive({ ...seedConfig.notification })
+const configStore = useConfigStore()
+const netConfig = reactive({ ...configStore.network })
+const logConfig = reactive({ ...configStore.log })
+const notifConfig = reactive(configStore.notification)
 const exceptionConfig = reactive({ ...exceptionStore.settings })
 
 const onSaveConfig = (group) => {
-  if (group === 'network') Object.assign(seedConfig.network, netConfig)
-  if (group === 'log') Object.assign(seedConfig.log, logConfig)
-  if (group === 'notification') Object.assign(seedConfig.notification, notifConfig)
+  if (group === 'network') configStore.saveGroup('network', netConfig)
+  if (group === 'log') configStore.saveGroup('log', logConfig)
+  if (group === 'notification') configStore.saveGroup('notification', notifConfig)
   if (group === 'exception') exceptionStore.updateExceptionSettings(exceptionConfig)
   ElMessage.success('配置已保存')
 }

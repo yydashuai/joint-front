@@ -72,7 +72,7 @@
     <!-- ======== 数据矩阵工具栏 ======== -->
     <div class="matrix-toolbar">
       <div class="matrix-toolbar__left">
-        <span class="matrix-title">数据矩阵</span>
+        <span class="matrix-title">本次数据矩阵</span>
         <el-tag size="small" type="info" effect="plain">{{ ds.rows.length }} 行</el-tag>
       </div>
       <div class="matrix-toolbar__right">
@@ -120,18 +120,20 @@
 
     <!-- ======== 数据矩阵表格 (核心) ======== -->
     <div v-else class="ds-matrix">
-      <el-table
-        ref="tableRef"
-        :data="displayRows"
-        size="small"
-        border
-        row-key="id"
-        :row-class-name="rowClassName"
-        @selection-change="onSelectionChange"
-        @row-contextmenu="onRowContextMenu"
-        style="width: 100%;"
-        :max-height="tableMaxHeight"
-      >
+      <div class="matrix-table-shell">
+        <el-table
+          ref="tableRef"
+          class="matrix-table"
+          :data="displayRows"
+          size="small"
+          border
+          row-key="id"
+          :row-class-name="rowClassName"
+          @selection-change="onSelectionChange"
+          @row-contextmenu="onRowContextMenu"
+          style="width: 100%;"
+          height="100%"
+        >
         <!-- 选择列 (优化点 2) -->
         <el-table-column type="selection" width="40" fixed="left" align="center" />
         <!-- 拖拽手柄列 (优化点 3) -->
@@ -229,16 +231,90 @@
         <el-table-column label="" width="50" align="center" fixed="right">
           <template #default="{ row }">
             <el-popconfirm title="确认删除该行？" @confirm="tdStore.removeRow(ds.id, row.id)">
-              <template #reference><el-button type="danger" text size="small" :icon="Delete" /></template>
+              <template #reference><el-button class="row-delete-btn" type="danger" text size="small" :icon="Delete" /></template>
             </el-popconfirm>
           </template>
         </el-table-column>
-      </el-table>
+        </el-table>
+      </div>
 
       <el-tooltip content="添加一行新的测试数据 (Ctrl+N)"><el-button class="add-row-btn" text type="primary" :icon="Plus" @click="onAddRow">
         添加测试行
         <span class="shortcut-hint">Ctrl+N</span>
       </el-button></el-tooltip>
+    </div>
+
+    <div v-if="dynamicFields.length" class="history-section">
+      <div class="history-toolbar">
+        <div class="history-toolbar__left">
+          <span class="matrix-title">历史数据</span>
+          <el-tag size="small" type="info" effect="plain">{{ historyRows.length }} 行</el-tag>
+          <el-tag size="small" type="success" effect="plain">第二种数据输入方式</el-tag>
+        </div>
+        <div class="history-toolbar__right">
+          <template v-if="selectedHistoryRows.length > 0">
+            <el-tag size="small" type="warning" effect="plain">已选 {{ selectedHistoryRows.length }} 行</el-tag>
+            <el-button size="small" type="primary" @click="onUseHistoryRows">带入本次数据</el-button>
+            <el-popconfirm :title="`确认删除 ${selectedHistoryRows.length} 条历史数据？`" @confirm="onDeleteSelectedHistoryRows">
+              <template #reference>
+                <el-button size="small" text type="danger" :icon="Delete">删除选中</el-button>
+              </template>
+            </el-popconfirm>
+          </template>
+        </div>
+      </div>
+
+      <div class="history-table-shell">
+        <el-table
+          ref="historyTableRef"
+          class="matrix-table history-table"
+          :data="historyRows"
+          size="small"
+          border
+          row-key="id"
+          empty-text="暂无历史数据"
+          style="width: 100%;"
+          height="100%"
+          @selection-change="onHistorySelectionChange"
+        >
+          <el-table-column type="selection" width="40" fixed="left" align="center" />
+          <el-table-column type="index" width="48" align="center" label="#" fixed="left" />
+          <el-table-column label="行标签" width="170" fixed="left" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="readonly-cell">{{ row.label }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column
+            v-for="field in dynamicFields"
+            :key="`history-${field.name}`"
+            :min-width="fieldColWidth(field)"
+            :class-name="isFieldFixed(field) ? 'fixed-col' : ''"
+            show-overflow-tooltip
+          >
+            <template #header>
+              <div class="field-col-header">
+                <div class="field-col-header__name">
+                  <el-icon v-if="isFieldFixed(field)" class="lock-icon"><Lock /></el-icon>
+                  {{ field.name }}
+                </div>
+                <div class="field-col-header__type">{{ fieldHint(field) }}</div>
+              </div>
+            </template>
+            <template #default="{ row }">
+              <span class="readonly-cell">{{ readonlyCellValue(row, field) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="" width="56" align="center" fixed="right">
+            <template #default="{ row }">
+              <el-popconfirm title="确认删除该历史数据？" @confirm="onDeleteHistoryRow(row)">
+                <template #reference>
+                  <el-button class="row-delete-btn" type="danger" text size="small" :icon="Delete" />
+                </template>
+              </el-popconfirm>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
     </div>
 
     <!-- ======== 数据预览 (优化点 24: 复制按钮) ======== -->
@@ -348,6 +424,9 @@ const dynamicFields = computed(() => {
   if (d.rows.length) {
     return Object.keys(d.rows[0].values).map(k => ({ name: k, constraint: null }))
   }
+  if (d.historyRows?.length) {
+    return Object.keys(d.historyRows[0].values).map(k => ({ name: k, constraint: null }))
+  }
   return []
 })
 
@@ -371,6 +450,13 @@ const fieldHint = (f) => {
   if (f.dataType) return f.dataType
   if (f.type) return f.type
   return ''
+}
+
+const readonlyCellValue = (row, field) => {
+  const value = row.values?.[field.name]
+  if (value !== undefined && value !== null && value !== '') return value
+  if (isFieldFixed(field)) return field.constraint.value
+  return '—'
 }
 
 /* ========== 单元格校验 (优化点 6) ========== */
@@ -424,6 +510,37 @@ const onBatchDelete = () => {
   tdStore.removeRowsBatch(ds.value.id, selectedRows.value.map(r => r.id))
   selectedRows.value = []
   ElMessage.success('已删除选中行')
+}
+
+const historyTableRef = ref(null)
+const selectedHistoryRows = ref([])
+const historyRows = computed(() => ds.value.historyRows || [])
+const onHistorySelectionChange = (rows) => { selectedHistoryRows.value = rows }
+
+const onUseHistoryRows = () => {
+  if (selectedHistoryRows.value.length === 0) return
+  const count = selectedHistoryRows.value.length
+  const lastSelected = selectedRows.value[selectedRows.value.length - 1]
+  tdStore.insertRowsAfter(ds.value.id, lastSelected?.id ?? null, selectedHistoryRows.value)
+  selectedHistoryRows.value = []
+  historyTableRef.value?.clearSelection?.()
+  nextTick(() => takeSnapshot())
+  ElMessage.success(`已带入 ${count} 行历史数据`)
+}
+
+const onDeleteHistoryRow = (row) => {
+  tdStore.removeHistoryRow(ds.value.id, row.id)
+  selectedHistoryRows.value = selectedHistoryRows.value.filter(item => item.id !== row.id)
+  ElMessage.success('历史数据已删除')
+}
+
+const onDeleteSelectedHistoryRows = () => {
+  const count = selectedHistoryRows.value.length
+  if (!count) return
+  tdStore.removeHistoryRowsBatch(ds.value.id, selectedHistoryRows.value.map(r => r.id))
+  selectedHistoryRows.value = []
+  historyTableRef.value?.clearSelection?.()
+  ElMessage.success(`已删除 ${count} 条历史数据`)
 }
 
 /* ========== 行剪贴板 + 右键菜单 ========== */
@@ -556,9 +673,12 @@ const onClearRows = () => {
 }
 
 watch(() => ds.value.id, () => {
+  tdStore.ensureHistoryRows(ds.value.id)
   nextTick(() => takeSnapshot())
   rowSearch.value = ''
   selectedRows.value = []
+  selectedHistoryRows.value = []
+  historyTableRef.value?.clearSelection?.()
 }, { immediate: true })
 
 /* ========== 拖拽排序 (优化点 3) ========== */
@@ -673,9 +793,6 @@ const copyJson = async () => {
     ElMessage.error('复制失败，请手动选中复制')
   }
 }
-
-/* ========== 表格高度 (优化点 17) ========== */
-const tableMaxHeight = ref(400)
 
 /* ========== 快捷键 (优化点 21) ========== */
 const onKeydown = (e) => {
@@ -839,9 +956,74 @@ const onKeydown = (e) => {
 /* ======== 数据矩阵 ======== */
 .ds-matrix {
   flex: 1;
-  min-height: 0;
+  min-height: 300px;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.matrix-table-shell {
+  flex: 1;
+  min-height: 200px;
+  overflow: hidden;
+}
+
+.matrix-table {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+}
+
+.ds-matrix :deep(.el-table__inner-wrapper),
+.ds-matrix :deep(.el-table__body-wrapper) {
+  min-height: 0;
+}
+
+.ds-matrix :deep(.el-scrollbar__bar.is-horizontal),
+.ds-matrix :deep(.el-scrollbar__bar.is-vertical) {
+  opacity: 1;
+}
+
+.history-section {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 280px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  padding-top: 12px;
+}
+
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  &__left,
+  &__right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+}
+
+.history-table-shell {
+  height: 240px;
+  min-height: 220px;
+  overflow: hidden;
+}
+
+.history-table :deep(.el-table__inner-wrapper),
+.history-table :deep(.el-table__body-wrapper) {
+  min-height: 0;
+}
+
+.readonly-cell {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 /* 拖拽手柄 */
@@ -911,6 +1093,16 @@ const onKeydown = (e) => {
   color: var(--el-text-color-secondary);
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 13px;
+}
+
+.row-delete-btn {
+  min-width: 24px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.row-delete-btn :deep(.el-icon) {
+  margin: 0;
 }
 
 /* 单元格无效 (优化点 6) */
