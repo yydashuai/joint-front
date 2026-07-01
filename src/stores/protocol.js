@@ -528,7 +528,72 @@ export const useProtocolStore = defineStore('protocol', {
     protocolOptions: (s) => s.protocols.map((p) => ({ label: p.name, value: p.id })),
     selectedProtocol: (s) => s.protocols.find((p) => p.id === s.selectedProtocolId) || null,
     selectedInterface: (s) => s.interfaces.find((i) => i.id === s.selectedInterfaceId) || null,
-    protocolName: (s) => (id) => s.protocols.find((p) => p.id === id)?.name || '—'
+    protocolName: (s) => (id) => s.protocols.find((p) => p.id === id)?.name || '—',
+
+    /**
+     * v2: 提取协议下的所有消息(操作/命令/事件)
+     * 优先返回 protocol.messages; 若为空, 从 v1 config 兜底提取:
+     *   - HTTP: responses[] 里的每个 statusCode + bodyFields
+     *   - gRPC: requestMessage + responseMessage
+     *   - MQ:   messageBody (整体作为一个 message)
+     *   - TCP/UDP binary: 不在 v1 范围, 空数组
+     */
+    protocolMessages: (s) => (id) => {
+      const p = s.protocols.find((x) => x.id === id)
+      if (!p) return []
+      if (Array.isArray(p.messages) && p.messages.length) return p.messages
+      // 兜底: 从 v1 config 提取
+      const cfg = p.config || {}
+      const fallback = []
+      if (p.type === 'HTTP') {
+        const method = cfg.method || 'GET'
+        const path = cfg.path || '/'
+        const req = { id: uid(), name: `${method} ${path}`, direction: 'request', desc: 'HTTP 请求', http: { method, path, contentType: cfg.contentType }, fields: cfg.pathParams?.concat(cfg.queryParams || []).concat(cfg.requestBody?.fields || []).map(migrateV1Param) || [] }
+        fallback.push(req)
+        if (Array.isArray(cfg.responses)) {
+          for (const r of cfg.responses) {
+            fallback.push({ id: uid(), name: `响应 ${r.statusCode}`, direction: 'response', desc: r.desc || `HTTP ${r.statusCode}`, http: { method, path, contentType: r.headers?.find(h => h.key === 'Content-Type')?.value || cfg.contentType }, fields: (r.bodyFields || []).map(migrateV1Param) })
+          }
+        }
+      } else if (p.type === 'gRPC') {
+        const svc = cfg.serviceName || 'Service'
+        const mth = cfg.methodName || 'Method'
+        fallback.push({ id: uid(), name: `${svc}.${mth} (请求)`, direction: 'request', desc: 'gRPC 请求消息', grpc: { serviceName: svc, methodName: mth, streaming: cfg.streamingMode }, fields: (cfg.requestMessage || []).map(migrateV1Param) })
+        fallback.push({ id: uid(), name: `${svc}.${mth} (响应)`, direction: 'response', desc: 'gRPC 响应消息', grpc: { serviceName: svc, methodName: mth, streaming: cfg.streamingMode }, fields: (cfg.responseMessage || []).map(migrateV1Param) })
+      } else if (p.type === 'MQ') {
+        const topic = cfg.topic || cfg.queueName || ''
+        const op = cfg.exchangeName ? 'publish' : (cfg.queueName ? 'subscribe' : 'publish')
+        fallback.push({ id: uid(), name: topic || '消息', direction: op === 'publish' ? 'cmd' : 'event', desc: `${cfg.brokerType || 'MQ'} 消息`, mqtt: { qos: cfg.qos ?? 0, retain: false, topic }, fields: (cfg.messageBody || []).map(migrateV1Param) })
+      } else if (p.type === 'TCP' || p.type === 'UDP') {
+        // 二进制协议: v1 没有"操作"概念, v2 设计稿建议按 code 区分
+        // 暂时从 framing.fixedLength 和 fields 推断一个默认 message
+        const fixedLen = cfg.framing?.fixedLength || (cfg.fields?.length || 0)
+        fallback.push({ id: uid(), name: '默认帧', direction: 'event', desc: '二进制协议帧 (v1 暂用单 message, 后续按 code 拆分)', code: 0, fields: (cfg.fields || []).map(migrateV1Param) })
+      }
+      return fallback
+    },
+
+    /**
+     * v2: 协议头部"传输与编码"配置(用于 Protocol.vue 头部摘要)
+     * 返回 { transport, encoding, framing, messageCount }
+     */
+    protocolSummary: (s) => (id) => {
+      const p = s.protocols.find((x) => x.id === id)
+      if (!p) return null
+      const cfg = p.config || {}
+      const transport = {
+        host: cfg.host || cfg.brokerAddress || cfg.serverAddress || '',
+        port: cfg.port || '',
+        tls: cfg.tls?.enabled || false,
+      }
+      const encodingMap = { TCP: 'binary', UDP: 'binary', HTTP: 'json', gRPC: 'protobuf', MQ: 'json' }
+      const messageCount = (p.messages?.length) ||
+        (p.type === 'HTTP' ? 1 + (cfg.responses?.length || 0) :
+         p.type === 'gRPC' ? 2 :
+         p.type === 'MQ' ? 1 :
+         p.type === 'TCP' || p.type === 'UDP' ? 1 : 0)
+      return { transport, encoding: encodingMap[p.type] || 'unknown', framing: cfg.framing, messageCount }
+    },
   },
 
   actions: {
@@ -567,6 +632,11 @@ export const useProtocolStore = defineStore('protocol', {
         moduleId: p.moduleId ?? null,
         desc: p.desc || '',
         config: p.config || makeConfig(type),
+        // v2: 协议下的消息集合。HTTP/gRPC/MQ 一个协议可有多个
+        // message(每个对应一个 method+path / service.method / topic),
+        // TCP/UDP 二进制协议用 message.code 区分命令码。
+        // v1 模式下该字段可为空, 由 UI 从 interfaces/config 提取展示。
+        messages: p.messages || [],
       }
       // 兼容旧种子数据：确保 TCP/UDP config 有 framing/checksum
       if (isByteStream(type)) {
