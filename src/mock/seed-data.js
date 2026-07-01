@@ -343,7 +343,7 @@ export const protocols = [
         { id: pid(), name: 'aircraftId', dataType: 'int32', required: true, constraint: { mode: 'range', min: 1, max: 9999, value: 0 }, desc: '飞机编号', children: [] },
         { id: pid(), name: 'pylonNo', dataType: 'int32', required: true, constraint: { mode: 'range', min: 1, max: 12, value: 0 }, desc: '挂点号', children: [] },
         { id: pid(), name: 'changeType', dataType: 'utf8', required: true, constraint: { mode: 'enum', entries: [{ value: 'mount', label: '挂载' }, { value: 'unmount', label: '卸载' }, { value: 'replace', label: '更换' }] }, desc: '变更类型', children: [] },
-        { id: pid(), name: 'payload', dataType: '共识体', required: true, constraint: { mode: 'none' }, desc: '载荷信息', children: [
+        { id: pid(), name: 'payload', dataType: 'struct', required: true, constraint: { mode: 'none' }, desc: '载荷信息（共识体）', children: [
           { id: pid(), name: 'loadType', dataType: 'int32', required: true, constraint: { mode: 'range', min: 0, max: 5, value: 0 }, desc: '载荷类型', children: [] },
           { id: pid(), name: 'weight', dataType: 'int32', required: true, constraint: { mode: 'range', min: 0, max: 9999, value: 0 }, desc: '重量 kg', children: [] },
           { id: pid(), name: 'locked', dataType: 'uint8', required: true, constraint: { mode: 'none' }, desc: '是否锁定', children: [] },
@@ -723,12 +723,12 @@ export const protocols = [
         { id: pid(), name: 'systemId', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '来源系统 ID', children: [] },
         { id: pid(), name: 'level', dataType: 'utf8', required: true, constraint: { mode: 'enum', entries: [{ value: 'high', label: '高' }, { value: 'medium', label: '中' }, { value: 'low', label: '低' }] }, desc: '告警等级', children: [] },
         { id: pid(), name: 'category', dataType: 'utf8', required: true, constraint: { mode: 'enum', entries: [{ value: 'field_overflow', label: '字段越界' }, { value: 'timeout', label: '响应超时' }, { value: 'format_error', label: '格式错误' }, { value: 'link_down', label: '链路中断' }] }, desc: '告警类别', children: [] },
-        { id: pid(), name: 'detail', dataType: '共识体', required: true, constraint: { mode: 'none' }, desc: '告警详情', children: [
+        { id: pid(), name: 'detail', dataType: 'struct', required: true, constraint: { mode: 'none' }, desc: '告警详情（共识体）', children: [
           { id: pid(), name: 'interfaceName', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '关联接口名称', children: [] },
           { id: pid(), name: 'fieldPath', dataType: 'utf8', required: false, constraint: { mode: 'none' }, desc: '异常字段路径', children: [] },
           { id: pid(), name: 'message', dataType: 'utf8', required: true, constraint: { mode: 'length', minLen: 1, maxLen: 1024 }, desc: '告警描述', children: [] },
         ]},
-        { id: pid(), name: 'tags', dataType: '共识体', required: false, constraint: { mode: 'none' }, desc: '标签列表', children: [] },
+        { id: pid(), name: 'tags', dataType: 'struct', required: false, constraint: { mode: 'none' }, desc: '标签列表（共识体）', children: [] },
       ],
       messageHeaders: [
         { id: pid(), key: 'kafka_key', dataType: 'utf8', required: true, defaultValue: '', desc: 'Kafka 分区键' },
@@ -750,7 +750,7 @@ export const protocols = [
       messageBody: [
         { id: pid(), name: 'trackId', dataType: 'int32', required: true, constraint: { mode: 'range', min: 1, max: 65535, value: 0 }, desc: '航迹编号', children: [] },
         { id: pid(), name: 'timestamp', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '采集时间', children: [] },
-        { id: pid(), name: 'position', dataType: '共识体', required: true, constraint: { mode: 'none' }, desc: '位置信息', children: [
+        { id: pid(), name: 'position', dataType: 'struct', required: true, constraint: { mode: 'none' }, desc: '位置信息（共识体）', children: [
           { id: pid(), name: 'azimuth', dataType: 'float32', required: true, constraint: { mode: 'range', min: 0, max: 360, value: 0 }, desc: '方位角 °', children: [] },
           { id: pid(), name: 'elevation', dataType: 'float32', required: true, constraint: { mode: 'range', min: -90, max: 90, value: 0 }, desc: '俯仰角 °', children: [] },
           { id: pid(), name: 'distance', dataType: 'float32', required: true, constraint: { mode: 'range', min: 0, max: 500000, value: 0 }, desc: '距离 m', children: [] },
@@ -780,7 +780,7 @@ export const protocols = [
         { id: pid(), name: 'timestamp', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '更新时间', children: [] },
         { id: pid(), name: 'areaId', dataType: 'utf8', required: true, constraint: { mode: 'none' }, desc: '区域编号', children: [] },
         { id: pid(), name: 'changeType', dataType: 'utf8', required: true, constraint: { mode: 'enum', entries: [{ value: 'add', label: '新增目标' }, { value: 'update', label: '更新目标' }, { value: 'remove', label: '移除目标' }] }, desc: '变更类型', children: [] },
-        { id: pid(), name: 'entities', dataType: '共识体', required: true, constraint: { mode: 'none' }, desc: '变更实体列表', children: [
+        { id: pid(), name: 'entities', dataType: 'struct', required: true, constraint: { mode: 'none' }, desc: '变更实体列表（共识体）', children: [
           { id: pid(), name: 'entityId', dataType: 'int32', required: true, constraint: { mode: 'range', min: 1, max: 65535, value: 0 }, desc: '实体编号', children: [] },
           { id: pid(), name: 'type', dataType: 'utf8', required: true, constraint: { mode: 'enum', entries: [{ value: 'friendly', label: '友军' }, { value: 'hostile', label: '敌方' }, { value: 'neutral', label: '中性' }] }, desc: '实体类型', children: [] },
           { id: pid(), name: 'lat', dataType: 'float64', required: true, constraint: { mode: 'range', min: -90, max: 90, value: 0 }, desc: '纬度', children: [] },

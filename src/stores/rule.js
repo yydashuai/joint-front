@@ -202,8 +202,8 @@ export const useRuleStore = defineStore('rule', {
             dataType: field.type === '常量' ? field.dataType : field.type,
             enumValues: field.constraint?.mode === 'enum' ? field.constraint.entries : [],
           }
-          // 共识体字段：自动提取子结构
-          if (field.type === '共识体' && field.children?.length) {
+          // 共识体字段：自动提取子结构（支持新名称 struct 和旧名称 共识体）
+          if ((field.type === 'struct' || field.type === '共识体') && field.children?.length) {
             typeParams.structFields = extractStructFields(field.children)
           }
           preview.push(makeGeneratedRule(iface, field, 'type', typeParams))
@@ -224,9 +224,11 @@ export const useRuleStore = defineStore('rule', {
           }, 'warning'))
         }
         if (selectedTypes.includes('overflow')) {
+          // 位组序流(bitstream)的最大长度默认为 256
+          const isBitstream = field.type === 'bitstream' || field.type === '位组序流'
           preview.push(makeGeneratedRule(iface, field, 'overflow', {
             required: true,
-            maxLength: field.type === '位组序流' ? 256 : 64,
+            maxLength: isBitstream ? 256 : 64,
           }))
         }
       })
@@ -298,7 +300,8 @@ function makeGeneratedRule(iface, field, type, params = {}, level = 'error') {
 
 function describeGeneratedRule(type, field, params) {
   if (type === 'type') {
-    if (params.dataType === '共识体' && params.structFields?.length) {
+    // 支持新名称 struct 和旧名称 共识体
+    if ((params.dataType === 'struct' || params.dataType === '共识体') && params.structFields?.length) {
       return `${field.fieldPath} 必须符合共识体结构（${params.structFields.length} 个子字段）`
     }
     return `${field.fieldPath} 必须符合 ${params.dataType}`

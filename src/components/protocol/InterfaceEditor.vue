@@ -71,19 +71,22 @@
       </div>
     </el-scrollbar>
 
-    <!-- 字段编辑弹窗 (v2 类型: scalar/bytes/struct/array/file) -->
-    <el-dialog v-model="nodeDlg" title="编辑字段" width="460px">
-      <el-form v-if="editing" label-width="88px">
+    <!-- 字段编辑弹窗 (五类数据规则: scalar/bitstream/struct/matrix/file) -->
+    <el-dialog v-model="nodeDlg" title="编辑字段" width="500px">
+      <el-form v-if="editing" label-width="100px">
         <el-form-item label="字段名"><el-input v-model="editing.name" placeholder="如 deviceId" /></el-form-item>
-        <el-form-item label="字段类型">
+        <el-form-item label="数据规则类别">
           <el-select v-model="editing.type" class="w-full" @change="onTypeChange(editing)">
-            <el-option v-for="t in FIELD_TYPES" :key="t.value" :value="t.value">
-              <span style="float: left">{{ t.label }}</span>
-              <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px">{{ t.desc }}</span>
+            <el-option v-for="t in DATA_RULE_CATEGORIES" :key="t.value" :value="t.value">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <el-icon :style="{ color: t.color }"><component :is="t.icon" /></el-icon>
+                <span style="font-weight: 500;">{{ t.label }}</span>
+                <span style="color: var(--el-text-color-secondary); font-size: 12px; margin-left: auto;">{{ t.desc }}</span>
+              </div>
             </el-option>
           </el-select>
         </el-form-item>
-        <el-form-item v-if="editing.type === 'scalar'" label="编码方式">
+        <el-form-item v-if="editing.type === 'scalar'" label="数据类型">
           <el-select v-model="editing.encoding" class="w-full" filterable>
             <el-option-group
               v-for="grp in groupedScalarEncodings"
@@ -93,17 +96,23 @@
               <el-option v-for="s in grp.items" :key="s.value" :label="s.label" :value="s.value" />
             </el-option-group>
           </el-select>
+          <div class="form-tip">标量：单一数值，选择具体数据类型（整数/浮点/字符等）</div>
         </el-form-item>
-        <el-form-item v-if="editing.type === 'bytes'" label="绑定协议">
+        <el-form-item v-if="editing.type === 'bitstream'" label="绑定协议">
           <el-select v-model="editing.protocolRef" class="w-full" placeholder="选择解析协议" clearable>
             <el-option v-for="o in protocolOptions" :key="o.value" :label="o.label" :value="o.value" />
           </el-select>
+          <div class="form-tip">位组序流：连续二进制位序列，需绑定协议进行字节/位级解析</div>
         </el-form-item>
-        <el-form-item v-if="editing.type === 'struct' || editing.type === 'array'" label="提示">
-          <span class="muted">保存后, 树上的「+」可为 {{ editing.type === 'struct' ? '结构体' : '数组' }} 添加子字段</span>
+        <el-form-item v-if="editing.type === 'struct'" label="提示">
+          <span class="muted">共识体：多字段结构化数据块，保存后通过树上的「+」添加子字段，最终都落到标量</span>
+        </el-form-item>
+        <el-form-item v-if="editing.type === 'matrix'" label="提示">
+          <span class="muted">结构矩阵：二维表格数据，保存后通过树上的「+」添加列定义</span>
         </el-form-item>
         <el-form-item v-if="editing.type === 'file'" label="文件名">
           <el-input v-model="editing.fileName" placeholder="上传后自动填充" />
+          <div class="form-tip">流文件：持久化二进制/文本文件，以文件整体为操作单元</div>
         </el-form-item>
         <el-form-item label="必填">
           <el-switch v-model="editing.required" />
@@ -122,7 +131,7 @@
 import { ref, provide, computed } from 'vue'
 import { Plus, Delete } from '@element-plus/icons-vue'
 import {
-  FIELD_TYPES, SCALAR_ENCODINGS, MQ_OPERATION_TYPES,
+  DATA_RULE_CATEGORIES, SCALAR_ENCODINGS, MQ_OPERATION_TYPES,
   makeParam, useProtocolStore
 } from '@/stores/protocol'
 import FieldNode from '@/components/FieldNode.vue'
@@ -179,9 +188,9 @@ provide('treeActions', {
 })
 
 const onTypeChange = (row) => {
-  // v2 类型切换: 清理不再相关的字段
-  if (row.type !== 'struct' && row.type !== 'array') row.children = []
-  if (row.type !== 'bytes') row.protocolRef = null
+  // 五类数据规则切换: 清理不再相关的字段
+  if (row.type !== 'struct' && row.type !== 'matrix') row.children = []
+  if (row.type !== 'bitstream') row.protocolRef = null
   if (row.type === 'scalar' && !row.encoding) row.encoding = 'uint8'
   if (row.type !== 'file') { row.fileName = ''; row.fileSize = 0 }
 }
@@ -228,5 +237,6 @@ const scrollToField = (paramId) => {
 }
 
 .muted { color: var(--el-text-color-secondary); font-size: 13px; }
+.form-tip { font-size: 12px; color: var(--el-text-color-placeholder); margin-top: 4px; line-height: 1.4; }
 .w-full { width: 100%; }
 </style>

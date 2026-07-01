@@ -15,28 +15,34 @@ export const PROTOCOL_TYPES = [
 
 export const isByteStream = (type) => type === 'TCP' || type === 'UDP'
 
-// ─── v2 接口参数节点类型（标准概念，替换 v1 自创 5 分类）───
-// v1 用了「常量 / 位组序流 / 共识体 / 流文件 / 结构矩阵」5 种自创
-// 分类, 不符合任何 RFC/标准协议, 演示时常被问「位组序流是什么」。
-// v2 改为 RFC/工业标准分类, 同时保留中文 label 方便过渡:
-//
-//   scalar: 单个标量值(整数/浮点/字符串/布尔), 长度 1/2/4/8 字节
-//           或变长(UTF-8 字符串)
-//   bytes:  原始字节流, 不解析(可用于「绑定具体协议」或二进制透传)
-//   struct: 嵌套结构体, 用 children[] 表达
-//   file:   文件流(图片/二进制/CSV 等), 上传后用 url 引用
-//   array:  数组, 用 children[] 表达数组元素 schema
-//
-// v1 → v2 映射: 常量→scalar / 位组序流→bytes / 共识体→struct /
-//                流文件→file / 结构矩阵→array
-export const FIELD_TYPES = [
-  { value: 'scalar', label: '基本类型',  desc: '单个标量值(整数/浮点/字符串/布尔)' },
-  { value: 'bytes',  label: '原始字节',  desc: '二进制透传, 可绑定到具体协议解析' },
-  { value: 'struct', label: '结构体',    desc: '嵌套字段集合, 用 children 表达' },
-  { value: 'array',  label: '数组',      desc: '重复元素集合, 用 children 表达元素 schema' },
-  { value: 'file',   label: '文件流',    desc: '上传文件(图片/CSV/二进制等)' },
+// ─── 五类数据规则（便携式智能联试工具设计文档 V7.4 定义）───
+// 用户定义协议字段时，必须先选择数据规则类别，再选择具体数据类型：
+//   标量：单一数值，可表示整数或实数，不附带维度或结构信息。例如温度、压力、时间间隔。
+//   位组序流：连续二进制位序列，强调顺序与位级解析，区别于传统的"字节流"。适用于底层通信协议、编码载荷。
+//   共识体：由多个字段组成的结构化数据块，字段间存在语义或业务上的强关联。例如一条完整的指令或状态报告。
+//   流文件：持久化的二进制或文本文件，以文件整体为操作单元，适用于日志、报文存储与回放。
+//   结构矩阵：二维表格形式的数据，行列有明确语义，适用于批量参数、配置表或测试用例集。
+export const DATA_RULE_CATEGORIES = [
+  { value: 'scalar',  label: '标量',     icon: 'Number',   desc: '单一数值（整数/实数），不附带维度或结构信息', color: '#409EFF' },
+  { value: 'bitstream', label: '位组序流', icon: 'Connection', desc: '连续二进制位序列，按字节/位级解析', color: '#E6A23C' },
+  { value: 'struct',  label: '共识体',   icon: 'Grid',     desc: '多字段结构化数据块，字段间存在语义关联', color: '#67C23A' },
+  { value: 'file',    label: '流文件',   icon: 'Document', desc: '持久化二进制/文本文件，以整体为操作单元', color: '#909399' },
+  { value: 'matrix',  label: '结构矩阵', icon: 'Table',    desc: '二维表格数据，行列有明确语义', color: '#F56C6C' },
 ]
-export const FIELD_TYPE_VALUES = FIELD_TYPES.map(t => t.value)
+export const DATA_RULE_CATEGORY_VALUES = DATA_RULE_CATEGORIES.map(t => t.value)
+export const DATA_RULE_CATEGORY_MAP = Object.fromEntries(DATA_RULE_CATEGORIES.map(t => [t.value, t]))
+
+// ─── 兼容旧名：v1→v2 映射 ───
+const V1_TO_CATEGORY = {
+  '常量': 'scalar',
+  '位组序流': 'bitstream',
+  '共识体': 'struct',
+  '流文件': 'file',
+  '结构矩阵': 'matrix',
+}
+// 旧 FIELD_TYPES 兼容（已废弃，新代码请使用 DATA_RULE_CATEGORIES）
+export const FIELD_TYPES = DATA_RULE_CATEGORIES
+export const FIELD_TYPE_VALUES = DATA_RULE_CATEGORY_VALUES
 
 // scalar 类型的子类型(编码方式)
 export const SCALAR_ENCODINGS = [
@@ -188,42 +194,45 @@ export const makeRepeatGroup = (o = {}) => ({
   ...o
 })
 
-// ─── v2 接口参数节点 ───
-// 标准 5 种类型: scalar / bytes / struct / array / file
-// v1 的「常量/位组序流/共识体/流文件/结构矩阵」会在
-// migrateV1Interface() 中自动映射
+// ─── 接口参数节点（使用五类数据规则） ───
+// 五类: scalar(标量) / bitstream(位组序流) / struct(共识体) / matrix(结构矩阵) / file(流文件)
 export const makeParam = (o = {}) => ({
   id: uid(),
   name: '',
-  type: 'scalar',                  // scalar | bytes | struct | array | file
+  type: 'scalar',                  // scalar | bitstream | struct | matrix | file
   encoding: 'uint8',               // 仅 scalar 用, 来自 SCALAR_ENCODINGS
-  protocolRef: null,               // 仅 bytes 用, 引用 protocol id
+  protocolRef: null,               // 仅 bitstream 用, 引用 protocol id
   fileName: '', fileSize: 0,       // 仅 file 用
   required: true,
   defaultValue: null,
   constraint: noneConstraint(),
   unit: '',                        // 字段单位, 如 "kg" / "m/s" / "Hz"
-  align: 1,                        // 字节对齐, 仅 struct/array 用
-  children: [],                    // struct/array 用
+  align: 1,                        // 字节对齐, 仅 struct/matrix 用
+  children: [],                    // struct/matrix 用
   desc: '',
   ...o
 })
 
-// v1 → v2 类型映射常量
+// v1 → 五类数据规则 映射
 const V1_TO_V2_TYPE = {
   '常量': 'scalar',
-  '位组序流': 'bytes',
+  '位组序流': 'bitstream',
   '共识体': 'struct',
   '流文件': 'file',
-  '结构矩阵': 'array',
+  '结构矩阵': 'matrix',
 }
-// v2 → v1 显示文本(只用于老 UI 兼容渲染, 不建议新代码使用)
+// 旧类型名到新类型名的映射（用于数据迁移）
+const LEGACY_TO_NEW_TYPE = {
+  'bytes': 'bitstream',
+  'array': 'matrix',
+}
+// ─── 兼容旧显示标签 ───
 export const V2_TO_V1_LABEL = {
-  scalar: '基本类型',
-  bytes: '原始字节',
-  struct: '结构体',
-  array: '数组',
-  file: '文件流',
+  scalar: '标量',
+  bitstream: '位组序流',
+  struct: '共识体',
+  matrix: '结构矩阵',
+  file: '流文件',
 }
 
 // ─── HTTP 参数工厂 ───
@@ -491,14 +500,20 @@ export const getNumericFieldsBefore = (fields, targetId) => {
   return result
 }
 
-// ─── v1 → v2 数据迁移 ───
+// ─── v1 → 五类数据规则 数据迁移 ───
 // 把老 type='常量'/'位组序流'/'共识体'/'流文件'/'结构矩阵'
-// 自动映射到 v2 5 种标准类型
-// 幂等: 已经是 v2 type (scalar/bytes/struct/array/file) 时保留原样
-const V2_TYPES = new Set(['scalar', 'bytes', 'struct', 'array', 'file'])
+// 以及中间版本 type='bytes'/'array' 自动映射到五类标准类型
+// 幂等: 已经是标准类型时保留原样
+const VALID_CATEGORIES = new Set(['scalar', 'bitstream', 'struct', 'matrix', 'file'])
 const migrateV1Param = (p) => {
   if (!p) return p
-  const targetType = V2_TYPES.has(p.type) ? p.type : (V1_TO_V2_TYPE[p.type] || 'scalar')
+  let targetType = p.type
+  // 先尝试旧中文名映射
+  if (V1_TO_V2_TYPE[targetType]) targetType = V1_TO_V2_TYPE[targetType]
+  // 再尝试中间版本映射
+  else if (LEGACY_TO_NEW_TYPE[targetType]) targetType = LEGACY_TO_NEW_TYPE[targetType]
+  // 如果还是无效类型，默认为标量
+  if (!VALID_CATEGORIES.has(targetType)) targetType = 'scalar'
   return {
     ...p,
     type: targetType,
@@ -761,7 +776,8 @@ export const useProtocolStore = defineStore('protocol', {
       const f = makeMqBodyField({ name: `field${config.messageBody.length + 1}` })
       if (parentId) {
         const parent = this._findMqField(config.messageBody, parentId)
-        if (parent && (parent.dataType === 'object' || parent.dataType === 'array')) {
+        // 支持新类型名(struct/matrix)和旧类型名(object/array)
+        if (parent && (parent.dataType === 'object' || parent.dataType === 'array' || parent.dataType === 'struct' || parent.dataType === 'matrix' || parent.dataType === '共识体')) {
           if (!parent.children) parent.children = []
           parent.children.push(f)
           return f

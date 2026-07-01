@@ -47,11 +47,11 @@
               <el-table-column label="数据类型" width="136">
                 <template #default="{ row }">
                   <el-select v-model="row.dataType" size="small" @change="(val) => onStructDataTypeChange(row, val)">
-                    <el-option-group label="常量">
+                    <el-option-group label="标量">
                       <el-option v-for="dt in BYTE_DATA_TYPES" :key="dt.value" :label="dt.label" :value="dt.value" />
                     </el-option-group>
-                    <el-option v-if="!row.__nested" label="共识体" value="共识体" />
-                    <el-option label="位组序流" value="位组序流" />
+                    <el-option v-if="!row.__nested" label="共识体" value="struct" />
+                    <el-option label="位组序流" value="bitstream" />
                   </el-select>
                 </template>
               </el-table-column>
@@ -62,14 +62,14 @@
               </el-table-column>
               <el-table-column label="" width="100" align="center">
                 <template #default="{ row }">
-                  <el-button v-if="row.dataType === '共识体' && !row.__nested" link type="primary" size="small" @click="addStructField(row.children)">+子</el-button>
+                  <el-button v-if="(row.dataType === 'struct' || row.dataType === '共识体') && !row.__nested" link type="primary" size="small" @click="addStructField(row.children)">+子</el-button>
                   <el-button link type="danger" size="small" @click="removeStructField(row)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
             <div class="struct-actions">
               <el-button size="small" type="primary" plain @click="addStructField(form.params.structFields)">添加子字段</el-button>
-              <el-button v-if="currentField?.type === '共识体' && currentField?.children?.length" size="small" plain @click="autoFillStructFromInterface">
+              <el-button v-if="(currentField?.type === 'struct' || currentField?.type === '共识体') && currentField?.children?.length" size="small" plain @click="autoFillStructFromInterface">
                 从接口定义导入
               </el-button>
             </div>
@@ -123,7 +123,7 @@ import { computed, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { RULE_TYPES, useRuleStore } from '@/stores/rule'
-import { useProtocolStore, BYTE_DATA_TYPES, FIELD_TYPES } from '@/stores/protocol'
+import { useProtocolStore, BYTE_DATA_TYPES, DATA_RULE_CATEGORIES } from '@/stores/protocol'
 import { flattenInterfaceFields, inferConstraint, extractStructFields } from '@/utils/ruleEngine'
 
 const props = defineProps({
@@ -156,17 +156,18 @@ const protoRange = computed(() => {
   return { min: constraint.min, max: constraint.max }
 })
 
-// 数据类型二级菜单：顶层为接口参数类型，「常量」展开为全部字节数据类型
+// 数据类型二级菜单：顶层为五类数据规则，「标量」展开为全部字节数据类型
 const dataTypeCascaderProps = { emitPath: false, expandTrigger: 'hover' }
-const dataTypeOptions = computed(() => FIELD_TYPES.map((t) => (
-  t === '常量'
-    ? { value: '常量', label: '常量', children: BYTE_DATA_TYPES.map((b) => ({ value: b.value, label: b.label })) }
-    : { value: t, label: t }
+const dataTypeOptions = computed(() => DATA_RULE_CATEGORIES.map((cat) => (
+  cat.value === 'scalar'
+    ? { value: 'scalar', label: '标量', children: BYTE_DATA_TYPES.map((b) => ({ value: b.value, label: b.label })) }
+    : { value: cat.value, label: cat.label }
 )))
 
 // ─── 共识体子字段管理 ───
 let structSeq = 0
-const isStructType = computed(() => form.params?.dataType === '共识体')
+// 支持新名称 struct 和旧名称 共识体
+const isStructType = computed(() => form.params?.dataType === 'struct' || form.params?.dataType === '共识体')
 
 // 将嵌套的 structFields 展平为一维数组（顶层 + 一级子字段）
 const flattenedStructRows = computed(() => {
@@ -175,7 +176,8 @@ const flattenedStructRows = computed(() => {
   fields.forEach((field) => {
     if (!field.__uid) field.__uid = `sf-${++structSeq}`
     rows.push(field)
-    if (field.dataType === '共识体' && field.children?.length) {
+    // 支持新名称 struct 和旧名称 共识体
+    if ((field.dataType === 'struct' || field.dataType === '共识体') && field.children?.length) {
       field.children.forEach((child) => {
         if (!child.__uid) child.__uid = `sf-${++structSeq}`
         child.__nested = true
@@ -217,7 +219,8 @@ const removeStructField = (row) => {
 }
 
 const onStructDataTypeChange = (row, val) => {
-  if (val === '共识体') {
+  // 支持新名称 struct 和旧名称 共识体
+  if (val === 'struct' || val === '共识体') {
     if (!row.children) row.children = []
   } else {
     delete row.children
@@ -225,10 +228,11 @@ const onStructDataTypeChange = (row, val) => {
 }
 
 const onDataTypeChange = (val) => {
-  if (val === '共识体') {
+  // 支持新名称 struct 和旧名称 共识体
+  if (val === 'struct' || val === '共识体') {
     if (!form.params.structFields) form.params.structFields = []
     // 如果当前目标字段是共识体，自动填充
-    if (currentField.value?.type === '共识体' && currentField.value?.children?.length) {
+    if ((currentField.value?.type === 'struct' || currentField.value?.type === '共识体') && currentField.value?.children?.length) {
       form.params.structFields = extractStructFields(currentField.value.children)
     }
   } else {
@@ -237,7 +241,7 @@ const onDataTypeChange = (val) => {
 }
 
 const autoFillStructFromInterface = () => {
-  if (currentField.value?.type === '共识体' && currentField.value?.children?.length) {
+  if ((currentField.value?.type === 'struct' || currentField.value?.type === '共识体') && currentField.value?.children?.length) {
     form.params.structFields = extractStructFields(currentField.value.children)
   }
 }
@@ -308,14 +312,19 @@ const onFieldChange = (path) => {
 const fillParamsFromField = (field) => {
   const constraint = inferConstraint(field)
   if (form.type === 'type') {
+    // 兼容旧类型名：'常量' → 使用 field.dataType，其他保持 field.type
     form.params = { dataType: field.type === '常量' ? field.dataType : field.type }
-    // 共识体：自动提取子结构
-    if (field.type === '共识体' && field.children?.length) {
+    // 共识体：自动提取子结构（支持新名称 struct 和旧名称 共识体）
+    if ((field.type === 'struct' || field.type === '共识体') && field.children?.length) {
       form.params.structFields = extractStructFields(field.children)
     }
   }
   if ((form.type === 'range' || form.type === 'boundary') && constraint) form.params = { min: constraint.min, max: constraint.max, dataType: field.dataType || field.type }
-  if (form.type === 'overflow') form.params = { required: true, maxLength: field.type === '位组序流' ? 256 : 64 }
+  // 位组序流(bitstream)的最大长度默认为 256
+  if (form.type === 'overflow') {
+    const isBitstream = field.type === 'bitstream' || field.type === '位组序流'
+    form.params = { required: true, maxLength: isBitstream ? 256 : 64 }
+  }
 }
 
 const applyTypeDefaults = () => {

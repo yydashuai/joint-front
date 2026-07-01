@@ -29,7 +29,7 @@
 <script setup>
 import { computed, inject, ref } from 'vue'
 import { Edit, Plus, Delete } from '@element-plus/icons-vue'
-import { useProtocolStore, V2_TO_V1_LABEL, FIELD_TYPES } from '@/stores/protocol'
+import { useProtocolStore, DATA_RULE_CATEGORY_MAP } from '@/stores/protocol'
 
 const props = defineProps({ node: { type: Object, required: true } })
 const actions = inject('treeActions')
@@ -38,50 +38,52 @@ const store = useProtocolStore()
 const rootEl = ref(null)
 const cardEl = ref(null)
 
-// v2 type: scalar / bytes / struct / array / file
-// 也兼容 v1 type: 常量 / 位组序流 / 共识体 / 流文件 / 结构矩阵
-const V2_TYPES = { scalar: true, bytes: true, struct: true, array: true, file: true }
-const isV2Type = computed(() => !!V2_TYPES[props.node.type])
+// 五类数据规则: scalar(标量) / bitstream(位组序流) / struct(共识体) / matrix(结构矩阵) / file(流文件)
+// 也兼容旧类型名: bytes→bitstream, array→matrix
+const VALID_TYPES = { scalar: true, bitstream: true, struct: true, matrix: true, file: true }
+const isV2Type = computed(() => !!VALID_TYPES[props.node.type])
 const isStructLike = computed(() => props.node.type === 'struct' || props.node.type === '共识体')
-const isArrayLike = computed(() => props.node.type === 'array' || props.node.type === '结构矩阵')
+const isMatrixLike = computed(() => props.node.type === 'matrix' || props.node.type === '结构矩阵')
 
-// 显示用 label: v2 优先显示中文, v1 仍显示原文
+// 显示用 label: 优先显示五类标准中文名
 const typeLabel = computed(() => {
   if (isV2Type.value) {
-    return FIELD_TYPES.find(t => t.value === props.node.type)?.label || props.node.type
+    return DATA_RULE_CATEGORY_MAP[props.node.type]?.label || props.node.type
   }
-  return V2_TO_V1_LABEL[props.node.type] || props.node.type
+  // 兼容旧中文名
+  const v1Map = { '常量': '标量', '位组序流': '位组序流', '共识体': '共识体', '流文件': '流文件', '结构矩阵': '结构矩阵' }
+  return v1Map[props.node.type] || props.node.type
 })
 
 const hasChildren = computed(() =>
-  (isStructLike.value || isArrayLike.value) && props.node.children.length > 0
+  (isStructLike.value || isMatrixLike.value) && props.node.children.length > 0
 )
-const canAddChild = computed(() => isStructLike.value || isArrayLike.value)
+const canAddChild = computed(() => isStructLike.value || isMatrixLike.value)
 
-// v2 配色: 用 RFC 标准的「数据类型」视觉表达
-const tagMapV2 = { scalar: 'info', bytes: 'warning', struct: 'success', array: 'success', file: 'primary' }
-// v1 兼容色(老数据)
+// 五类数据规则配色
+const tagMapV2 = { scalar: 'info', bitstream: 'warning', struct: 'success', matrix: 'danger', file: 'primary' }
+// 旧类型兼容色
 const tagMapV1 = { 常量: 'info', 位组序流: 'warning', 共识体: 'success', 流文件: 'primary', 结构矩阵: 'danger' }
 const tagType = computed(() => isV2Type.value ? tagMapV2[props.node.type] : tagMapV1[props.node.type] || 'info')
 
-const typeClassV2 = { scalar: 'const', bytes: 'bits', struct: 'struct', array: 'struct', file: 'file' }
+const typeClassV2 = { scalar: 'const', bitstream: 'bits', struct: 'struct', matrix: 'matrix', file: 'file' }
 const typeClassV1 = { 常量: 'const', 位组序流: 'bits', 共识体: 'struct', 流文件: 'file', 结构矩阵: 'matrix' }
 const typeClass = computed(() => isV2Type.value ? typeClassV2[props.node.type] : typeClassV1[props.node.type] || 'const')
 
 const meta = computed(() => {
   const n = props.node
-  // v2 渲染
+  // 五类标准类型渲染
   if (isV2Type.value) {
     switch (n.type) {
       case 'scalar': return n.encoding || 'uint8'
-      case 'bytes':  return n.protocolRef ? `协议：${store.protocolName(n.protocolRef)}` : '未绑定协议'
+      case 'bitstream': return n.protocolRef ? `协议：${store.protocolName(n.protocolRef)}` : '未绑定协议'
       case 'struct': return `${n.children.length} 个字段`
-      case 'array':  return `${n.children.length} 个元素 × 数组`
-      case 'file':   return n.fileName || '未上传'
+      case 'matrix': return `${n.children.length} 列 × 结构矩阵`
+      case 'file': return n.fileName || '未上传'
       default: return ''
     }
   }
-  // v1 兼容渲染
+  // 旧类型兼容渲染
   switch (n.type) {
     case '常量': return n.dataType
     case '位组序流': return n.protocolRef ? `协议：${store.protocolName(n.protocolRef)}` : '未绑定协议'

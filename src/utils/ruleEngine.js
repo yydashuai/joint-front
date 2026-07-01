@@ -72,10 +72,11 @@ export function flattenInterfaceFields(iface) {
  */
 export function extractStructFields(children = []) {
   return children.map((child) => {
-    const isStruct = child.type === '共识体' && child.children?.length
+    const childType = child.type || child.dataType
+    const isStruct = (childType === 'struct' || childType === '共识体') && child.children?.length
     return {
       name: child.name || '',
-      dataType: child.type === '常量' ? (child.dataType || 'uint8') : child.type,
+      dataType: childType === '常量' ? (child.dataType || 'uint8') : childType,
       required: true,
       ...(isStruct ? { children: extractStructFields(child.children) } : {}),
     }
@@ -86,11 +87,12 @@ export function makeSample(iface, variant = 'valid') {
   const build = (fields = []) => {
     const obj = {}
     fields.forEach((field) => {
-      if (field.children?.length && (field.type === '共识体' || field.dataType === 'object')) {
+      const fieldType = field.type || field.dataType
+      if (field.children?.length && (fieldType === 'struct' || fieldType === '共识体' || field.dataType === 'object')) {
         obj[field.name] = build(field.children)
         return
       }
-      if (field.children?.length && field.type === '结构矩阵') {
+      if (field.children?.length && (fieldType === 'matrix' || fieldType === '结构矩阵')) {
         obj[field.name] = [build(field.children)]
         return
       }
@@ -108,7 +110,7 @@ export function makeSample(iface, variant = 'valid') {
 
 function sampleValue(field, constraint) {
   const type = normalizeType(field.dataType || field.type)
-  if (field.type === '位组序流') return 'AA55 01 00 FF'
+  if (field.type === 'bitstream' || field.type === '位组序流') return 'AA55 01 00 FF'
   if (type.includes('string')) return `${field.name || 'value'}-sample`
   if (type.includes('bool')) return true
   if (field.constraint?.mode === 'enum') return field.constraint.entries?.[0]?.value ?? 0
@@ -189,7 +191,8 @@ export function evaluate(ruleSet, sample, iface, opts = { recvMs: null }) {
       const dataType = rule.params?.dataType
       const structFields = rule.params?.structFields || []
       const pass = typeMatches(value, dataType, rule.params?.enumValues, structFields)
-      if (pass && dataType === '共识体' && structFields.length) {
+      // 支持新名称 struct 和旧名称 共识体
+      if (pass && (dataType === 'struct' || dataType === '共识体') && structFields.length) {
         // 递归校验子字段
         const childResults = validateStructFields(value, structFields, path, rule)
         results.push(...childResults)
@@ -266,13 +269,16 @@ function getPath(obj, path = '') {
 function typeMatches(value, dataType, enumValues = [], structFields = []) {
   const type = normalizeType(dataType)
   if (enumValues?.length) return enumValues.some((item) => String(item.value ?? item) === String(value))
-  if (dataType === '共识体') return value && typeof value === 'object' && !Array.isArray(value)
-  if (dataType === '结构矩阵') return Array.isArray(value)
+  // 五类数据规则类型匹配（支持新名称和旧中文名称）
+  if (dataType === 'struct' || dataType === '共识体') return value && typeof value === 'object' && !Array.isArray(value)
+  if (dataType === 'matrix' || dataType === '结构矩阵') return Array.isArray(value)
+  if (dataType === 'bitstream' || dataType === '位组序流') return typeof value === 'string'
+  if (dataType === 'file' || dataType === '流文件') return typeof value === 'string' || (value && typeof value === 'object')
   if (type.includes('string') || type.includes('ascii') || type.includes('utf')) return typeof value === 'string'
   if (type.includes('bool')) return typeof value === 'boolean'
-  if (type.includes('array')) return Array.isArray(value)
+  // 支持新名称 matrix 和旧名称 array
+  if (type.includes('array') || type === 'matrix') return Array.isArray(value)
   if (type.includes('object') || type.includes('message')) return value && typeof value === 'object' && !Array.isArray(value)
-  if (dataType === '位组序流') return typeof value === 'string'
   if (isNumericType(type)) return typeof value === 'number' && Number.isFinite(value)
   return value !== undefined
 }
@@ -293,8 +299,8 @@ function validateStructFields(obj, structFields, parentPath, rule) {
       }
       return
     }
-    // 嵌套共识体：递归
-    if (sf.dataType === '共识体' && sf.children?.length) {
+    // 嵌套共识体：递归（支持新名称 struct 和旧名称 共识体）
+    if ((sf.dataType === 'struct' || sf.dataType === '共识体') && sf.children?.length) {
       if (childValue && typeof childValue === 'object' && !Array.isArray(childValue)) {
         results.push(ok(rule, childPath, `${childPath} 共识体结构存在`))
         results.push(...validateStructFields(childValue, sf.children, childPath, rule))
