@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { alerts } from '@/mock/seed-data'
+import { bus, EVENTS } from '@/utils/bus'
 
 const nowText = () => new Date().toLocaleString('zh-CN', { hour12: false })
 const uid = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`
@@ -234,6 +235,7 @@ export const useExceptionStore = defineStore('exception', {
       this.tagHistory = cleanTags([...this.tagHistory, ...item.tags])
       this.exceptions.unshift(item)
       this.selectedId = item.id
+      bus.emit(EVENTS.EXCEPTION_CREATED, item)
       return item
     },
     updateState(id, state, note = '', handler = '测试员') {
@@ -248,6 +250,7 @@ export const useExceptionStore = defineStore('exception', {
         action: `状态变更为${item.state}`,
         note,
       })
+      bus.emit(EVENTS.EXCEPTION_UPDATED, item)
       return true
     },
     addTrace(id, note, handler = '测试员') {

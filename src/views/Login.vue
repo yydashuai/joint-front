@@ -78,6 +78,34 @@
           </el-form-item>
         </el-form>
 
+        <div class="login-demo">
+          <div class="login-demo__title">
+            <el-icon><Avatar /></el-icon>
+            <span>演示账号（点击自动填充）</span>
+          </div>
+          <div class="login-demo__list">
+            <div
+              v-for="acc in demoAccounts"
+              :key="acc.username"
+              class="login-demo__item"
+              :class="{ 'is-disabled': acc.disabled }"
+              :title="acc.disabled ? '该账号已被禁用' : `使用 ${acc.realName} 登录`"
+              @click="acc.disabled ? null : fillDemo(acc)"
+            >
+              <div class="login-demo__role" :class="`is-${acc.role}`">
+                {{ acc.roleLabel }}
+              </div>
+              <div class="login-demo__info">
+                <div class="login-demo__name">{{ acc.realName }}</div>
+                <div class="login-demo__cred">
+                  {{ acc.username }} / {{ acc.password }}
+                </div>
+              </div>
+              <el-icon v-if="acc.disabled" class="login-demo__lock"><Lock /></el-icon>
+            </div>
+          </div>
+        </div>
+
         <div class="login-hint">
           <el-icon><InfoFilled /></el-icon>
           如需账号请联系系统管理员
@@ -90,7 +118,7 @@
 <script setup>
 import { ref, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { User, Lock, InfoFilled } from '@element-plus/icons-vue'
+import { User, Lock, InfoFilled, Avatar } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 
@@ -110,6 +138,20 @@ const form = reactive({
 const rules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+}
+
+const demoAccounts = [
+  { username: 'admin',    password: 'admin123', realName: '张管理', role: 'admin',  roleLabel: '管理员', disabled: false },
+  { username: 'tester01', password: 'test123',  realName: '李测试', role: 'tester', roleLabel: '测试员', disabled: false },
+  { username: 'tester02', password: 'test123',  realName: '王测试', role: 'tester', roleLabel: '测试员', disabled: true  },
+  { username: 'tester03', password: 'test123',  realName: '赵联试', role: 'tester', roleLabel: '测试员', disabled: false }
+]
+
+const fillDemo = (acc) => {
+  form.username = acc.username
+  form.password = acc.password
+  form.remember = true
+  ElMessage.info(`已填入 ${acc.realName} 的账号，点击登录`)
 }
 
 const handleLogin = async () => {
@@ -303,5 +345,103 @@ const handleLogin = async () => {
   margin-top: 24px;
   font-size: 12px;
   color: var(--el-text-color-placeholder);
+}
+
+/* ============ 演示账号 ============ */
+.login-demo {
+  margin-top: 20px;
+  padding: 14px 14px 12px;
+  border: 1px dashed var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-light);
+
+  &__title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+    margin-bottom: 10px;
+
+    .el-icon {
+      font-size: 14px;
+    }
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--el-bg-color);
+    cursor: pointer;
+    transition: background 0.15s, transform 0.15s;
+    border: 1px solid transparent;
+
+    &:hover:not(.is-disabled) {
+      background: var(--el-color-primary-light-9);
+      border-color: var(--el-color-primary-light-5);
+    }
+
+    &.is-disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+  }
+
+  &__role {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+
+    &.is-admin {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      box-shadow: 0 2px 6px rgba(217, 119, 6, 0.3);
+    }
+
+    &.is-tester {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+    }
+  }
+
+  &__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--el-text-color-primary);
+    line-height: 1.3;
+  }
+
+  &__cred {
+    font-size: 11px;
+    color: var(--el-text-color-placeholder);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    line-height: 1.3;
+    margin-top: 2px;
+  }
+
+  &__lock {
+    color: var(--el-text-color-placeholder);
+    font-size: 14px;
+  }
 }
 </style>

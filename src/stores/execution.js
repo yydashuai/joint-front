@@ -7,6 +7,7 @@ import { useSystemStore } from '@/stores/system'
 import { useRuleStore } from '@/stores/rule'
 import { useExceptionStore } from '@/stores/exception'
 import { evaluate, makeSample } from '@/utils/ruleEngine'
+import { bus, EVENTS } from '@/utils/bus'
 
 let runTimer = null
 let rxTimer = null
@@ -274,6 +275,7 @@ export const useExecutionStore = defineStore('execution', {
       this._simulateMqProbes()
       this._tick()
       runTimer = window.setInterval(() => this._tick(), this.tickInterval())
+      bus.emit(EVENTS.TASK_RUN_STARTED, { runId: this.currentRunId, taskIds: this.plan.map((p) => p.taskId) })
       return true
     },
 
@@ -535,6 +537,12 @@ export const useExecutionStore = defineStore('execution', {
         finishedAt: this.finishedAt,
         result: this.counters.failedRequests + this.counters.errorRequests > 0 ? '存在异常' : '通过',
         ...this.summary,
+      })
+      bus.emit(EVENTS.TASK_RUN_FINISHED, {
+        runId: this.currentRunId,
+        result: this.counters.failedRequests + this.counters.errorRequests > 0 ? '存在异常' : '通过',
+        exceptions: this.exceptions.length,
+        taskIds: this.plan.map((p) => p.taskId),
       })
     },
 

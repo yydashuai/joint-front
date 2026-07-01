@@ -117,10 +117,10 @@ const ALL_SYSTEM_KEY = '__all__'
 const isActive = (item) => route.path === item.path
 const isAdmin = computed(() => authStore.currentUser?.role === 'admin')
 
-/** 用户头像首字母 */
+/** 用户头像首字符（取姓名第一个字，与国内多数 OA 习惯一致） */
 const avatarText = computed(() => {
   const name = authStore.currentUser?.realName || ''
-  return name.charAt(name.length - 1) || '?'
+  return name.charAt(0) || '?'
 })
 
 const currentSystemKey = computed({

@@ -21,4 +21,6 @@ docs/execution-plan.md
 docs/rule-management-plan.md
 docs/statistics-visualization-plan.md
 docs
-.playwright-mcp
+
+# 本地开发脚本（与项目无关）
+.start-dev.bat
