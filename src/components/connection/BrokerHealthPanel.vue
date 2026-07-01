@@ -139,7 +139,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, h, ref } from 'vue'
 import { Connection, Refresh, ArrowRight } from '@element-plus/icons-vue'
 import { useConnectionStore } from '@/stores/connection'
 
@@ -179,10 +179,13 @@ const runCheck = async () => {
   }
 }
 
-// Status dot sub-component (inline)
+// Status dot sub-component (使用 render function 避免 Vite + ESM build 下
+// 字符串模板无法被 runtime compiler 编译的问题; refs: docs/界面优化建议_v1.0.md Bug-3)
 const StatusDot = {
   props: ['status'],
-  template: `<span class="status-dot" :class="'status-dot--' + status" />`,
+  setup(props) {
+    return () => h('span', { class: ['status-dot', `status-dot--${props.status}`] })
+  }
 }
 </script>
 

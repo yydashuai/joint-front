@@ -14,19 +14,24 @@
       </div>
     </div>
 
-    <!-- 系统选择条 -->
+    <!-- 系统选择条（摘要信息 + 快捷切换 chip，顶栏已提供全功能下拉） -->
     <el-card class="sys-strip" shadow="never" :body-style="{ padding: '12px 16px' }">
       <div class="sys-bar">
         <div class="sys-bar__pick">
           <span class="sys-bar__label">被测系统</span>
-          <el-select v-model="pageSystemKey" class="sys-bar__select" placeholder="选择被测系统">
-            <el-option
-              v-for="option in systemStore.options"
-              :key="option.value ?? 'all'"
-              :label="option.label"
-              :value="option.value ?? ALL_KEY"
-            />
-          </el-select>
+          <div class="sys-bar__chips">
+            <el-tag
+              v-for="opt in systemStore.options"
+              :key="opt.value ?? 'all'"
+              :type="isCurrentSystem(opt.value) ? 'primary' : 'info'"
+              :effect="isCurrentSystem(opt.value) ? 'dark' : 'plain'"
+              class="sys-bar__chip-btn"
+              :title="`切换到 ${opt.label}`"
+              @click="pageSystemKey = opt.value ?? ALL_KEY"
+            >
+              {{ opt.label }}
+            </el-tag>
+          </div>
         </div>
         <div class="sys-bar__info">
           <template v-if="systemStore.current">
@@ -280,6 +285,7 @@ const pageSystemKey = computed({
   get: () => systemStore.currentId ?? ALL_KEY,
   set: (v) => systemStore.setCurrent(v === ALL_KEY ? null : v)
 })
+const isCurrentSystem = (id) => (id ?? null) === (systemStore.currentId ?? null)
 const hubLabel = computed(() => systemStore.current?.name ?? '全部系统')
 
 const moduleSystemOptions = computed(() => [
@@ -482,6 +488,12 @@ const confirmCreateBroker = async () => {
   &__pick { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   &__label { font-size: 14px; font-weight: 600; }
   &__select { width: 240px; }
+  &__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  &__chip-btn {
+    cursor: pointer;
+    transition: transform 0.15s;
+    &:hover { transform: translateY(-1px); }
+  }
   &__info { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; min-width: 0; }
   &__chip {
     font-size: 13px; color: var(--el-text-color-regular);
