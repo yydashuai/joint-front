@@ -351,9 +351,12 @@ const onImportFile = (e) => {
 </script>
 
 <style scoped lang="scss">
-.proto { height: 100%; }
-.split { flex: 1; min-height: 0; display: flex; gap: 16px; }
-.proto-tree { width: 300px; flex-shrink: 0; }
+.page { min-height: 0; }
+.proto { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.page__header { flex-shrink: 0; margin-bottom: 12px; }
+.split { flex: 1; min-height: 0; display: flex; gap: 16px; overflow: hidden; }
+.proto-tree { width: 300px; flex-shrink: 0; min-height: 0; overflow: auto; }
+.proto-detail { display: flex; flex-direction: column; gap: 10px; width: 100%; min-width: 0; flex: 1; min-height: 0; overflow: auto; }
 .main--empty {
   flex: 1;
   min-width: 0;
@@ -363,7 +366,6 @@ const onImportFile = (e) => {
 }
 
 /* ============ v2 协议摘要条 ============ */
-.proto-detail { display: flex; flex-direction: column; gap: 10px; width: 100%; min-width: 0; flex: 1; }
 .proto-summary {
   display: flex;
   align-items: center;
