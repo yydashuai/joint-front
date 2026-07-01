@@ -114,19 +114,19 @@
           @system-change="onProtoSystemChange"
           @switch-type="onTypeDropdown"
         />
+
+        <InterfaceEditor
+          v-if="selectedKind === 'interface' && curIf"
+          :iface="curIf"
+          :system-options="systemOptions"
+          :module-options="moduleOptions(curIf.systemId)"
+          :protocol-options="store.protocolOptions"
+          @delete="store.removeInterface(curIf.id)"
+          @system-change="onIfSystemChange"
+        />
+
+        <el-empty v-if="!curProto && !curIf" class="main main--empty" description="从左侧选择一个协议或接口进行编辑" />
       </div>
-
-      <InterfaceEditor
-        v-if="selectedKind === 'interface' && curIf"
-        :iface="curIf"
-        :system-options="systemOptions"
-        :module-options="moduleOptions(curIf.systemId)"
-        :protocol-options="store.protocolOptions"
-        @delete="store.removeInterface(curIf.id)"
-        @system-change="onIfSystemChange"
-      />
-
-      <el-empty v-else-if="!curProto" class="main main--empty" description="从左侧选择一个协议或接口进行编辑" />
     </div>
 
     <ProtocolTypeDialog v-model="typeDialogVisible" @select="onTypeSelected" />
@@ -363,7 +363,7 @@ const onImportFile = (e) => {
 }
 
 /* ============ v2 协议摘要条 ============ */
-.proto-detail { display: flex; flex-direction: column; gap: 10px; width: 100%; min-width: 0; }
+.proto-detail { display: flex; flex-direction: column; gap: 10px; width: 100%; min-width: 0; flex: 1; }
 .proto-summary {
   display: flex;
   align-items: center;
