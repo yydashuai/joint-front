@@ -16,8 +16,8 @@
         </div>
         <el-card shadow="never" class="prev">
           <template #header><div class="card-title">待生成内容</div></template>
-          <div class="prev__row"><span class="prev__k">数据批次</span><span>{{ run ? `${run.name} · ${run.startedAt}` : '未选择批次' }}</span></div>
-          <div class="prev__row"><span class="prev__k">报告标题</span><span>{{ form.title || (run ? `${run.name}报告` : '—') }}</span></div>
+          <div class="prev__row"><span class="prev__k">数据批次</span><span>{{ run ? batchLabel : '未选择批次' }}</span></div>
+          <div class="prev__row"><span class="prev__k">报告标题</span><span>{{ form.title || reportTitle || '—' }}</span></div>
           <div class="prev__row"><span class="prev__k">报告模板</span><span>{{ templateName }}</span></div>
           <div class="prev__row"><span class="prev__k">任务创建者</span><span>{{ run?.taskCreator || '—' }}</span></div>
           <div class="prev__row"><span class="prev__k">报告生成者</span><span>{{ generatorName }}</span></div>
@@ -49,6 +49,7 @@ import { computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { FolderOpened, MagicStick, ArrowLeft } from '@element-plus/icons-vue'
 import { useReportStore, REPORT_STAGES } from '@/stores/report'
+import { useRunBatchStore } from '@/stores/runBatch'
 import { useSystemStore } from '@/stores/system'
 import { useAuthStore } from '@/stores/auth'
 
@@ -61,10 +62,11 @@ const props = defineProps({
 const emit = defineEmits(['back', 'done'])
 
 const store = useReportStore()
+const batchStore = useRunBatchStore()
 const systemStore = useSystemStore()
 const authStore = useAuthStore()
 
-const run = computed(() => store.runs.find((r) => r.id === props.form.runId) || null)
+const run = computed(() => batchStore.byId(props.form.runId))
 const sysName = computed(() => systemStore.systems.find((s) => s.id === run.value?.systemId)?.name || '')
 const templateName = computed(() => store.templates.find((t) => t.id === props.form.templateId)?.name || '默认结构')
 const generatorName = computed(() => authStore.currentUser?.realName || authStore.currentUser?.username || '当前用户')
@@ -72,12 +74,25 @@ const stageText = computed(() => (store.genStage >= 0 ? REPORT_STAGES[store.genS
 const pct = computed(() => Math.round(((store.genStage + 1) / REPORT_STAGES.length) * 100))
 const generateLabel = computed(() => (props.regenerateFromId ? '重新生成报告' : '生成最终报告'))
 
+const pad = (value) => String(value || '').padStart(2, '0')
+const formatDateTime = (text = '') => {
+  const [rawDate = '', rawTime = ''] = String(text).trim().replace(/\//g, '-').split(' ')
+  const [y = '', m = '', d = ''] = rawDate.split('-')
+  const [hh = '', mm = ''] = rawTime.split(':')
+  if (!y || !m || !d) return text || '未记录时间'
+  return `${y}-${pad(m)}-${pad(d)} ${pad(hh || '00')}:${pad(mm || '00')}`
+}
+const moduleCount = computed(() => new Set((run.value?.tasks || run.value?.stepResults || []).map((item) => item.moduleId || item.moduleName).filter(Boolean)).size)
+const taskCount = computed(() => run.value?.tasks?.length || run.value?.stepResults?.length || 0)
+const batchLabel = computed(() => run.value ? `${formatDateTime(run.value.startedAt || run.value.time)} · ${run.value.result} · ${moduleCount.value}模块/${taskCount.value}任务` : '')
+const reportTitle = computed(() => run.value ? `${sysName.value} ${formatDateTime(run.value.startedAt || run.value.time)} 联试报告` : '')
+
 const onGenerate = async () => {
   if (!run.value) return
   const rep = await store.generateReport({
     systemId: run.value.systemId,
     runId: props.form.runId,
-    title: props.form.title.trim(),
+    title: props.form.title.trim() || reportTitle.value,
     templateId: props.form.templateId,
     materials: props.materials,
     sysName: sysName.value,

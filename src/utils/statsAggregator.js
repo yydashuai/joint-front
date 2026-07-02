@@ -2,22 +2,25 @@
  * 统计与可视化 —— 数据聚合层（纯函数 + 只读 store 访问）
  *
  * 原则：所有指标都能在真实数据结构里找到来源，绝不杜撰。
- *   - 执行 / 请求 / 性能 / 接口：来自 `runHistory` 种子 + 执行编排最近一次完成的 stepResults（实时增量）
+ *   - 执行 / 请求 / 性能 / 接口：来自统一执行批次 store（种子批次 + 执行编排实时批次）
  *   - 异常：来自 exceptionStore（种子 alerts + 执行实时捕捉）
  *   - 接口覆盖：来自 protocolStore.interfaces（真实接口总数）
  * 禁列（无数据源）：被测系统 CPU/内存/带宽、业务正确率、真实并发用户、SLA、真实链路拓扑时延。
  */
-import { runHistory, mqProbeHistory } from '@/mock/seed-data'
+import { mqProbeHistory } from '@/mock/seed-data'
 import { useExceptionStore } from '@/stores/exception'
 import { useProtocolStore } from '@/stores/protocol'
 import { useExecutionStore } from '@/stores/execution'
-import { useTestTaskStore } from '@/stores/testTask'
 import { useConnectionStore } from '@/stores/connection'
+import { useRunBatchStore } from '@/stores/runBatch'
+import { RULE_TYPES } from '@/utils/ruleEngine'
 
 /* ========== 工具 ========== */
 const sum = (arr, pick = (x) => x) => arr.reduce((a, b) => a + (pick(b) || 0), 0)
 const round = (n) => Math.round(n)
 const pct = (a, b) => (b ? round((a / b) * 100) : 0)
+const abnormalOf = (row = {}) => row.abnormal ?? ((row.failed || 0) + (row.error || 0))
+const rulePalette = ['var(--el-color-danger)', 'var(--el-color-warning)', '#9254de', '#36a2eb', '#13c2c2', '#ff9f40', '#73d13d', '#f759ab']
 
 /** 把各种时间文本归一为 YYYY-MM-DD */
 function normalizeDate(text) {
@@ -29,11 +32,6 @@ function normalizeDate(text) {
     return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
   }
   return head
-}
-
-function todayKey() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 /** 时间范围预设 → 截止日期（含）*/
@@ -49,55 +47,15 @@ function cutoffOf(range) {
 }
 
 /* ========== 归一化执行记录（种子 + 实时） ========== */
-function liveRuns() {
-  const exec = useExecutionStore()
-  if (!['done', 'stopped'].includes(exec.status) || !exec.stepResults.length) return []
-  const taskStore = useTestTaskStore()
-  const proto = useProtocolStore()
-  const conn = useConnectionStore()
-  const dk = todayKey()
-  return exec.stepResults.map((step) => {
-    const task = taskStore.tasks.find((t) => t.id === step.taskId)
-    const iface = proto.interfaces.find((i) => i.name === step.iface) ||
-      proto.interfaces.find((i) => i.id === task?.bindings?.interfaceId)
-    const mod = conn.nodes.find((n) => n.id === task?.moduleId)
-    const durations = (step.traces || []).map((t) => t.duration).filter((d) => typeof d === 'number' && d > 0)
-    const executionTime = exec.counters.executionTime || 1
-    return {
-      id: `${exec.currentRunId}-${step.taskId}`,
-      systemId: task?.systemId || '',
-      moduleId: task?.moduleId || '',
-      moduleName: mod?.name || '',
-      taskId: step.taskId,
-      taskName: step.taskName,
-      interfaceId: iface?.id || '',
-      iface: step.iface,
-      proto: (iface?.path || '').startsWith('/') ? 'HTTP' : 'TCP',
-      startedAt: exec.startedAt,
-      finishedAt: exec.finishedAt,
-      dateKey: dk,
-      total: step.total,
-      success: step.success,
-      failed: step.failed,
-      error: step.error,
-      avgMs: step.avgMs,
-      durations: durations.length ? durations : [step.avgMs || 0],
-      executionTime,
-      rps: Number((step.total / executionTime).toFixed(1)),
-      live: true,
-    }
-  })
-}
-
 function allRuns() {
-  return [...runHistory, ...liveRuns()]
+  return useRunBatchStore().statRows
 }
 
 /** 按筛选条件过滤执行记录 */
 export function getRuns(filters = {}) {
   const cutoff = cutoffOf(filters.timeRange)
   return allRuns().filter((r) => {
-    if (filters.runId && r.id !== filters.runId) return false
+    if (filters.runId && r.runId !== filters.runId && r.id !== filters.runId) return false
     if (filters.systemId && r.systemId !== filters.systemId) return false
     if (filters.moduleId && r.moduleId !== filters.moduleId) return false
     if (filters.interfaceId && r.interfaceId !== filters.interfaceId) return false
@@ -111,6 +69,7 @@ export function getExceptions(filters = {}) {
   const exc = useExceptionStore()
   const cutoff = cutoffOf(filters.timeRange)
   return exc.exceptions.filter((e) => {
+    if (filters.runId && e.runId !== filters.runId) return false
     if (filters.systemId && e.systemId !== filters.systemId) return false
     if (filters.moduleId && e.moduleId !== filters.moduleId) return false
     if (cutoff && normalizeDate(e.capturedTime) < cutoff) return false
@@ -142,14 +101,32 @@ const moduleNameOf = (moduleId) => {
   return conn.nodes.find((n) => n.id === moduleId)?.name || '未知模块'
 }
 
+function abnormalTypeBars(runs) {
+  const counts = {}
+  runs.forEach((row) => {
+    const typedTotal = sum(Object.values(row.abnormalTypes || {}))
+    if (typedTotal) {
+      Object.entries(row.abnormalTypes).forEach(([label, value]) => {
+        counts[label] = (counts[label] || 0) + (value || 0)
+      })
+      return
+    }
+    const abnormal = abnormalOf(row)
+    if (abnormal) counts['响应超时'] = (counts['响应超时'] || 0) + abnormal
+  })
+  return RULE_TYPES
+    .map((type, i) => ({ label: type.label, value: counts[type.label] || 0, color: rulePalette[i % rulePalette.length] }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value)
+}
+
 /* ========== 维度聚合 ========== */
 export function aggregateOverview(filters = {}) {
   const runs = getRuns(filters)
   const exc = getExceptions(filters)
   const total = sum(runs, (r) => r.total)
   const success = sum(runs, (r) => r.success)
-  const failed = sum(runs, (r) => r.failed)
-  const error = sum(runs, (r) => r.error)
+  const abnormal = sum(runs, abnormalOf)
   const allDur = runs.flatMap((r) => r.durations || [])
   const pending = exc.filter((e) => e.state === '待处理' || e.state === '处理中').length
   return {
@@ -160,9 +137,8 @@ export function aggregateOverview(filters = {}) {
     exceptionTotal: exc.length,
     pending,
     composition: [
-      { label: '通过', value: success, color: 'var(--el-color-success)' },
-      { label: '失败', value: failed, color: 'var(--el-color-danger)' },
-      { label: '超时', value: error, color: 'var(--el-color-warning)' },
+      { label: '成功', value: success, color: 'var(--el-color-success)' },
+      { label: '异常', value: abnormal, color: 'var(--el-color-danger)' },
     ],
     passRateTrend: dayBuckets(runs, (rs) => pct(sum(rs, (r) => r.success), sum(rs, (r) => r.total))),
   }
@@ -171,9 +147,8 @@ export function aggregateOverview(filters = {}) {
 export function aggregateExecution(filters = {}) {
   const runs = getRuns(filters)
   const success = sum(runs, (r) => r.success)
-  const failed = sum(runs, (r) => r.failed)
-  const error = sum(runs, (r) => r.error)
-  const total = success + failed + error
+  const abnormal = sum(runs, abnormalOf)
+  const total = success + abnormal
   const durations = runs.flatMap((r) => r.durations || []).filter((d) => d > 0)
   const ifaceGroup = groupBy(runs, (r) => r.iface)
   return {
@@ -184,9 +159,8 @@ export function aggregateExecution(filters = {}) {
       avgRunTime: durations.length ? round(sum(durations) / durations.length) : 0,
     },
     composition: [
-      { label: '通过', value: success, color: 'var(--el-color-success)' },
-      { label: '失败', value: failed, color: 'var(--el-color-danger)' },
-      { label: '超时', value: error, color: 'var(--el-color-warning)' },
+      { label: '成功', value: success, color: 'var(--el-color-success)' },
+      { label: '异常', value: abnormal, color: 'var(--el-color-danger)' },
     ],
     runsPerDay: dayBuckets(runs, (rs) => rs.length),
     passRateTrend: dayBuckets(runs, (rs) => pct(sum(rs, (r) => r.success), sum(rs, (r) => r.total))),
@@ -199,19 +173,15 @@ export function aggregateExecution(filters = {}) {
 
 export function aggregateRequest(filters = {}) {
   const runs = getRuns(filters)
-  const exc = getExceptions(filters)
   const total = sum(runs, (r) => r.total)
   const success = sum(runs, (r) => r.success)
-  const failed = sum(runs, (r) => r.failed)
-  const error = sum(runs, (r) => r.error)
+  const abnormal = sum(runs, abnormalOf)
   const ifaceGroup = groupBy(runs, (r) => r.iface)
-  const failReason = groupBy(exc, (e) => e.type)
-  const palette = ['var(--el-color-danger)', 'var(--el-color-warning)', '#9254de', '#36a2eb', '#13c2c2', '#ff9f40']
   return {
     kpis: {
       total,
       success,
-      failed: failed + error,
+      abnormal,
       successRate: pct(success, total),
     },
     requestByDay: dayBuckets(runs, (rs) => sum(rs, (r) => r.total)),
@@ -220,13 +190,11 @@ export function aggregateRequest(filters = {}) {
       .map(([label, rs]) => ({ label, value: sum(rs, (r) => r.total) }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 8),
-    failReasons: [...failReason.entries()]
-      .map(([label, items], i) => ({ label, value: items.length, color: palette[i % palette.length] }))
-      .sort((a, b) => b.value - a.value),
+    failReasons: abnormalTypeBars(runs),
   }
 }
 
-/** 成功/失败按天堆叠 */
+/** 成功/异常按天堆叠 */
 function dayBucketsStack(runs) {
   const days = [...new Set(allRuns().map((r) => normalizeDate(r.dateKey)))].sort()
   const map = groupBy(runs, (r) => normalizeDate(r.dateKey))
@@ -238,7 +206,7 @@ function dayBucketsStack(runs) {
         label: d.slice(5),
         parts: [
           { value: sum(rs, (r) => r.success), color: 'var(--el-color-success)', name: '成功' },
-          { value: sum(rs, (r) => r.failed + r.error), color: 'var(--el-color-danger)', name: '失败' },
+          { value: sum(rs, abnormalOf), color: 'var(--el-color-danger)', name: '异常' },
         ],
       }
     })
@@ -326,7 +294,7 @@ export function aggregateInterface(filters = {}) {
   const ranking = [...ifaceGroup.entries()].map(([interfaceId, rs]) => {
     const total = sum(rs, (r) => r.total)
     const success = sum(rs, (r) => r.success)
-    const errors = sum(rs, (r) => r.failed + r.error)
+    const abnormal = sum(rs, abnormalOf)
     const ds = rs.flatMap((r) => r.durations || [])
     return {
       interfaceId,
@@ -335,7 +303,8 @@ export function aggregateInterface(filters = {}) {
       req: total,
       successRate: pct(success, total),
       avgMs: ds.length ? round(sum(ds) / ds.length) : 0,
-      errors,
+      abnormal,
+      errors: abnormal,
     }
   }).sort((a, b) => b.req - a.req)
   return {
@@ -343,17 +312,17 @@ export function aggregateInterface(filters = {}) {
       tested: testedIds.size,
       totalIfaces: allIfaces.length,
       coverage: pct(testedIds.size, allIfaces.length),
-      problemIfaces: ranking.filter((r) => r.errors > 0).length,
+      problemIfaces: ranking.filter((r) => r.abnormal > 0).length,
     },
     coverageDonut: [
       { label: '已测', value: testedIds.size, color: 'var(--el-color-primary)' },
       { label: '未测', value: Math.max(0, allIfaces.length - testedIds.size), color: 'var(--el-fill-color-darker)' },
     ],
     topErrorIfaces: [...ranking]
-      .filter((r) => r.errors > 0)
-      .sort((a, b) => b.errors - a.errors)
+      .filter((r) => r.abnormal > 0)
+      .sort((a, b) => b.abnormal - a.abnormal)
       .slice(0, 8)
-      .map((r) => ({ label: r.iface, value: r.errors })),
+      .map((r) => ({ label: r.iface, value: r.abnormal })),
     ranking,
   }
 }
@@ -361,7 +330,7 @@ export function aggregateInterface(filters = {}) {
 export function aggregateTrend(filters = {}) {
   const runs = getRuns(filters)
   const exc = getExceptions(filters)
-  // 综合趋势：请求量 / 通过率 / 异常数 随时间
+  // 综合趋势：请求量 / 通过率 / 异常记录数 随时间
   const reqTrend = dayBuckets(runs, (rs) => sum(rs, (r) => r.total))
   const passTrend = dayBuckets(runs, (rs) => pct(sum(rs, (r) => r.success), sum(rs, (r) => r.total)))
   const excDays = [...new Set(exc.map((e) => normalizeDate(e.capturedTime)))].sort()
@@ -482,7 +451,7 @@ export function aggregateMq(filters = {}) {
 export function exportRows(category, filters = {}) {
   if (category === 'interface') {
     return aggregateInterface(filters).ranking.map((r) => ({
-      接口: r.iface, 模块: r.module, 请求数: r.req, 成功率: `${r.successRate}%`, 平均时延ms: r.avgMs, 异常数: r.errors,
+      接口: r.iface, 模块: r.module, 请求数: r.req, 成功率: `${r.successRate}%`, 平均时延ms: r.avgMs, 异常请求: r.abnormal,
     }))
   }
   if (category === 'exception') {
@@ -493,7 +462,7 @@ export function exportRows(category, filters = {}) {
   // 默认导出执行记录明细
   return getRuns(filters).map((r) => ({
     时间: r.startedAt, 系统: r.systemId, 模块: r.moduleName, 接口: r.iface,
-    请求数: r.total, 成功: r.success, 失败: r.failed, 异常: r.error, 平均时延ms: r.avgMs, 吞吐rps: r.rps,
+    请求数: r.total, 成功: r.success, 异常: abnormalOf(r), 平均时延ms: r.avgMs, 吞吐rps: r.rps,
   }))
 }
 

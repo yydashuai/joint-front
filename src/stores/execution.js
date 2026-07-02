@@ -6,6 +6,7 @@ import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
 import { useRuleStore } from '@/stores/rule'
 import { useExceptionStore } from '@/stores/exception'
+import { useRunBatchStore } from '@/stores/runBatch'
 import { evaluate, makeSample } from '@/utils/ruleEngine'
 import { bus, EVENTS } from '@/utils/bus'
 
@@ -20,6 +21,7 @@ const rnd = (min, max) => Math.round(min + Math.random() * (max - min))
 
 const DEFAULT_REQUESTS = 8
 const FALLBACK_RULE_TYPES = ['类型校验', '取值范围', '边界值检测', '字段越界', '格式错误']
+const abnormalCountOf = (item = {}) => item.abnormal ?? ((item.failed || 0) + (item.error || 0))
 
 const emptyCounters = () => ({
   totalRequests: 0,
@@ -175,8 +177,16 @@ export const useExecutionStore = defineStore('execution', {
     summary(state) {
       const total = state.counters.totalRequests
       const passed = state.counters.successRequests
+      const abnormalTypes = Object.values(state._stepStats || {}).reduce((acc, item) => {
+        Object.entries(item.abnormalTypes || {}).forEach(([type, count]) => {
+          acc[type] = (acc[type] || 0) + (count || 0)
+        })
+        return acc
+      }, {})
       return {
         ...state.counters,
+        abnormalRequests: state.counters.failedRequests + state.counters.errorRequests,
+        abnormalTypes,
         passRate: total ? Math.round((passed / total) * 100) : 0,
         progress: state.progress,
         durationText: `${state.counters.executionTime}s`,
@@ -266,11 +276,26 @@ export const useExecutionStore = defineStore('execution', {
       this.activeTaskId = this.planItems[0]?.taskId || null
       this.targetTotal = Math.max(1, this.planItems.reduce((sum, item) => sum + item.estimatedRequests, 0))
       this._stepStats = Object.fromEntries(this.planItems.map((item) => [item.taskId, {
-        total: 0, success: 0, failed: 0, error: 0, durations: [], traces: [],
+        total: 0, success: 0, failed: 0, error: 0, abnormalTypes: {}, durations: [], traces: [],
       }]))
       this._requestCursor = 0
       this.savedRunToTasks = false
       this.mqProbeResults = {}
+      useRunBatchStore().startBatch({
+        runId: this.currentRunId,
+        systemId: this.planItems[0]?.task?.systemId || '',
+        startedAt: this.startedAt,
+        config: this.config,
+        tasks: this.planItems.map((item) => ({
+          taskId: item.taskId,
+          taskName: item.task?.name || '',
+          systemId: item.task?.systemId || '',
+          moduleId: item.module?.id || item.task?.moduleId || '',
+          moduleName: item.module?.name || '',
+          interfaceId: item.iface?.id || item.task?.bindings?.interfaceId || '',
+          iface: item.iface?.name || '',
+        })),
+      })
       this._markTasksRunning()
       this._simulateMqProbes()
       this._tick()
@@ -318,6 +343,39 @@ export const useExecutionStore = defineStore('execution', {
       this._stepStats = {}
       this._requestCursor = 0
       this.mqProbeResults = {}
+    },
+
+    loadBatchSnapshot(batch) {
+      if (!batch?.runId) return false
+      this._clearTimers()
+      const taskStore = useTestTaskStore()
+      this.plan = (batch.taskIds || batch.tasks?.map((item) => item.taskId) || [])
+        .filter((taskId) => taskStore.tasks.some((task) => task.id === taskId))
+        .map((taskId) => ({ id: uid('plan'), taskId }))
+      this.status = batch.state === 'running' ? 'paused' : 'done'
+      this.progress = 100
+      this.counters = {
+        ...emptyCounters(),
+        ...(batch.summary || {}),
+        rps: batch.summary?.executionTime
+          ? Number(((batch.summary.totalRequests || 0) / batch.summary.executionTime).toFixed(1))
+          : 0,
+      }
+      this.logLines = []
+      this.stepResults = batch.stepResults || []
+      this.exceptions = batch.exceptions || []
+      this.currentRunId = batch.runId
+      this.startedAt = batch.startedAt || batch.time || null
+      this.finishedAt = batch.finishedAt || null
+      this.startedAtMs = null
+      this.activeTaskId = this.stepResults[0]?.taskId || null
+      this.activePlanIndex = 0
+      this.targetTotal = this.counters.totalRequests || 0
+      this.savedRunToTasks = true
+      this._stepStats = {}
+      this._requestCursor = 0
+      this.mqProbeResults = {}
+      return true
     },
 
     tickInterval() {
@@ -410,8 +468,10 @@ export const useExecutionStore = defineStore('execution', {
         this.counters.successRequests += 1
         step.success += 1
       } else {
+        const abnormalType = issueType || '响应超时'
+        step.abnormalTypes[abnormalType] = (step.abnormalTypes[abnormalType] || 0) + 1
         const captured = exceptionStore.capture({
-          type: issueType,
+          type: abnormalType,
           level: status === 'error' ? '高' : (Math.random() > 0.5 ? '中' : '高'),
           systemId: item.system?.id || item.task?.systemId,
           moduleId: item.module?.id || item.task?.moduleId,
@@ -431,13 +491,17 @@ export const useExecutionStore = defineStore('execution', {
         })
         const ex = captured || {
           id: uid('ex'),
+          runId: this.currentRunId,
           taskId: item.taskId,
+          systemId: item.system?.id || item.task?.systemId || '',
           moduleId: item.module?.id,
-          type: issueType,
+          interfaceId: item.iface?.id || item.task?.bindings?.interfaceId || '',
+          type: abnormalType,
           iface: line.iface,
           level: status === 'error' ? '高' : '中',
           detail: `${item.task.name} / ${line.iface}：${judged.ruleMessage || note}，trace=${traceId}`,
           time: nowText(),
+          capturedTime: nowText(),
         }
         this.exceptions.unshift(ex)
         if (status === 'fail') {
@@ -515,32 +579,56 @@ export const useExecutionStore = defineStore('execution', {
       this.finishedAt = nowText()
       this.progress = this.counters.totalRequests >= this.targetTotal ? 100 : this.progress
       this.stepResults = this.planItems.map((item) => {
-        const stat = this._stepStats[item.taskId] || { total: 0, success: 0, failed: 0, error: 0, durations: [], traces: [] }
+        const stat = this._stepStats[item.taskId] || { total: 0, success: 0, failed: 0, error: 0, abnormalTypes: {}, durations: [], traces: [] }
         const avgMs = stat.durations.length ? Math.round(stat.durations.reduce((a, b) => a + b, 0) / stat.durations.length) : 0
+        const abnormal = abnormalCountOf(stat)
         return {
           taskId: item.taskId,
           taskName: item.task.name,
+          systemId: item.task?.systemId || '',
+          moduleId: item.module?.id || item.task?.moduleId || '',
+          moduleName: item.module?.name || '',
+          interfaceId: item.iface?.id || item.task?.bindings?.interfaceId || '',
           iface: item.iface?.name || '未命名接口',
+          proto: item.iface?.path?.startsWith('/') ? 'HTTP' : 'TCP',
           total: stat.total,
           success: stat.success,
-          failed: stat.failed,
-          error: stat.error,
+          abnormal,
+          abnormalTypes: stat.abnormalTypes || {},
+          failed: abnormal,
+          error: 0,
           avgMs,
-          result: stat.failed + stat.error > 0 ? '存在异常' : '通过',
+          result: abnormal > 0 ? '异常' : '成功',
           traces: stat.traces,
         }
+      })
+      useRunBatchStore().finishBatch(this.currentRunId, {
+        state: finalStatus === 'done' ? 'done' : 'stopped',
+        startedAt: this.startedAt,
+        finishedAt: this.finishedAt,
+        durationText: `${this.counters.executionTime}s`,
+        result: this.counters.failedRequests + this.counters.errorRequests > 0 ? '存在异常' : '成功',
+        summary: {
+          ...this.summary,
+          p95: (() => {
+            const durations = Object.values(this._stepStats).flatMap((item) => item.durations || []).sort((a, b) => a - b)
+            return durations.length ? durations[Math.min(durations.length - 1, Math.floor(durations.length * 0.95))] : this.counters.avgResponseTime
+          })(),
+        },
+        stepResults: this.stepResults,
+        exceptions: this.exceptions,
       })
       this.saveRunRecord()
       this.history.unshift({
         id: this.currentRunId,
         startedAt: this.startedAt,
         finishedAt: this.finishedAt,
-        result: this.counters.failedRequests + this.counters.errorRequests > 0 ? '存在异常' : '通过',
+        result: this.counters.failedRequests + this.counters.errorRequests > 0 ? '存在异常' : '成功',
         ...this.summary,
       })
       bus.emit(EVENTS.TASK_RUN_FINISHED, {
         runId: this.currentRunId,
-        result: this.counters.failedRequests + this.counters.errorRequests > 0 ? '存在异常' : '通过',
+        result: this.counters.failedRequests + this.counters.errorRequests > 0 ? '存在异常' : '成功',
         exceptions: this.exceptions.length,
         taskIds: this.plan.map((p) => p.taskId),
       })
@@ -549,20 +637,21 @@ export const useExecutionStore = defineStore('execution', {
     saveRunRecord() {
       if (!this.currentRunId || this.savedRunToTasks) return false
       const taskStore = useTestTaskStore()
-      const result = this.counters.failedRequests + this.counters.errorRequests > 0 ? '存在异常' : '通过'
+      const result = this.counters.failedRequests + this.counters.errorRequests > 0 ? '存在异常' : '成功'
       this.planItems.forEach((item) => {
         const task = taskStore.tasks.find((t) => t.id === item.taskId)
         if (!task) return
         const step = this.stepResults.find((s) => s.taskId === item.taskId)
+        const abnormal = abnormalCountOf(step)
         task.runs.unshift({
           id: `${this.currentRunId}-${item.taskId}`,
           startedAt: this.startedAt,
           finishedAt: this.finishedAt,
           result: step?.result || result,
           duration: `${this.counters.executionTime}s`,
-          log: `本次执行 ${step?.total || 0} 次请求，异常 ${step?.error || 0} 次，失败 ${step?.failed || 0} 次`,
+          log: `本次执行 ${step?.total || 0} 次请求，成功 ${step?.success || 0} 次，异常 ${abnormal} 次`,
         })
-        task.status = result === '通过' ? 'completed' : 'error'
+        task.status = result === '成功' ? 'completed' : 'error'
         task.time = this.finishedAt
       })
       this.savedRunToTasks = true

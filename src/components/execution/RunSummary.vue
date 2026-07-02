@@ -7,8 +7,8 @@
             <span class="card-title">本次执行摘要</span>
             <span class="card-sub">深度趋势分析可继续进入统计与可视化模块</span>
           </div>
-          <el-tag :type="summary.failedRequests + summary.errorRequests > 0 ? 'danger' : 'success'" effect="dark">
-            {{ summary.failedRequests + summary.errorRequests > 0 ? '存在异常' : '通过' }}
+          <el-tag :type="summary.abnormalRequests > 0 ? 'danger' : 'success'" effect="dark">
+            {{ summary.abnormalRequests > 0 ? '存在异常' : '成功' }}
           </el-tag>
         </div>
       </template>
@@ -43,14 +43,15 @@
         <el-table-column label="接口" prop="iface" min-width="150" />
         <el-table-column label="请求" prop="total" width="80" align="center" />
         <el-table-column label="成功" prop="success" width="80" align="center" />
-        <el-table-column label="失败" prop="failed" width="80" align="center" />
-        <el-table-column label="异常" prop="error" width="80" align="center" />
+        <el-table-column label="异常" width="80" align="center">
+          <template #default="{ row }">{{ abnormalCount(row) }}</template>
+        </el-table-column>
         <el-table-column label="平均时延" width="100" align="center">
           <template #default="{ row }">{{ row.avgMs }}ms</template>
         </el-table-column>
         <el-table-column label="结果" width="100" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.result === '通过' ? 'success' : 'danger'" size="small">{{ row.result }}</el-tag>
+            <el-tag :type="row.result === '成功' ? 'success' : 'danger'" size="small">{{ row.result }}</el-tag>
           </template>
         </el-table-column>
       </el-table>
@@ -105,7 +106,7 @@
       <template #header>
         <div class="card-head">
           <span class="card-title">本次异常清单</span>
-          <el-button type="warning" plain size="small" :disabled="!store.exceptions.length" @click="router.push('/exception')">全部转入故障异常管理</el-button>
+          <el-button type="warning" plain size="small" :disabled="!store.exceptions.length" @click="router.push('/exception')">查看本次异常</el-button>
         </div>
       </template>
       <el-table :data="store.exceptions" size="small" empty-text="本次无异常">
@@ -146,11 +147,11 @@ import { useExecutionStore } from '@/stores/execution'
 const store = useExecutionStore()
 const router = useRouter()
 const summary = computed(() => store.summary)
+const abnormalCount = (row) => row.abnormal ?? ((row.failed || 0) + (row.error || 0))
 const summaryItems = computed(() => [
   { label: '总请求', value: summary.value.totalRequests },
   { label: '成功', value: summary.value.successRequests, cls: 'summary-item--ok' },
-  { label: '失败', value: summary.value.failedRequests, cls: 'summary-item--bad' },
-  { label: '异常', value: summary.value.errorRequests, cls: 'summary-item--warn' },
+  { label: '异常', value: summary.value.abnormalRequests, cls: 'summary-item--bad' },
   { label: '总耗时', value: `${summary.value.executionTime}s` },
   { label: '平均时延', value: `${summary.value.avgResponseTime}ms` },
   { label: 'RPS', value: summary.value.rps },
@@ -185,9 +186,9 @@ const saveRecord = () => {
 }
 
 const exportCsv = () => {
-  const header = '任务,接口,请求,成功,失败,异常,平均时延,结果'
+  const header = '任务,接口,请求,成功,异常,平均时延,结果'
   const rows = store.stepResults.map((row) =>
-    [row.taskName, row.iface, row.total, row.success, row.failed, row.error, `${row.avgMs}ms`, row.result].join(',')
+    [row.taskName, row.iface, row.total, row.success, abnormalCount(row), `${row.avgMs}ms`, row.result].join(',')
   )
   const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
@@ -209,7 +210,7 @@ const exportCsv = () => {
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .card-title { font-weight: 650; font-size: 14px; margin-right: 8px; }
 .card-sub, .muted { color: var(--el-text-color-secondary); font-size: 12px; }
-.summary-grid { display: grid; grid-template-columns: repeat(7, minmax(90px, 1fr)) 120px; gap: 10px; align-items: center; }
+.summary-grid { display: grid; grid-template-columns: repeat(6, minmax(90px, 1fr)) 120px; gap: 10px; align-items: center; }
 .summary-item {
   min-height: 72px;
   padding: 12px;

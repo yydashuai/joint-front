@@ -112,7 +112,30 @@
             <el-descriptions-item label="接口">{{ exception.iface }}</el-descriptions-item>
             <el-descriptions-item label="捕捉时间">{{ exception.capturedTime }}</el-descriptions-item>
             <el-descriptions-item v-if="exception.runId" label="执行批次">
-              <el-button link type="primary" @click="router.push({ path: '/execution', query: { runId: exception.runId } })">{{ exception.runId }}</el-button>
+              <el-popover placement="bottom-start" width="360" trigger="click" popper-class="batch-summary-popover">
+                <template #reference>
+                  <el-button link type="primary">{{ exception.runId }}</el-button>
+                </template>
+                <div v-if="batch" class="batch-summary">
+                  <div class="batch-summary__head">
+                    <strong>{{ batch.name }}</strong>
+                    <el-tag :type="batch.result === '成功' ? 'success' : 'danger'" size="small">{{ batch.result }}</el-tag>
+                  </div>
+                  <div class="batch-summary__grid">
+                    <span>开始时间</span><b>{{ batch.startedAt || batch.time }}</b>
+                    <span>任务数</span><b>{{ batch.tasks?.length || 0 }}</b>
+                    <span>总请求</span><b>{{ batch.summary?.totalRequests || 0 }}</b>
+                    <span>通过率</span><b>{{ batch.summary?.passRate || 0 }}%</b>
+                    <span>平均时延</span><b>{{ batch.summary?.avgResponseTime || 0 }}ms</b>
+                  </div>
+                  <div class="batch-summary__tasks">{{ batchTaskNames }}</div>
+                  <el-button type="primary" size="small" @click="openBatchSummary">查看执行摘要</el-button>
+                </div>
+                <div v-else class="batch-summary batch-summary--empty">
+                  <p>未找到该批次摘要。</p>
+                  <el-button type="primary" size="small" @click="openBatchSummary">打开执行页</el-button>
+                </div>
+              </el-popover>
             </el-descriptions-item>
           </el-descriptions>
         </section>
@@ -158,6 +181,7 @@ import { ElMessage } from 'element-plus'
 import { Close, Plus, Search } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { EXC_SOURCES, EXC_STATES, useExceptionStore } from '@/stores/exception'
+import { useRunBatchStore } from '@/stores/runBatch'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -167,6 +191,7 @@ const emit = defineEmits(['update:modelValue'])
 
 const router = useRouter()
 const store = useExceptionStore()
+const batchStore = useRunBatchStore()
 const note = ref('')
 const currentState = ref('待处理')
 const tagDraft = ref([])
@@ -203,6 +228,11 @@ watch(() => props.exception?.tags, (tags) => {
 const sourceLabel = (source) => EXC_SOURCES.find((item) => item.value === source)?.label || source
 const stateOptions = EXC_STATES.map((item) => ({ label: item.label, value: item.value }))
 const tagSummary = computed(() => props.exception?.tags?.length ? props.exception.tags.join(', ') : '未设置标签')
+const batch = computed(() => props.exception?.runId ? batchStore.byId(props.exception.runId) : null)
+const batchTaskNames = computed(() => {
+  const names = (batch.value?.tasks || []).map((item) => item.taskName || item.iface).filter(Boolean)
+  return names.length ? names.slice(0, 4).join('、') : '暂无任务清单'
+})
 const filteredTagOptions = computed(() => {
   const keyword = tagSearch.value.trim().toLowerCase()
   if (!keyword) return store.tagOptions
@@ -271,6 +301,10 @@ const deleteTag = (tag) => {
   store.deleteTag(tag)
   tagDraft.value = tagDraft.value.filter((item) => item !== tag)
   ElMessage.success('标签已删除')
+}
+const openBatchSummary = () => {
+  if (!props.exception?.runId) return
+  router.push({ path: '/execution', query: { runId: props.exception.runId } })
 }
 </script>
 
@@ -413,5 +447,54 @@ const deleteTag = (tag) => {
 .new-tag-confirm {
   height: 32px;
   padding: 0 14px;
+}
+
+:global(.batch-summary-popover) {
+  border-radius: 10px !important;
+}
+.batch-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.batch-summary__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.batch-summary__head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.batch-summary__grid {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 7px 10px;
+  font-size: 13px;
+}
+.batch-summary__grid span {
+  color: var(--el-text-color-secondary);
+}
+.batch-summary__grid b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+.batch-summary__tasks {
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--el-fill-color-extra-light);
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.batch-summary--empty p {
+  margin: 0;
+  color: var(--el-text-color-secondary);
 }
 </style>
