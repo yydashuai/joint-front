@@ -6,14 +6,19 @@
         <div class="page__desc">构造基于协议/接口的测试报文数据集，管理测试资源文件</div>
       </div>
       <div class="header-actions">
-        <el-button :icon="Upload" @click="showUploadDialog = true">导入文件</el-button>
+        <el-button-group>
+          <el-button :type="viewMode === 'dataset' ? 'primary' : ''" @click="viewMode = 'dataset'">数据集管理</el-button>
+          <el-button :type="viewMode === 'history' ? 'primary' : ''" @click="viewMode = 'history'">历史数据管理</el-button>
+          <el-button :type="viewMode === 'files' ? 'primary' : ''" @click="viewMode = 'files'">测试资源文件</el-button>
+        </el-button-group>
+        <el-button v-if="viewMode === 'files'" :icon="Upload" @click="showUploadDialog = true">导入文件</el-button>
       </div>
     </div>
 
-    <div class="split">
-      <!-- ======== 左侧树 ======== -->
+    <!-- ======== 数据集管理视图 ======== -->
+    <div v-if="viewMode === 'dataset'" class="split">
+      <!-- 左侧树 -->
       <div class="tree-panel">
-        <!-- 数据集搜索 (优化点 12/22) -->
         <div class="tree-search">
           <el-input
             v-model="dsSearch"
@@ -37,32 +42,34 @@
         />
       </div>
 
-      <!-- ======== 右侧内容区 ======== -->
+      <!-- 右侧内容区 -->
       <el-card class="main" shadow="never">
-        <!-- 视图 B：数据集编辑器 -->
         <DatasetEditor
           v-if="currentDs"
           :dataset="currentDs"
           @delete="onDeleteDataset"
           @duplicate="onDuplicateDataset"
         />
-
-        <!-- 视图 A：空状态 + 资源文件管理 -->
-        <template v-else>
-          <el-empty description="从左侧选择一个数据集进行编辑，或创建新数据集" :image-size="80" />
-          <ResourceFiles @upload="showUploadDialog = true" @download="onDownloadFile" />
-        </template>
+        <el-empty v-else description="暂无数据集，请从左侧创建" :image-size="80" />
       </el-card>
     </div>
 
-    <!-- ======== 新建数据集对话框 ======== -->
+    <!-- ======== 历史数据管理视图 ======== -->
+    <el-card v-else-if="viewMode === 'history'" class="main history-main" shadow="never">
+      <HistoryDataManager />
+    </el-card>
+
+    <!-- ======== 测试资源文件视图 ======== -->
+    <el-card v-else class="main history-main" shadow="never">
+      <ResourceFiles @upload="showUploadDialog = true" @download="onDownloadFile" />
+    </el-card>
+
+    <!-- ======== 对话框 ======== -->
     <CreateDatasetDialog
       v-model="showCreateDialog"
       :module="createModule"
       @created="onCreateDataset"
     />
-
-    <!-- ======== 上传文件对话框 ======== -->
     <UploadFileDialog
       v-model="showUploadDialog"
       @submitted="onUploadFile"
@@ -71,7 +78,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { Upload, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
@@ -79,6 +86,7 @@ import DatasetEditor from '@/components/testdata/DatasetEditor.vue'
 import ResourceFiles from '@/components/testdata/ResourceFiles.vue'
 import CreateDatasetDialog from '@/components/testdata/CreateDatasetDialog.vue'
 import UploadFileDialog from '@/components/testdata/UploadFileDialog.vue'
+import HistoryDataManager from '@/components/testdata/HistoryDataManager.vue'
 import { useTestDataStore } from '@/stores/testData'
 import { useProtocolStore } from '@/stores/protocol'
 import { useConnectionStore } from '@/stores/connection'
@@ -87,6 +95,9 @@ const tdStore = useTestDataStore()
 const protoStore = useProtocolStore()
 const connStore = useConnectionStore()
 
+/* ========== 视图切换 ========== */
+const viewMode = ref('dataset') // 'dataset' | 'history' | 'files'
+
 /* ========== 树选择 + 搜索 ========== */
 const selectedKey = ref('')
 const dsSearch = ref('')
@@ -94,7 +105,6 @@ const dsSearch = ref('')
 const leafGroups = (module) => {
   let datasets = tdStore.datasets.filter(d => d.moduleName === module.name && d.systemId === module.systemId)
 
-  // 搜索过滤
   if (dsSearch.value) {
     const kw = dsSearch.value.toLowerCase()
     datasets = datasets.filter(d =>
@@ -134,16 +144,15 @@ const onDeleteLeaf = (data) => {
   }
 }
 
-/* ========== 数据集剪贴板（内存模式，参考协议管理） ========== */
-const dsClipboard = ref(null) // { data: <deep-cloned dataset> }
+/* ========== 数据集剪贴板 ========== */
+const dsClipboard = ref(null)
 
 const leafContextActions = (nodeData) => {
   if (!nodeData?.ref || nodeData.kind !== 'dataset') return []
-  const actions = [
+  return [
     { label: '复制数据集', action: 'copy-dataset' },
     { label: '复制并粘贴到当前模块', action: 'paste-dataset' }
   ]
-  return actions
 }
 
 const onLeafAction = ({ action, data }) => {
@@ -169,14 +178,12 @@ const onLeafAction = ({ action, data }) => {
       linkedProtocol: src.linkedProtocol,
       linkedInterface: src.linkedInterface
     })
-    // 深拷贝行
     dup.rows = JSON.parse(JSON.stringify(src.rows)).map(r => ({ ...r, id: Date.now() + Math.random() * 1000 }))
     selectedKey.value = `ds-${dup.id}`
     ElMessage.success(`已粘贴为「${dup.name}」`)
   }
 }
 
-/* ========== 模块级剪贴板操作 ========== */
 const moduleContextActions = () => {
   const actions = []
   if (dsClipboard.value) {
@@ -219,7 +226,6 @@ const onAddLeaf = ({ module }) => {
 const onCreateDataset = (data) => {
   const ds = tdStore.addDataset(data)
 
-  // 展平协议字段（byte/bit/repeat 嵌套 → 平面列名列表）
   const flattenProtoFields = (fields) => {
     const result = []
     fields.forEach(f => {
@@ -240,7 +246,6 @@ const onCreateDataset = (data) => {
     return result
   }
 
-  // 关联协议：用协议字段初始化第一行
   if (ds.linkedProtocol) {
     const proto = protoStore.protocols.find(p => p.name === ds.linkedProtocol)
     if (proto?.config?.fields?.length) {
@@ -299,13 +304,34 @@ const onDownloadFile = (file) => {
   ElMessage.success(`模拟下载：${file.name}`)
 }
 
-/* ========== 上传文件 ========== */
 const showUploadDialog = ref(false)
 
 const onUploadFile = (data) => {
   tdStore.addFile(data)
   ElMessage.success('文件导入成功')
 }
+
+/* ========== 初始化：自动选中第一个数据集 ========== */
+const autoSelectFirst = () => {
+  if (tdStore.datasets.length > 0 && !tdStore.selectedDatasetId) {
+    tdStore.select(tdStore.datasets[0].id)
+    selectedKey.value = `ds-${tdStore.datasets[0].id}`
+  }
+}
+autoSelectFirst()
+
+// 数据集列表变化时（删除后），保持选中有效
+watch(() => tdStore.datasets.length, () => {
+  if (tdStore.selectedDatasetId && !tdStore.datasets.find(d => d.id === tdStore.selectedDatasetId)) {
+    if (tdStore.datasets.length > 0) {
+      tdStore.select(tdStore.datasets[0].id)
+      selectedKey.value = `ds-${tdStore.datasets[0].id}`
+    } else {
+      tdStore.select(null)
+      selectedKey.value = ''
+    }
+  }
+})
 </script>
 
 <style scoped lang="scss">
@@ -378,6 +404,13 @@ const onUploadFile = (data) => {
     flex-direction: column;
     gap: 14px;
     overflow: auto;
+  }
+}
+
+/* 历史/资源文件视图占满 */
+.history-main {
+  :deep(.el-card__body) {
+    overflow: hidden;
   }
 }
 </style>

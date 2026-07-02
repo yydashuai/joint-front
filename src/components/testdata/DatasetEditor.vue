@@ -24,6 +24,7 @@
         <el-tag v-if="ds.linkedInterface" type="warning" effect="plain" size="small">
           接口：{{ ds.linkedInterface }}
         </el-tag>
+        <el-tooltip content="基于现有数据模式智能生成新的测试行"><el-button size="small" :icon="MagicStick" @click="showGenDialog = true">智能生成</el-button></el-tooltip>
         <el-tooltip content="将数据集导出为 CSV 文件"><el-button size="small" :icon="Download" @click="onExportCsv">导出 CSV</el-button></el-tooltip>
         <el-tooltip content="将数据集导出为 JSON 文件"><el-button size="small" :icon="DocumentCopy" @click="onExportJson">导出 JSON</el-button></el-tooltip>
         <el-tooltip content="复制整个数据集及其所有数据行"><el-button size="small" :icon="CopyDocument" @click="onDuplicate">复制数据集</el-button></el-tooltip>
@@ -342,6 +343,55 @@
       </el-collapse-item>
     </el-collapse>
 
+    <!-- ======== 智能生成对话框 ======== -->
+    <el-dialog
+      v-model="showGenDialog"
+      title="智能生成测试数据"
+      width="640px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <div class="gen-dialog">
+        <div class="gen-form__row">
+          <label class="gen-label">目标数据集</label>
+          <el-tag type="success" effect="plain">{{ ds.name }}</el-tag>
+        </div>
+        <div class="gen-form__row">
+          <label class="gen-label">生成数量</label>
+          <el-input-number v-model="genCount" :min="1" :max="20" :step="1" style="width: 140px;" />
+          <span class="gen-hint">基于现有数据的值范围和分布模式生成</span>
+        </div>
+        <div class="gen-form__row">
+          <label class="gen-label">生成策略</label>
+          <div class="gen-strategies">
+            <el-tag size="small" type="info" effect="plain">边界值扩展</el-tag>
+            <el-tag size="small" type="info" effect="plain">范围内随机</el-tag>
+            <el-tag size="small" type="info" effect="plain">交叉变异</el-tag>
+            <el-tag size="small" type="info" effect="plain">边界扰动</el-tag>
+          </div>
+        </div>
+        <div v-if="genPreview.length > 0" class="gen-preview">
+          <div class="gen-preview__header">
+            <span>生成预览</span>
+            <el-tag size="small" type="success" effect="plain">{{ genPreview.length }} 条</el-tag>
+          </div>
+          <el-table :data="genPreview" size="small" border max-height="220" style="width: 100%;">
+            <el-table-column prop="label" label="标签" width="120" />
+            <el-table-column label="数据内容" min-width="300">
+              <template #default="{ row }">
+                <span class="mono text-secondary">{{ formatGenValues(row.values) }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showGenDialog = false">取消</el-button>
+        <el-button type="primary" @click="onGenerate">生成并预览</el-button>
+        <el-button type="success" :disabled="genPreview.length === 0" @click="onConfirmGenerate">确认添加到本次数据</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 行右键菜单 -->
     <teleport to="body">
       <div v-if="rowCtx.visible" class="row-ctx-mask" @click="closeRowCtx" @contextmenu.prevent="closeRowCtx">
@@ -363,7 +413,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import {
-  Download, Delete, Plus, Lock, DocumentCopy, CopyDocument, Search, Top, Bottom
+  Download, Delete, Plus, Lock, DocumentCopy, CopyDocument, Search, Top, Bottom, MagicStick
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import Sortable from 'sortablejs'
@@ -580,6 +630,41 @@ const onDeleteSelectedHistoryRows = () => {
   selectedHistoryRows.value = []
   historyTableRef.value?.clearSelection?.()
   ElMessage.success(`已删除 ${count} 条历史数据`)
+}
+
+/* ========== 智能生成 ========== */
+const showGenDialog = ref(false)
+const genCount = ref(5)
+const genPreview = ref([])
+
+const onGenerate = () => {
+  const result = tdStore.generateTestData(ds.value.id, genCount.value)
+  genPreview.value = result
+  if (result.length === 0) {
+    ElMessage.warning('未能生成新数据，请检查数据集是否包含有效数据行')
+  } else {
+    ElMessage.success(`已生成 ${result.length} 条测试数据，请预览确认`)
+  }
+}
+
+const onConfirmGenerate = () => {
+  if (genPreview.value.length === 0) return
+  // 添加到本次数据矩阵（rows），而非历史数据
+  const newRows = genPreview.value.map(r => ({
+    id: Date.now() + Math.random() * 1000,
+    label: r.label,
+    values: { ...r.values }
+  }))
+  tdStore.insertRowsAfter(ds.value.id, null, newRows)
+  nextTick(() => takeSnapshot())
+  ElMessage.success(`已将 ${genPreview.value.length} 条智能生成数据添加到本次数据矩阵`)
+  genPreview.value = []
+  showGenDialog.value = false
+}
+
+const formatGenValues = (values) => {
+  if (!values) return ''
+  return Object.entries(values).map(([k, v]) => `${k}: ${v}`).join(', ')
 }
 
 /* ========== 行剪贴板 + 右键菜单 ========== */
@@ -1217,5 +1302,62 @@ const onKeydown = (e) => {
     &.disabled { color: var(--el-text-color-placeholder); pointer-events: none; }
     &.ctx-sep { height: 1px; padding: 0; margin: 4px 8px; background: var(--el-border-color-lighter); cursor: default; pointer-events: none; }
   }
+}
+
+/* ======== 智能生成对话框 ======== */
+.gen-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.gen-form__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gen-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--el-text-color-primary);
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.gen-hint {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+}
+
+.gen-strategies {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.gen-preview {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--el-fill-color-lighter);
+
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+}
+
+.gen-preview .mono {
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.gen-preview .text-secondary {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 </style>
