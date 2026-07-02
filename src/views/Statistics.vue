@@ -358,7 +358,9 @@ const onExport = (cmd) => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 .header-actions { display: flex; gap: 8px; }
 
@@ -387,7 +389,30 @@ const onExport = (cmd) => {
 
 .stat-tabs {
   flex: 1;
-  :deep(.el-card__body) { padding: 4px 16px 16px; }
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  :deep(.el-card__body) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 4px 16px 16px;
+  }
+  :deep(.el-tabs) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  :deep(.el-tabs__content) {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding-top: 8px;
+  }
 }
 
 .kpi-grid {

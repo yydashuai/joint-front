@@ -474,7 +474,11 @@ const confirmCreateBroker = async () => {
 
 <style scoped lang="scss">
 /* 用 min-height 而非固定 100%：内容变高时整页（工作区）出现滚动条 */
-.conn { min-height: 100%; }
+.conn {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
 
 .header-actions { display: flex; align-items: center; gap: 12px; }
 
@@ -521,18 +525,22 @@ const confirmCreateBroker = async () => {
 
 /* 左树 ｜ 右（拓扑 + 配置） */
 .conn-layout {
-  flex-shrink: 0;
+  flex: 1;
+  min-height: 0;
   display: flex;
   align-items: stretch;
   gap: 16px;
+  overflow: hidden;
 }
 .conn-tree { width: 300px; flex-shrink: 0; }
 .conn-main {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow: hidden;
 }
 
 .card-head {
@@ -546,7 +554,14 @@ const confirmCreateBroker = async () => {
 /* 拓扑图封顶 + 内部滚动：拓扑再大也不会把下方配置挤掉 */
 .topo-card { flex-shrink: 0; }
 
-.cfg-card { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cfg-card {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .detail-empty { flex: 1; padding: 40px 0; }
 .w-full { width: 100%; }
 .cfg-form :deep(.el-form-item) { margin-bottom: 16px; }
