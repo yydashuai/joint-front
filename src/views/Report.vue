@@ -31,7 +31,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, nextTick } from 'vue'
+import { ref, reactive, nextTick, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import StepDataSource from '@/components/report/steps/StepDataSource.vue'
 import StepSettings from '@/components/report/steps/StepSettings.vue'
 import StepMaterials from '@/components/report/steps/StepMaterials.vue'
@@ -43,6 +44,8 @@ const form = reactive({ runId: null, title: '', templateId: null })
 const materials = reactive([])
 const regenerateFromId = ref(null)
 const autoGenerateTick = ref(0)
+const route = useRoute()
+const firstQueryValue = (value) => Array.isArray(value) ? value[0] : value
 
 const restart = () => {
   regenerateFromId.value = null
@@ -65,6 +68,12 @@ const regenerateReport = async (report) => {
   await nextTick()
   autoGenerateTick.value += 1
 }
+
+watch(() => route.query.runId, (value) => {
+  const runId = firstQueryValue(value)
+  if (!runId) return
+  form.runId = String(runId)
+}, { immediate: true })
 </script>
 
 <style scoped lang="scss">

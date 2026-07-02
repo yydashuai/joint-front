@@ -102,14 +102,14 @@
           <div class="kpi-grid">
             <StatCard label="总请求数" :value="rq.kpis.total" tone="primary" />
             <StatCard label="成功请求" :value="rq.kpis.success" tone="success" />
-            <StatCard label="失败/超时请求" :value="rq.kpis.failed" tone="danger" />
+            <StatCard label="异常请求" :value="rq.kpis.abnormal" tone="danger" />
             <StatCard label="请求成功率" :value="rq.kpis.successRate" suffix="%" :tone="rq.kpis.successRate >= 90 ? 'success' : 'warning'" />
           </div>
           <div class="chart-grid">
             <ChartCard title="请求量随时间"><LineChart :series="[{ name: '请求量', color: 'var(--el-color-primary)', points: rq.requestByDay }]" /></ChartCard>
-            <ChartCard title="成功 / 失败（按天）"><BarChart :data="rq.resultStack" /></ChartCard>
+            <ChartCard title="成功 / 异常（按天）"><BarChart :data="rq.resultStack" /></ChartCard>
             <ChartCard title="按接口请求量 Top"><BarChart :data="rq.requestByIface" horizontal /></ChartCard>
-            <ChartCard title="失败原因构成（来自异常类型）"><DonutChart :data="rq.failReasons" center-label="异常" /></ChartCard>
+            <ChartCard title="异常分类构成（来自规则类型）"><DonutChart :data="rq.failReasons" center-label="异常" /></ChartCard>
           </div>
         </el-tab-pane>
 
@@ -183,9 +183,9 @@
               <el-table-column label="平均时延" width="100" align="right" sortable :sort-by="(r) => r.avgMs">
                 <template #default="{ row }">{{ row.avgMs }}ms</template>
               </el-table-column>
-              <el-table-column label="异常数" prop="errors" width="90" align="right" sortable>
+              <el-table-column label="异常请求" prop="abnormal" width="100" align="right" sortable>
                 <template #default="{ row }">
-                  <span :class="{ danger: row.errors > 0 }">{{ row.errors }}</span>
+                  <span :class="{ danger: row.abnormal > 0 }">{{ row.abnormal }}</span>
                 </template>
               </el-table-column>
             </el-table>

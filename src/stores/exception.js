@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { alerts } from '@/mock/seed-data'
+import { seedExceptionCapturedTime, seedRunIdForAlert } from '@/stores/runBatch'
 import { bus, EVENTS } from '@/utils/bus'
 
 const nowText = () => new Date().toLocaleString('zh-CN', { hour12: false })
@@ -72,7 +73,7 @@ const normalizeSeed = (alert, index) => ({
   interfaceId: '',
   iface: alert.iface || '未命名接口',
   source: sourceOf(alert.type),
-  runId: '',
+  runId: seedRunIdForAlert(alert, index),
   taskId: '',
   detail: {
     reqHex: '',
@@ -81,7 +82,7 @@ const normalizeSeed = (alert, index) => ({
     fieldPath: '',
     recvMs: null,
   },
-  capturedTime: alert.capturedTime || `2026-06-${19 + (index % 7)} ${String(8 + (index % 16)).padStart(2, '0')}:${String(10 + index).padStart(2, '0')}:00`,
+  capturedTime: alert.capturedTime || seedExceptionCapturedTime(index),
   resolvedTime: alert.resolvedTime || '',
   handler: '',
   trace: [

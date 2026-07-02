@@ -1532,21 +1532,21 @@ export const alerts = [
   { id: 'a23', type: '格式错误', iface: 'ORD-005', level: '高', state: '待处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '指令下发模块'), resolvedTime: '', remark: '指令帧 CRC 校验失败率 5%，排查链路质量' },
   { id: 'a24', type: '字段越界', iface: 'LOG-012', level: '中', state: '已处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '2026-06-24 11:00:00', remark: '日志写入高并发时偶发丢失，增加缓冲队列后恢复' },
   // ── MQ 相关异常 ──
-  { id: 'a25', type: 'Broker 断连', iface: 'weapon-exchange', level: '高', state: '已修复', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), resolvedTime: '2026-06-22 14:30:00', remark: 'RabbitMQ Broker 进程 OOM 重启，心跳超时 30s 后自动恢复' },
-  { id: 'a26', type: '消息堆积', iface: 'alert-events', level: '中', state: '待处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '', remark: 'Kafka alert-events 分区 2 消费 lag 超过 5000 条，消费者吞吐量不足' },
-  { id: 'a27', type: '消费者掉线', iface: 'track-data', level: '高', state: '已处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), resolvedTime: '2026-06-23 16:20:00', remark: 'Kafka consumer group rebalance 导致短暂掉线，调整 session.timeout.ms 后稳定' },
-  { id: 'a28', type: '消息过期', iface: 'situation-exchange', level: '中', state: '已记录', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'), resolvedTime: '', remark: 'RabbitMQ 队列 TTL=60s，部分终端离线导致消息过期未消费' },
+  { id: 'a25', type: '响应超时', iface: 'weapon-exchange', level: '高', state: '已修复', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), resolvedTime: '2026-06-22 14:30:00', remark: 'RabbitMQ Broker 进程 OOM 重启，心跳超时 30s 后自动恢复' },
+  { id: 'a26', type: '投递校验', iface: 'alert-events', level: '中', state: '待处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '', remark: 'Kafka alert-events 分区 2 消费 lag 超过 5000 条，消费者吞吐量不足' },
+  { id: 'a27', type: '响应超时', iface: 'track-data', level: '高', state: '已处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), resolvedTime: '2026-06-23 16:20:00', remark: 'Kafka consumer group rebalance 导致短暂掉线，调整 session.timeout.ms 后稳定' },
+  { id: 'a28', type: '投递校验', iface: 'situation-exchange', level: '中', state: '已记录', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'), resolvedTime: '', remark: 'RabbitMQ 队列 TTL=60s，部分终端离线导致消息过期未消费' },
   { id: 'a29', type: '投递校验', iface: 'mount.change', level: '高', state: '已处理', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), resolvedTime: '2026-06-24 10:15:00', remark: '挂载变更消息投递延迟 >3s，调整 prefetch_count 后恢复' },
-  { id: 'a30', type: 'Broker 断连', iface: 'alert-events', level: '高', state: '已修复', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '2026-06-23 08:45:00', remark: 'Kafka Broker 磁盘满导致 partition leader 切换，扩容磁盘后恢复' },
-  { id: 'a31', type: '消息堆积', iface: 'track-data', level: '高', state: '待处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), resolvedTime: '', remark: 'Kafka track-data 分区 0~2 消费 lag 累计超过 12000 条，消费者 GC 频繁' },
+  { id: 'a30', type: '响应超时', iface: 'alert-events', level: '高', state: '已修复', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '2026-06-23 08:45:00', remark: 'Kafka Broker 磁盘满导致 partition leader 切换，扩容磁盘后恢复' },
+  { id: 'a31', type: '投递校验', iface: 'track-data', level: '高', state: '待处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), resolvedTime: '', remark: 'Kafka track-data 分区 0~2 消费 lag 累计超过 12000 条，消费者 GC 频繁' },
   { id: 'a32', type: '顺序校验', iface: 'track-data', level: '中', state: '已处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), resolvedTime: '2026-06-24 15:30:00', remark: '同一航迹 T-1042 的 3 条消息到达顺序乱序，partition key 配置错误已修正' },
-  { id: 'a33', type: '消费者掉线', iface: 'situation-exchange', level: '中', state: '已处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'), resolvedTime: '2026-06-23 11:20:00', remark: 'RabbitMQ 消费者连接超时 60s 后被 Broker 主动断开，心跳间隔从 60s 调为 30s' },
-  { id: 'a34', type: '消息过期', iface: 'mount.change', level: '中', state: '已记录', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), resolvedTime: '', remark: 'RabbitMQ mount.change 队列 TTL=30s，挂载检测模块离线期间 47 条消息过期丢弃' },
+  { id: 'a33', type: '响应超时', iface: 'situation-exchange', level: '中', state: '已处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'), resolvedTime: '2026-06-23 11:20:00', remark: 'RabbitMQ 消费者连接超时 60s 后被 Broker 主动断开，心跳间隔从 60s 调为 30s' },
+  { id: 'a34', type: '投递校验', iface: 'mount.change', level: '中', state: '已记录', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), resolvedTime: '', remark: 'RabbitMQ mount.change 队列 TTL=30s，挂载检测模块离线期间 47 条消息过期丢弃' },
   { id: 'a35', type: '投递校验', iface: 'alert-events', level: '高', state: '已处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '2026-06-25 09:10:00', remark: '告警事件消息投递到 Kafka 后 ACK 超时，acks=all 改为 acks=1 后吞吐恢复' },
-  { id: 'a36', type: 'Broker 断连', iface: 'track-data', level: '高', state: '待处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), resolvedTime: '', remark: 'Kafka Broker 192.168.20.47 节点 2 网络分区，ISR 缩减至 1，数据丢失风险' },
-  { id: 'a37', type: '消息堆积', iface: 'situation-exchange', level: '低', state: '已处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'), resolvedTime: '2026-06-24 16:40:00', remark: 'RabbitMQ situation-fanout 队列短暂堆积 230 条，消费端扩容后 5min 内消化完毕' },
+  { id: 'a36', type: '响应超时', iface: 'track-data', level: '高', state: '待处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), resolvedTime: '', remark: 'Kafka Broker 192.168.20.47 节点 2 网络分区，ISR 缩减至 1，数据丢失风险' },
+  { id: 'a37', type: '投递校验', iface: 'situation-exchange', level: '低', state: '已处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'), resolvedTime: '2026-06-24 16:40:00', remark: 'RabbitMQ situation-fanout 队列短暂堆积 230 条，消费端扩容后 5min 内消化完毕' },
   { id: 'a38', type: '顺序校验', iface: 'mount.change', level: '中', state: '已修复', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), resolvedTime: '2026-06-25 10:00:00', remark: 'RabbitMQ 单队列多消费者导致挂载变更消息乱序，改为单消费者 + 并发确认模式' },
-  { id: 'a39', type: '消费者掉线', iface: 'alert-events', level: '高', state: '待处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '', remark: 'Kafka consumer group cmd-audit-group 中 2/6 消费者因 OOM 退出，pending 堆积 3800 条' },
+  { id: 'a39', type: '响应超时', iface: 'alert-events', level: '高', state: '待处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '', remark: 'Kafka consumer group cmd-audit-group 中 2/6 消费者因 OOM 退出，pending 堆积 3800 条' },
 ]
 
 /* ────────────────────────────────────────────
@@ -1577,9 +1577,8 @@ interfaces.forEach((iface) => {
     const hh = _pad2(_sr(8, 18))
     const mm = _pad2(_sr(0, 59))
     const total = _sr(12, 140)
-    const error = Math.round(total * (_stRng() * 0.06))
-    const failed = Math.round(total * (_stRng() * 0.1))
-    const success = Math.max(0, total - error - failed)
+    const abnormal = 0
+    const success = Math.max(0, total - abnormal)
     const baseLat = _sr(20, 180)
     const durations = Array.from({ length: 12 }, () =>
       _stClamp(Math.round(baseLat + (_stRng() - 0.5) * baseLat * 1.2 + (_stRng() < 0.1 ? _sr(150, 420) : 0)), 4, 820)
@@ -1601,8 +1600,10 @@ interfaces.forEach((iface) => {
       dateKey: day,
       total,
       success,
-      failed,
-      error,
+      abnormal,
+      abnormalTypes: {},
+      failed: abnormal,
+      error: 0,
       avgMs,
       durations,
       executionTime,
@@ -1626,9 +1627,8 @@ _mqIfaces.forEach((mq) => {
     const hh = _pad2(_sr(8, 18))
     const mm = _pad2(_sr(0, 59))
     const total = _sr(50, 300)
-    const error = Math.round(total * (_stRng() * 0.04))
-    const failed = Math.round(total * (_stRng() * 0.08))
-    const success = Math.max(0, total - error - failed)
+    const abnormal = 0
+    const success = Math.max(0, total - abnormal)
     const baseLat = _sr(8, 65)
     const durations = Array.from({ length: 12 }, () =>
       _stClamp(Math.round(baseLat + (_stRng() - 0.5) * baseLat * 0.8 + (_stRng() < 0.08 ? _sr(80, 250) : 0)), 2, 500)
@@ -1650,8 +1650,10 @@ _mqIfaces.forEach((mq) => {
       dateKey: day,
       total,
       success,
-      failed,
-      error,
+      abnormal,
+      abnormalTypes: {},
+      failed: abnormal,
+      error: 0,
       avgMs,
       durations,
       executionTime,

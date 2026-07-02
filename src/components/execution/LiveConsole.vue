@@ -34,8 +34,7 @@
             <el-switch v-model="autoScroll" size="small" active-text="自动滚动" />
             <el-select v-model="filter" size="small" class="filter-select">
               <el-option label="全部" value="all" />
-              <el-option label="仅失败" value="fail" />
-              <el-option label="仅异常" value="error" />
+              <el-option label="仅异常" value="abnormal" />
             </el-select>
           </div>
         </div>
@@ -66,7 +65,7 @@
       <template #header>
         <div class="card-head">
           <span class="card-title">现场异常</span>
-          <el-button link type="primary" size="small" :disabled="!store.exceptions.length" @click="router.push('/exception')">转故障异常管理</el-button>
+          <el-button link type="primary" size="small" :disabled="!store.exceptions.length" @click="router.push('/exception')">查看本次异常</el-button>
         </div>
       </template>
       <div v-if="!store.exceptions.length" class="muted">本轮暂无异常。</div>
@@ -125,17 +124,17 @@ const traceVisible = computed({
 
 const current = computed(() => store.currentItem)
 const visibleLines = computed(() => store.logLines.filter((line) => {
-  if (filter.value === 'fail') return line.status === 'fail'
+  if (filter.value === 'abnormal') return line.status !== 'pass'
   if (filter.value === 'error') return line.status === 'error'
   return true
 }))
+const abnormalRequests = computed(() => store.counters.failedRequests + store.counters.errorRequests)
 
 const metrics = computed(() => [
   { label: '进度', value: `${store.progress}%` },
   { label: '总请求', value: store.counters.totalRequests },
   { label: '成功', value: store.counters.successRequests, cls: 'metric--ok' },
-  { label: '失败', value: store.counters.failedRequests, cls: 'metric--bad' },
-  { label: '异常', value: store.counters.errorRequests, cls: 'metric--warn' },
+  { label: '异常', value: abnormalRequests.value, cls: 'metric--bad' },
   { label: '平均时延', value: `${store.counters.avgResponseTime}ms` },
   { label: 'RPS', value: store.counters.rps },
   { label: '已用时', value: `${store.counters.executionTime}s` },
@@ -158,8 +157,8 @@ const statusType = computed(() => ({
 const progressStatus = computed(() => store.status === 'done' ? 'success' : undefined)
 
 const resultText = (line) => ({
-  pass: '✓通过',
-  fail: '✕失败',
+  pass: '✓成功',
+  fail: '⚠异常',
   error: '⚠异常',
 }[line.status] || line.note)
 
@@ -185,7 +184,7 @@ watch(() => store.logLines.length, () => {
 .console-tools__right { display: flex; align-items: center; gap: 12px; }
 .card-title { font-weight: 650; font-size: 14px; margin-right: 8px; }
 .card-sub, .muted { color: var(--el-text-color-secondary); font-size: 12px; }
-.metrics { display: grid; grid-template-columns: repeat(8, minmax(86px, 1fr)); gap: 8px; margin-top: 12px; }
+.metrics { display: grid; grid-template-columns: repeat(7, minmax(86px, 1fr)); gap: 8px; margin-top: 12px; }
 .metric {
   min-height: 62px;
   padding: 10px;

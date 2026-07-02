@@ -148,6 +148,7 @@ import LiveConsole from '@/components/execution/LiveConsole.vue'
 import RunSummary from '@/components/execution/RunSummary.vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useExecutionStore } from '@/stores/execution'
+import { useRunBatchStore } from '@/stores/runBatch'
 import { useSystemStore } from '@/stores/system'
 import { useTestTaskStore, TASK_STATUS } from '@/stores/testTask'
 
@@ -156,6 +157,7 @@ const taskStore = useTestTaskStore()
 const systemStore = useSystemStore()
 const connStore = useConnectionStore()
 const execution = useExecutionStore()
+const batchStore = useRunBatchStore()
 
 const selectedKey = ref('')
 const taskSearch = ref('')
@@ -333,13 +335,26 @@ const rerun = () => {
   activeTab.value = 'plan'
 }
 
+const firstQueryValue = (value) => Array.isArray(value) ? value[0] : value
+
 watch(() => execution.status, (status) => {
   if (status === 'running') activeTab.value = 'monitor'
   if (status === 'done' || status === 'stopped') activeTab.value = 'summary'
 })
 
 onMounted(() => {
-  const taskId = route.query.taskId || route.query.id
+  const runId = firstQueryValue(route.query.runId)
+  if (runId) {
+    const batch = batchStore.byId(String(runId))
+    if (batch && execution.loadBatchSnapshot(batch)) {
+      activeTab.value = 'summary'
+      if (batch.systemId) systemStore.setCurrent(batch.systemId)
+      ElMessage.success('已打开执行批次摘要')
+      return
+    }
+  }
+
+  const taskId = firstQueryValue(route.query.taskId || route.query.id)
   if (taskId) {
     const task = taskStore.tasks.find((item) => item.id === taskId)
     if (task) {

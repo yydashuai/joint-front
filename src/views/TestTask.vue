@@ -149,7 +149,7 @@
                   </el-table-column>
                   <el-table-column label="结果" prop="result" width="100" align="center">
                     <template #default="{ row }">
-                      <el-tag v-if="row.result" :type="row.result === '通过' ? 'success' : 'danger'" size="small">{{ row.result }}</el-tag>
+                      <el-tag v-if="row.result" :type="row.result === '成功' ? 'success' : 'danger'" size="small">{{ row.result }}</el-tag>
                       <span v-else class="text-ph">—</span>
                     </template>
                   </el-table-column>
@@ -194,7 +194,7 @@
             </div>
             <div>
               <span>结果</span>
-              <el-tag :type="activeRun.result === '通过' ? 'success' : activeRun.result ? 'danger' : 'warning'" size="small">
+              <el-tag :type="activeRun.result === '成功' ? 'success' : activeRun.result ? 'danger' : 'warning'" size="small">
                 {{ activeRun.result || '执行中' }}
               </el-tag>
             </div>
@@ -414,7 +414,7 @@ const runLogLines = computed(() => {
   if (result === '执行中') {
     lines.push({ time: '当前', level: 'warn', levelText: 'WAIT', text: '执行编排尚未返回完成结果，持续等待监控数据写入。' })
   } else {
-    lines.push({ time: finish, level: result === '通过' ? 'success' : 'error', levelText: result === '通过' ? 'PASS' : 'WARN', text: run.log || `执行结束，结果为${result}。` })
+    lines.push({ time: finish, level: result === '成功' ? 'success' : 'error', levelText: result === '成功' ? 'PASS' : 'WARN', text: run.log || `执行结束，结果为${result}。` })
     lines.push({ time: finish, level: 'info', levelText: 'INFO', text: '结果已回写到任务执行记录，可继续生成统计或联试报告。' })
   }
 

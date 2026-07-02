@@ -1,8 +1,17 @@
 import { defineStore } from 'pinia'
+import { useRunBatchStore } from '@/stores/runBatch'
 
 let seq = 9000
 const uid = (p = 'r') => `${p}-${++seq}`
 const now = () => new Date().toISOString().slice(0, 16).replace('T', ' ')
+const pad = (value) => String(value || '').padStart(2, '0')
+const formatDateTime = (text = '') => {
+  const [rawDate = '', rawTime = ''] = String(text).trim().replace(/\//g, '-').split(' ')
+  const [y = '', m = '', d = ''] = rawDate.split('-')
+  const [hh = '', mm = ''] = rawTime.split(':')
+  if (!y || !m || !d) return text || '未记录时间'
+  return `${y}-${pad(m)}-${pad(d)} ${pad(hh || '00')}:${pad(mm || '00')}`
+}
 
 /* ============================================================
  * 联试报告 store（三步式向导）
@@ -21,19 +30,21 @@ const metricsTable = (run) => {
   const s = run.summary
   const ifaceCount = new Set(run.stepResults.map((r) => r.iface)).size
   const severe = run.exceptions.filter((e) => e.level === '高').length
+  const abnormal = s.abnormalRequests ?? ((s.failedRequests || 0) + (s.errorRequests || 0))
   return `| 指标 | 数值 | 指标 | 数值 |
 | --- | --- | --- | --- |
 | 请求总量 | ${s.totalRequests} | 成功率 | ${s.passRate}% |
 | 平均延迟 | ${s.avgResponseTime} ms | P95 延迟 | ${s.p95} ms |
 | 覆盖任务 | ${run.stepResults.length} 个 | 覆盖接口 | ${ifaceCount} 个 |
-| 异常事件 | ${s.failedRequests + s.errorRequests} 条 | 严重异常 | ${severe} 条 |`
+| 异常请求 | ${abnormal} 次 | 异常记录 | ${run.exceptions.length} 条 |
+| 严重异常 | ${severe} 条 | 结果 | ${run.result} |`
 }
 
 const resultsTable = (run) => {
-  const head = `| 任务 | 接口 | 请求数 | 成功 | 平均延迟 | 结果 |
-| --- | --- | --- | --- | --- | --- |`
+  const head = `| 任务 | 接口 | 请求数 | 成功 | 异常 | 平均延迟 | 结果 |
+| --- | --- | --- | --- | --- | --- | --- |`
   const rows = run.stepResults
-    .map((r) => `| ${r.taskName} | ${r.iface} | ${r.total} | ${r.success} | ${r.avgMs} ms | ${r.result} |`)
+    .map((r) => `| ${r.taskName} | ${r.iface} | ${r.total} | ${r.success} | ${r.abnormal ?? ((r.failed || 0) + (r.error || 0))} | ${r.avgMs} ms | ${r.result} |`)
     .join('\n')
   return `${head}\n${rows}`
 }
@@ -97,54 +108,6 @@ export const REPORT_STAGES = [
   '汇编结构化报告…'
 ]
 
-/* ===================== 预置执行批次（静态演示数据源） ===================== */
-const seedRuns = () => [
-  {
-    id: uid('run'), systemId: 'sys-weapon', name: '武器管理-高并发联试',
-    startedAt: '2026-06-23 09:05', finishedAt: '2026-06-23 10:15', durationText: '70 min', result: '存在异常',
-    taskCreator: '李测试',
-    summary: { totalRequests: 18432, successRequests: 17855, failedRequests: 432, errorRequests: 145, avgResponseTime: 124, p95: 287, passRate: 96.9 },
-    stepResults: [
-      { taskName: '任务分配冒烟', iface: 'POST:/missions/assign', total: 4821, success: 4810, failed: 8, error: 3, avgMs: 98, result: '通过' },
-      { taskName: '飞机状态批量查询', iface: 'GET:/aircraft/status/batch', total: 3654, success: 3598, failed: 41, error: 15, avgMs: 143, result: '存在异常' },
-      { taskName: '武器载荷压测', iface: 'POST:/weapons/loadout', total: 2341, success: 2198, failed: 98, error: 45, avgMs: 187, result: '存在异常' },
-      { taskName: '情报融合联试', iface: 'POST:/intel/fuse', total: 1543, success: 1540, failed: 2, error: 1, avgMs: 203, result: '通过' }
-    ],
-    exceptions: [
-      { level: '高', time: '09:12:33', iface: 'POST:/weapons/loadout', message: '连接超时，网关响应超过 2500ms' },
-      { level: '高', time: '09:28:17', iface: 'POST:/weapons/loadout', message: 'SocketTimeoutException: Read timed out' },
-      { level: '高', time: '09:51:44', iface: 'POST:/weapons/loadout', message: '数据库连接池耗尽（max=100 已满）' },
-      { level: '中', time: '09:03:28', iface: 'GET:/aircraft/status/batch', message: 'P95 延迟超阈值，298ms > 280ms' }
-    ]
-  },
-  {
-    id: uid('run'), systemId: 'sys-weapon', name: '弹药状态回归联试',
-    startedAt: '2026-06-24 14:00', finishedAt: '2026-06-24 14:26', durationText: '26 min', result: '通过',
-    taskCreator: '王测试',
-    summary: { totalRequests: 5210, successRequests: 5190, failedRequests: 16, errorRequests: 4, avgResponseTime: 88, p95: 176, passRate: 99.6 },
-    stepResults: [
-      { taskName: '弹药状态查询', iface: 'GET:/ammo/status', total: 3120, success: 3112, failed: 6, error: 2, avgMs: 72, result: '通过' },
-      { taskName: '装控指令下发', iface: 'POST:/ammo/command', total: 2090, success: 2078, failed: 10, error: 2, avgMs: 112, result: '通过' }
-    ],
-    exceptions: [
-      { level: '中', time: '14:11:06', iface: 'POST:/ammo/command', message: '字段越界：装填数量超出取值范围' }
-    ]
-  },
-  {
-    id: uid('run'), systemId: 'sys-fire', name: '火控解算联试',
-    startedAt: '2026-06-25 10:30', finishedAt: '2026-06-25 11:08', durationText: '38 min', result: '通过',
-    taskCreator: '赵联试',
-    summary: { totalRequests: 7640, successRequests: 7602, failedRequests: 30, errorRequests: 8, avgResponseTime: 96, p95: 198, passRate: 99.5 },
-    stepResults: [
-      { taskName: '目标分配联试', iface: 'POST:/targets/assign', total: 4100, success: 4086, failed: 11, error: 3, avgMs: 84, result: '通过' },
-      { taskName: '火控解算冒烟', iface: 'POST:/fire/solve', total: 3540, success: 3516, failed: 19, error: 5, avgMs: 110, result: '通过' }
-    ],
-    exceptions: [
-      { level: '中', time: '10:52:19', iface: 'POST:/fire/solve', message: '格式错误：解算结果字段类型不符' }
-    ]
-  }
-]
-
 export const useReportStore = defineStore('report', {
   state: () => ({
     /* —— 报告模板（全局，上传的 DOCX 文件） —— */
@@ -153,9 +116,6 @@ export const useReportStore = defineStore('report', {
       { id: uid('tpl'), name: '异常专项报告模板', fileName: '异常专项报告模板.docx', size: '32 KB', uploadedAt: '2026-06-21 14:30' },
       { id: uid('tpl'), name: '交付归档报告模板', fileName: '交付归档报告模板.docx', size: '56 KB', uploadedAt: '2026-06-22 16:20' }
     ],
-
-    /* —— 执行批次（报告数据源） —— */
-    runs: seedRuns(),
 
     /* —— 知识库（供「知识库管理」页使用，本向导不引用） —— */
     knowledgeDocs: [
@@ -216,7 +176,7 @@ export const useReportStore = defineStore('report', {
   getters: {
     currentReport: (s) => s.reports.find((r) => r.id === s.currentReportId) || null,
     // 执行批次按系统过滤（null = 全部系统）
-    runsOfSystem: (s) => (sysId) => (sysId == null ? s.runs : s.runs.filter((r) => r.systemId === sysId)),
+    runsOfSystem: () => (sysId) => useRunBatchStore().ofSystem(sysId),
     // 知识库统一管理，不按系统/模块过滤（保留 getter 名兼容旧调用）
     docsOfModule: (s) => () => s.knowledgeDocs,
     reportsOfSystem: (s) => (sysId) => (sysId == null ? s.reports : s.reports.filter((r) => r.systemId === sysId)),
@@ -300,7 +260,7 @@ export const useReportStore = defineStore('report', {
     /* —— 生成报告（静态：进度模拟 + 按批次确定性组织 + 描述段变体） —— */
     async generateReport({ systemId, runId, title, templateId, materials, sysName, generatorName, regenerateFromId } = {}) {
       if (this.generating) return null
-      const run = this.runs.find((r) => r.id === runId)
+      const run = useRunBatchStore().byId(runId)
       if (!run) return null
       const sourceReport = regenerateFromId ? this.reports.find((r) => r.id === regenerateFromId) : null
       const lineageId = sourceReport?.lineageId || sourceReport?.id || uid('line')
@@ -310,6 +270,8 @@ export const useReportStore = defineStore('report', {
           .map((r) => r.version || 1)) + 1
         : 1
       const seedIndex = (version - 1) % 4
+      const fallbackTime = formatDateTime(run.startedAt || run.time)
+      const fallbackTitle = sysName ? `${sysName} ${fallbackTime} 联试报告` : `${fallbackTime} 联试报告`
       this.generating = true
       this.genStage = 0
       for (let i = 0; i < REPORT_STAGES.length; i++) {
@@ -320,7 +282,7 @@ export const useReportStore = defineStore('report', {
         id: uid('rep'),
         lineageId,
         version,
-        title: title || sourceReport?.title || `${run.name}报告`,
+        title: title || sourceReport?.title || fallbackTitle,
         systemId: systemId ?? run.systemId,
         runId: run.id,
         runName: run.name,
