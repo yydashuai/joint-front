@@ -16,14 +16,22 @@
       <StepDataSource v-show="step === 1" :form="form" @next="step = 2" />
       <StepSettings v-show="step === 2" :form="form" @back="step = 1" @next="step = 3" />
       <StepMaterials v-show="step === 3" :materials="materials" @back="step = 2" @next="step = 4" />
-      <StepGenerate v-show="step === 4" :form="form" :materials="materials" @back="step = 3" @done="step = 5" />
-      <StepResult v-show="step === 5" @back="step = 4" @restart="restart" />
+      <StepGenerate
+        v-show="step === 4"
+        :form="form"
+        :materials="materials"
+        :regenerate-from-id="regenerateFromId"
+        :auto-generate-tick="autoGenerateTick"
+        @back="step = 3"
+        @done="onGenerated"
+      />
+      <StepResult v-show="step === 5" @restart="restart" @regenerate="regenerateReport" />
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, nextTick } from 'vue'
 import StepDataSource from '@/components/report/steps/StepDataSource.vue'
 import StepSettings from '@/components/report/steps/StepSettings.vue'
 import StepMaterials from '@/components/report/steps/StepMaterials.vue'
@@ -33,9 +41,29 @@ import StepResult from '@/components/report/steps/StepResult.vue'
 const step = ref(1)
 const form = reactive({ runId: null, title: '', templateId: null })
 const materials = reactive([])
+const regenerateFromId = ref(null)
+const autoGenerateTick = ref(0)
 
 const restart = () => {
+  regenerateFromId.value = null
   step.value = 1
+}
+
+const onGenerated = () => {
+  regenerateFromId.value = null
+  step.value = 5
+}
+
+const regenerateReport = async (report) => {
+  if (!report) return
+  form.runId = report.runId
+  form.title = report.title
+  form.templateId = report.templateId
+  materials.splice(0, materials.length, ...(report.materials || []).map((m) => ({ ...m })))
+  regenerateFromId.value = report.id
+  step.value = 4
+  await nextTick()
+  autoGenerateTick.value += 1
 }
 </script>
 

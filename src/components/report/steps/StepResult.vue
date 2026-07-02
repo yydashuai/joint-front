@@ -3,7 +3,7 @@
     <div class="result-toolbar">
       <div class="result-title"><el-icon><Document /></el-icon> {{ cur ? cur.title : '联试报告' }}</div>
       <div class="result-actions">
-        <el-button size="small" :icon="ArrowLeft" @click="$emit('back')">上一步</el-button>
+        <el-button size="small" :icon="ArrowLeft" @click="$emit('restart')">回到数据源</el-button>
         <el-button v-if="cur" size="small" :type="editMode ? 'primary' : ''" :icon="EditPen" @click="editMode = !editMode">
           {{ editMode ? '完成编辑' : '编辑' }}
         </el-button>
@@ -28,46 +28,97 @@
             </div>
           </div>
         </div>
-        <el-button v-if="cur" size="small" :icon="RefreshLeft" @click="$emit('restart')">重新开始</el-button>
+        <el-popconfirm
+          v-if="cur"
+          width="260"
+          :title="`将基于当前步骤重新生成 ${nextVersionLabel}，原 ${currentVersionLabel} 保留`"
+          confirm-button-text="重新生成"
+          cancel-button-text="取消"
+          @confirm="$emit('regenerate', cur)"
+        >
+          <template #reference>
+            <el-button size="small" :icon="RefreshLeft">重新生成</el-button>
+          </template>
+        </el-popconfirm>
       </div>
     </div>
 
-    <el-scrollbar v-if="cur" class="paper-scroll">
-      <div class="paper">
-        <h1 class="paper__title">{{ cur.title }}</h1>
+    <div v-if="cur" class="result-main">
+      <aside class="version-rail">
+        <div class="version-rail__title">版本</div>
+        <button
+          v-for="report in versions"
+          :key="report.id"
+          type="button"
+          class="version-item"
+          :class="{ 'is-active': report.id === cur.id }"
+          @click="selectVersion(report)"
+        >
+          <span>{{ versionLabel(report) }}</span>
+          <small>{{ report.createdAt }}</small>
+        </button>
+      </aside>
+
+      <el-scrollbar class="paper-scroll">
+        <div class="paper">
+        <el-input v-if="editMode" v-model="cur.title" class="paper__title-input" />
+        <h1 v-else class="paper__title">{{ cur.title }}</h1>
         <div class="paper__meta">
-          <span>{{ sysName }}</span><span>·</span><span>{{ cur.runName }}</span><span>·</span><span>{{ cur.createdAt }}</span>
+          <span>{{ currentVersionLabel }}</span><span>·</span><span>{{ sysName }}</span><span>·</span><span>{{ cur.runName }}</span><span>·</span><span>{{ cur.createdAt }}</span>
         </div>
         <div class="paper-info">
-          <div><span>测试任务创建者</span><strong>{{ cur.taskCreator || '—' }}</strong></div>
-          <div><span>报告生成者</span><strong>{{ cur.generatorName || '—' }}</strong></div>
+          <div>
+            <span>测试任务创建者</span>
+            <el-input v-if="editMode" v-model="cur.taskCreator" size="small" />
+            <strong v-else>{{ cur.taskCreator || '—' }}</strong>
+          </div>
+          <div>
+            <span>报告生成者</span>
+            <el-input v-if="editMode" v-model="cur.generatorName" size="small" />
+            <strong v-else>{{ cur.generatorName || '—' }}</strong>
+          </div>
         </div>
         <section v-for="sec in cur.sections" :key="sec.key" class="sec">
           <div class="sec__head">
-            <span class="sec__title">{{ sec.title }}</span>
+            <el-input v-if="editMode" v-model="sec.title" size="small" class="sec__title-input" />
+            <span v-else class="sec__title">{{ sec.title }}</span>
             <span class="sec__spacer" />
             <el-button
               v-if="sec.kind === 'gen'" size="small" text type="primary" :icon="Refresh"
-              @click="store.regenerateSection(cur, sec.key)"
-            >重新生成</el-button>
+              @click="openSectionPrompt(sec)"
+            >追加意见重写</el-button>
+          </div>
+          <div v-if="activeSectionKey === sec.key" class="sec-prompt">
+            <el-input
+              v-model="sectionDrafts[sec.key]"
+              type="textarea"
+              :autosize="{ minRows: 2, maxRows: 4 }"
+              placeholder="补充本段需要调整的要点，AI 将只重新生成这一段"
+            />
+            <div class="sec-prompt__actions">
+              <el-button size="small" @click="activeSectionKey = ''">取消</el-button>
+              <el-button size="small" type="primary" :icon="Refresh" @click="regenerateSection(sec)">让 AI 重写本段</el-button>
+            </div>
           </div>
           <el-input v-if="editMode" v-model="sec.content" type="textarea" :autosize="{ minRows: 3 }" class="sec__edit" />
           <div v-else class="md" v-html="render(sec.content)" />
         </section>
-      </div>
-    </el-scrollbar>
+        </div>
+      </el-scrollbar>
+    </div>
     <el-empty v-else description="尚未生成报告，请返回上一步生成" :image-size="100" />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { Document, EditPen, Download, RefreshLeft, Refresh, ArrowLeft, Printer, ArrowDown } from '@element-plus/icons-vue'
 import { useReportStore } from '@/stores/report'
 import { useSystemStore } from '@/stores/system'
 import { mdToHtml, downloadFile } from '@/utils/markdown'
 
-defineEmits(['back', 'restart'])
+defineEmits(['restart', 'regenerate'])
 
 const store = useReportStore()
 const systemStore = useSystemStore()
@@ -76,8 +127,39 @@ const cur = computed(() => store.currentReport)
 const editMode = ref(false)
 const exportOpen = ref(false)
 const exportMenuRef = ref(null)
+const activeSectionKey = ref('')
+const sectionDrafts = ref({})
 const sysName = computed(() => systemStore.systems.find((s) => s.id === cur.value?.systemId)?.name || '—')
 const render = (md) => mdToHtml(md)
+const versions = computed(() => store.versionsOfReport(cur.value))
+const versionLabel = (report) => `v${report?.version || 1}`
+const currentVersionLabel = computed(() => versionLabel(cur.value))
+const nextVersionLabel = computed(() => {
+  const maxVersion = versions.value.reduce((max, report) => Math.max(max, report.version || 1), 0)
+  return `v${maxVersion + 1}`
+})
+
+const selectVersion = (report) => {
+  store.selectReport(report.id)
+  activeSectionKey.value = ''
+}
+
+const openSectionPrompt = (sec) => {
+  activeSectionKey.value = activeSectionKey.value === sec.key ? '' : sec.key
+  if (activeSectionKey.value && sectionDrafts.value[sec.key] == null) sectionDrafts.value[sec.key] = ''
+}
+
+const regenerateSection = (sec) => {
+  const comment = String(sectionDrafts.value[sec.key] || '').trim()
+  if (!comment) {
+    ElMessage.warning('请先填写修改意见')
+    return
+  }
+  store.regenerateSection(cur.value, sec.key, comment)
+  sectionDrafts.value[sec.key] = ''
+  activeSectionKey.value = ''
+  ElMessage.success('本段已重新生成')
+}
 
 const closeExportMenu = () => {
   exportOpen.value = false
@@ -378,25 +460,99 @@ const handleExportPdf = (mode) => {
 .export-menu__item--submenu:hover .export-menu__sub,
 .export-menu__item--submenu:focus-within .export-menu__sub { display: block; }
 
+.result-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+}
+.version-rail {
+  width: 136px;
+  flex-shrink: 0;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+  padding: 10px;
+  overflow: auto;
+}
+.version-rail__title {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.version-item {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  text-align: left;
+}
+.version-item + .version-item { margin-top: 6px; }
+.version-item span { font-size: 13px; font-weight: 700; }
+.version-item small { color: var(--el-text-color-placeholder); font-size: 11px; line-height: 1.3; }
+.version-item:hover { background: var(--el-fill-color-lighter); }
+.version-item.is-active {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
 .paper-scroll { flex: 1; min-height: 0; }
 .paper {
   max-width: 820px; margin: 0 auto 48px; padding: 36px 44px; background: #fff;
   border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .08); color: #1f2937;
 }
 .paper__title { text-align: center; font-size: 24px; margin: 0 0 8px; padding-bottom: 12px; border-bottom: 3px solid var(--el-color-primary); }
+.paper__title-input {
+  width: 100%;
+  margin: 0 auto 10px;
+  display: flex;
+  justify-content: center;
+}
+.paper__title-input :deep(.el-input__wrapper) {
+  width: min(680px, 100%);
+  flex-grow: 0;
+  box-shadow: 0 0 0 1px var(--el-color-primary-light-5) inset;
+}
+.paper__title-input :deep(.el-input__inner) {
+  height: 42px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 700;
+}
 .paper__meta { display: flex; justify-content: center; gap: 8px; color: var(--el-text-color-secondary); font-size: 13px; margin-bottom: 24px; }
 .paper-info {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 24px;
   div { border: 1px solid #dbeafe; background: #eff6ff; border-radius: 8px; padding: 10px 12px; display: flex; justify-content: space-between; gap: 12px; }
   span { color: #2563eb; font-size: 12px; font-weight: 700; }
   strong { color: #111827; font-size: 13px; }
+  .el-input { max-width: 180px; }
 }
 .sec { margin-bottom: 22px; }
 .sec__head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding-left: 10px; border-left: 3px solid var(--el-color-primary); }
 .sec__title { font-size: 17px; font-weight: 600; color: #1e3a8a; }
+.sec__title-input { max-width: 260px; }
 .sec__spacer { flex: 1; }
 .sec__edit :deep(textarea) { font-family: 'Consolas', monospace; font-size: 13px; }
-
+.sec-prompt {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-light);
+  padding: 10px;
+  margin: -2px 0 10px 13px;
+}
+.sec-prompt__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
 .md { font-size: 14px; line-height: 1.8; }
 .md :deep(table) { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
 .md :deep(th) { background: #eff6ff; color: #1e3a8a; border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; }
@@ -407,6 +563,11 @@ const handleExportPdf = (mode) => {
 .md :deep(strong) { color: #1f2937; font-weight: 700; }
 
 @media (max-width: 720px) {
+  .result-main { flex-direction: column; }
+  .version-rail { width: auto; display: flex; gap: 8px; }
+  .version-rail__title { margin: 8px 4px 0 0; }
+  .version-item { width: 108px; margin-top: 0; }
+  .version-item + .version-item { margin-top: 0; }
   .paper { padding: 28px 22px; }
   .paper-info { grid-template-columns: 1fr; }
 }

@@ -15,7 +15,14 @@
       </template>
 
       <el-scrollbar class="kb__scroll">
-        <el-table :data="docs" size="small" row-key="id" :expand-row-keys="expanded" @expand-change="onExpand">
+        <el-table
+          :data="docs"
+          size="small"
+          row-key="id"
+          :expand-row-keys="expanded"
+          @expand-change="onExpand"
+          @row-click="onRowClick"
+        >
           <el-table-column type="expand">
             <template #default="{ row }">
               <div class="chunks">
@@ -56,11 +63,11 @@
               <el-tooltip content="对该文档进行向量化处理">
                 <el-button
                   v-if="row.vectorized !== 'done' && row.vectorized !== 'processing'"
-                  size="small" text type="primary" :icon="Refresh" @click="vectorize(row)"
+                  size="small" text type="primary" :icon="Refresh" @click.stop="vectorize(row)"
                 >向量化</el-button>
               </el-tooltip>
               <el-popconfirm title="删除该文档？" @confirm="store.removeKnowledgeDoc(row.id)">
-                <template #reference><el-button size="small" text :icon="Delete" /></template>
+                <template #reference><el-button size="small" text :icon="Delete" @click.stop /></template>
               </el-popconfirm>
             </template>
           </el-table-column>
@@ -182,6 +189,12 @@ const chunkCount = computed(() => docs.value.reduce((n, d) => n + d.chunks.lengt
 
 const expanded = ref([])
 const onExpand = (row, rows) => { expanded.value = rows.map((r) => r.id) }
+const onRowClick = (row, column) => {
+  if (column?.type === 'expand') return
+  const i = expanded.value.indexOf(row.id)
+  if (i >= 0) expanded.value.splice(i, 1)
+  else expanded.value.push(row.id)
+}
 
 const vecMeta = (s) => ({
   done: { text: '已向量化', type: 'success' },
