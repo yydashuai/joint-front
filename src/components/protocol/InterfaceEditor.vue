@@ -40,6 +40,71 @@
         :transport-type="iface.transportType"
       />
 
+      <!-- 数据集与执行策略 -->
+      <div class="strategy-section">
+        <div class="section-head">
+          <span class="section-title section-title--strategy">数据集与执行策略</span>
+          <div class="section-head__actions">
+            <el-button size="small" type="primary" plain :icon="Promotion" @click="jumpToPlan">跳转到计划</el-button>
+            <el-button size="small" type="success" plain :icon="VideoPlay" @click="sendTest">发送测试</el-button>
+          </div>
+        </div>
+
+        <div class="meta-row">
+          <span class="meta-row__label">关联数据集</span>
+          <el-select
+            v-model="iface.datasetIds"
+            multiple
+            filterable
+            collapse-tags
+            placeholder="选择该接口对应的测试数据集"
+            class="meta-sel-wide"
+          >
+            <el-option v-for="d in datasetOptions" :key="d.value" :label="d.label" :value="d.value" />
+          </el-select>
+        </div>
+
+        <div class="meta-row">
+          <span class="meta-row__label req">执行策略</span>
+          <el-radio-group v-model="iface.strategy.trigger">
+            <el-radio value="manual">手动</el-radio>
+            <el-radio value="scheduled">定时</el-radio>
+            <el-radio value="periodic">周期</el-radio>
+          </el-radio-group>
+        </div>
+
+        <div v-if="iface.strategy.trigger === 'scheduled'" class="meta-row">
+          <span class="meta-row__label req">执行时间</span>
+          <el-date-picker
+            v-model="iface.strategy.scheduleAt"
+            type="datetime"
+            placeholder="选择执行时间"
+            format="YYYY-MM-DD HH:mm:ss"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            style="width: 220px"
+          />
+        </div>
+
+        <div v-if="iface.strategy.trigger === 'periodic'" class="meta-row">
+          <span class="meta-row__label req">周期间隔</span>
+          <el-input-number v-model="iface.strategy.periodicInterval" :min="1" :max="9999" controls-position="right" style="width: 120px" />
+          <el-select v-model="iface.strategy.periodicUnit" style="width: 90px">
+            <el-option label="秒" value="s" />
+            <el-option label="分" value="m" />
+            <el-option label="时" value="h" />
+            <el-option label="天" value="d" />
+          </el-select>
+          <span class="meta-row__label">次数</span>
+          <el-input-number v-model="iface.strategy.periodicCount" :min="1" :max="9999" controls-position="right" style="width: 120px" placeholder="永久" />
+        </div>
+
+        <div class="meta-row">
+          <span class="meta-row__label req">发送间隔</span>
+          <el-input-number v-model="iface.sendInterval" :min="100" :max="5000" :step="100" controls-position="right" style="width: 150px" />
+          <span class="meta-row__hint">毫秒（ms），两帧发送之间的间隔</span>
+        </div>
+      </div>
+
       <!-- 发送字段 -->
       <div class="proto-refs-section proto-refs-section--request">
         <div class="section-head">
@@ -131,12 +196,15 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { Plus, Delete, Search } from '@element-plus/icons-vue'
-import { ElMessageBox } from 'element-plus'
+import { useRouter } from 'vue-router'
+import { Plus, Delete, Search, Promotion, VideoPlay } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   TRANSPORT_TYPES, PROTOCOL_ROLES,
   makeTransportConfig, useProtocolStore, makeProtocolRef,
 } from '@/stores/protocol'
+import { useTestDataStore } from '@/stores/testData'
+import { useConnectionStore } from '@/stores/connection'
 import TransportConfigForm from './TransportConfigForm.vue'
 
 const props = defineProps({
@@ -149,6 +217,33 @@ defineEmits(['delete', 'systemChange', 'navigateProtocol'])
 
 const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }
 const protoStore = useProtocolStore()
+const dataStore = useTestDataStore()
+const connStore = useConnectionStore()
+const router = useRouter()
+
+// 确保接口对象具备新增字段（兼容旧数据）
+if (!Array.isArray(props.iface.datasetIds)) props.iface.datasetIds = []
+if (!props.iface.strategy) props.iface.strategy = { trigger: 'manual', scheduleAt: null, periodicInterval: 60, periodicUnit: 's', periodicCount: null }
+if (!props.iface.sendInterval) props.iface.sendInterval = 500
+
+// 关联数据集下拉（按系统 + 模块过滤）
+const datasetOptions = computed(() => {
+  const sysId = props.iface.systemId
+  const modName = connStore.nodes.find((n) => n.id === props.iface.moduleId)?.name || ''
+  let list = dataStore.datasets
+  if (sysId) list = list.filter((d) => d.systemId === sysId)
+  if (modName) list = list.filter((d) => d.moduleName === modName)
+  return list.map((d) => ({ value: d.id, label: `${d.name}（${d.rows?.length || 0} 行）` }))
+})
+
+// 跳转到计划 / 发送测试
+const jumpToPlan = () => {
+  router.push({ path: '/execution', query: { interfaceId: String(props.iface.id) } })
+  ElMessage.success('已跳转到编排计划，可快速配置与发送')
+}
+const sendTest = () => {
+  router.push({ path: '/execution', query: { interfaceId: String(props.iface.id), test: '1' } })
+}
 
 // Split protocol refs by role
 const requestProtocols = computed(() =>
@@ -310,6 +405,18 @@ const onTransportTypeChange = (type) => {
 .meta-row__label { font-size: 13px; color: var(--el-text-color-regular); }
 .meta-row__label.req::before { content: '*'; color: var(--el-color-danger); margin-right: 2px; }
 .meta-sel { width: 200px; }
+.meta-sel-wide { width: 100%; }
+.meta-row__hint { font-size: 12px; color: var(--el-text-color-secondary); margin-left: 4px; }
+
+.strategy-section {
+  margin: 4px 0 14px;
+  padding: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-extra-light);
+}
+.strategy-section .section-title--strategy { border-left-color: var(--el-color-primary); }
+.section-head__actions { display: flex; gap: 8px; }
 
 .editor-scroll { flex: 1; min-height: 0; }
 

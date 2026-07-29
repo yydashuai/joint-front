@@ -520,6 +520,7 @@ export const interfaces = [
     transportConfig: { method: 'GET', contentType: 'application/json', headers: [{ key: 'Accept', value: 'application/json' }], auth: { type: 'basic', username: 'admin', password: '' } },
     protocolRefs: [protoByName('sys-weapon', '武器遥测广播字段')],
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
+    datasetIds: [2, 1], // 模拟关联：设备状态查询-正常与异常 + 帧控制字节-全场景
     desc: '发送设备状态，返回遥测帧',
     request: [
       param({ name: 'deviceId', type: '常量', dataType: 'uint8', desc: '目标设备' }),
@@ -539,6 +540,7 @@ export const interfaces = [
     transportConfig: { port: 9001, timeout: 3000 },
     protocolRefs: [protoByName('sys-weapon', '装订参数字段'), protoByName('sys-weapon', '帧控制字节字段')],
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
+    datasetIds: [4, 1], // 模拟关联：武器装订-多参数组合 + 帧控制字节-全场景
     desc: '下发武器装订参数并确认',
     request: [
       param({ name: 'weaponId', type: '常量', dataType: 'uint16', desc: '武器编号' }),
@@ -600,6 +602,7 @@ export const interfaces = [
     transportConfig: { port: 8080, timeout: 300 },
     protocolRefs: [protoByName('sys-fire', '遥测帧字段')],
     systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
+    datasetIds: [3], // 模拟关联：遥测帧-温度范围测试
     desc: '提交目标列表，返回火力分配方案',
     request: [
       param({ name: 'targets', type: '共识体', desc: '目标列表', children: [

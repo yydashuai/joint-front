@@ -6,6 +6,55 @@ export const uid = () => ++seq
 
 export const makeProtocolRef = (protocolId, role = 'frame') => ({ protocolId, role })
 
+// ─── 接口级执行策略（配置于接口，供编排计划/实时监控复用）───
+// trigger: manual 手动 / scheduled 定时 / periodic 周期
+export const defaultIfaceStrategy = () => ({
+  trigger: 'manual',
+  scheduleAt: null,        // 定时模式：ISO 时间字符串
+  periodicInterval: 60,    // 周期模式：间隔数值
+  periodicUnit: 's',       // 周期模式：单位 s/m/h/d
+  periodicCount: null,     // 周期模式：触发次数，null=永久
+})
+
+/**
+ * 扁平化收集接口的全部引用字段（请求 + 响应），用于实时监控「编辑发送数据」面板。
+ * @param {object} iface 接口对象（含 protocolRefs）
+ * @param {Array}  protocols 协议列表（用于解析引用字段）
+ * @returns {Array} [{ id, name, remark, desc, type, kind }]
+ */
+export const collectInterfaceFields = (iface, protocols = []) => {
+  const out = []
+  const pushField = (f, kind) => {
+    const type = f.type && f.type !== 'byte' && f.type !== 'bit'
+      ? (f.encoding || f.type)
+      : (f.dataType || f.kind || kind)
+    out.push({
+      id: f.id,
+      name: f.name || (kind === 'bit' ? `位段` : '未命名字段'),
+      remark: f.remark || '',
+      desc: f.desc || '',
+      type,
+      kind: f.kind || kind,
+      constraint: f.constraint || null,
+    })
+  }
+  const walk = (fields, kind) => {
+    if (!Array.isArray(fields)) return
+    for (const f of fields) {
+      if (f.kind === 'repeat') { walk(f.children, 'repeat') }
+      else if (f.kind === 'byte') { pushField(f, 'byte'); walk(f.children, 'bit') }
+      else if (f.kind === 'bit') { pushField(f, 'bit') }
+      else if (f.children?.length) { walk(f.children, f.type || 'struct') }
+      else { pushField(f, f.type || 'param') }
+    }
+  }
+  for (const ref of iface.protocolRefs || []) {
+    const proto = protocols.find(p => p.id === ref.protocolId)
+    if (proto) walk(proto.fields, ref.role)
+  }
+  return out
+}
+
 // ─── 传输类型（报文使用） ───
 // OSE:   基于 UDP 的报文传输（消息头 + 消息体）
 // 4908A: 基于 TCP/IP 的实时 / 可靠传输（UDP + TCP）
@@ -176,6 +225,7 @@ export const makeByteField = (o = {}) => {
     dataType,
     constraint: o.constraint || defaultConstraint(dataType),
     desc: '',
+    remark: '',
     children: [],
     ...o
   }
@@ -191,6 +241,7 @@ export const makeBitField = (o = {}) => ({
   dataType: 'uint',
   constraint: range(0, 1),
   desc: '',
+  remark: '',
   ...o
 })
 
@@ -223,6 +274,7 @@ export const makeParam = (o = {}) => ({
   align: 1,                        // 字节对齐, 仅 struct/matrix 用
   children: [],                    // struct/matrix 用
   desc: '',
+  remark: '',
   ...o
 })
 
@@ -257,6 +309,7 @@ export const makeHttpParam = (o = {}) => ({
   defaultValue: '',
   constraint: noneConstraint(),
   desc: '',
+  remark: '',
   ...o
 })
 
@@ -268,6 +321,7 @@ export const makeBodyField = (o = {}) => ({
   required: true,
   constraint: noneConstraint(),
   desc: '',
+  remark: '',
   children: [],
   ...o
 })
@@ -291,6 +345,7 @@ export const makeProtoField = (o = {}) => ({
   modifier: 'optional',
   constraint: noneConstraint(),
   desc: '',
+  remark: '',
   children: [],
   ...o
 })
@@ -494,7 +549,13 @@ export const useProtocolStore = defineStore('protocol', {
     // 报文 = 传输类型 + 传输配置 + 字段引用组合
     interfaces: JSON.parse(JSON.stringify(seedInterfaces))
       .map(migrateV1Interface)
-      .map((i) => { i.transportConfig = makeTransportConfig(i.transportType); return i; }),
+      .map((i) => {
+        i.transportConfig = makeTransportConfig(i.transportType)
+        if (!Array.isArray(i.datasetIds)) i.datasetIds = []
+        if (!i.strategy) i.strategy = defaultIfaceStrategy()
+        if (!i.sendInterval) i.sendInterval = 500
+        return i
+      }),
     selectedProtocolId: null,
     selectedInterfaceId: null
   }),
@@ -787,6 +848,9 @@ export const useProtocolStore = defineStore('protocol', {
         moduleId: it.moduleId ?? null,
         desc: it.desc || '',
         operationType: it.operationType || '',
+        datasetIds: it.datasetIds || [],
+        strategy: it.strategy || defaultIfaceStrategy(),
+        sendInterval: it.sendInterval || 500,
       }
       this.interfaces.unshift(ni)
       this.selectedInterfaceId = ni.id

@@ -11,20 +11,34 @@
       <template #header>
         <div class="card-head">
           <div>
-            <span class="card-title">执行计划</span>
-            <span class="card-sub">按顺序调度任务，拖动手柄可调整发送次序；也可从左侧任务树拖入</span>
+            <span class="card-title">编排计划</span>
+            <span class="card-sub">按顺序测试接口，拖动手柄可调整发送次序；也可从左侧接口树拖入</span>
           </div>
           <div class="plan-actions">
+            <div class="send-interval" title="两帧发送之间的间隔（毫秒），实时监控暂停时可随时修改">
+              <span class="send-interval__label">发送间隔</span>
+              <el-input-number
+                :model-value="store.config.sendInterval"
+                :min="100"
+                :max="5000"
+                :step="100"
+                controls-position="right"
+                size="small"
+                style="width: 120px"
+                @update:model-value="(v) => store.setConfig({ sendInterval: v })"
+              />
+              <span class="send-interval__unit">ms</span>
+            </div>
             <el-tag type="info" effect="plain">{{ items.length }} 项 · {{ totalEstimatedRequests }} 请求</el-tag>
-            <el-tooltip content="将选中的测试任务添加到执行计划">
+            <el-tooltip content="将选中的接口添加到编排计划">
               <el-button
                 type="primary"
                 plain
                 :icon="Plus"
-                :disabled="!selectedTask || selectedInPlan"
+                :disabled="!selectedIface || selectedInPlan"
                 @click="$emit('add-selected')"
               >
-                {{ selectedInPlan ? '已在计划中' : '添加测试任务' }}
+                {{ selectedInPlan ? '已在计划中' : '添加选中接口' }}
               </el-button>
             </el-tooltip>
             <el-popconfirm title="确认重置本次运行？所有运行状态将被清除" @confirm="$emit('reset-run')">
@@ -39,7 +53,7 @@
         :data="items"
         row-key="id"
         size="small"
-        empty-text="暂无执行计划"
+        empty-text="暂无编排计划"
       >
         <el-table-column width="44" align="center">
           <template #default>
@@ -47,10 +61,10 @@
           </template>
         </el-table-column>
         <el-table-column label="序号" type="index" width="58" align="center" />
-        <el-table-column label="任务名称" min-width="170">
+        <el-table-column label="接口名称" min-width="170">
           <template #default="{ row }">
-            <div class="strong">{{ row.task.name }}</div>
-            <div class="muted ellipsis">{{ row.task.remark || '无备注' }}</div>
+            <div class="strong">{{ row.iface?.name || row.task?.name }}</div>
+            <div class="muted ellipsis">{{ row.iface?.path || row.task?.remark || '无备注' }}</div>
           </template>
         </el-table-column>
         <el-table-column label="系统 / 模块" min-width="180">
@@ -85,7 +99,7 @@
         </el-table-column>
       </el-table>
 
-      <el-empty v-if="!items.length" class="plan-empty" :image-size="88" description="从左侧系统树拖入接口，或新建方案后添加多个接口到执行计划" />
+      <el-empty v-if="!items.length" class="plan-empty" :image-size="88" description="从左侧系统树拖入接口，或新建方案后添加多个接口到编排计划" />
     </el-card>
 
   </div>
@@ -98,11 +112,11 @@ import { Plus, Rank, RefreshRight } from '@element-plus/icons-vue'
 import { useExecutionStore } from '@/stores/execution'
 
 defineProps({
-  selectedTask: { type: Object, default: null },
+  selectedIface: { type: Object, default: null },
   selectedInPlan: { type: Boolean, default: false },
   totalEstimatedRequests: { type: Number, default: 0 },
 })
-const emit = defineEmits(['add-selected', 'drop-task', 'reset-run'])
+const emit = defineEmits(['add-selected', 'drop-scheme', 'drop-iface', 'reset-run'])
 
 const store = useExecutionStore()
 const tableRef = ref()
@@ -120,11 +134,22 @@ const onDragLeave = (event) => {
 const onDrop = (event) => {
   dragOver.value = false
   const raw = event.dataTransfer.getData('application/json')
-  const fallback = event.dataTransfer.getData('text/plain')
   let payload = null
   try { payload = raw ? JSON.parse(raw) : null } catch { payload = null }
-  const taskId = payload?.kind === 'task' ? payload.id : fallback
-  if (taskId) emit('drop-task', taskId)
+  // 接口方案：展开为方案内全部接口加入计划
+  if (payload?.kind === 'scheme' && payload.id) {
+    emit('drop-scheme', payload.id)
+    return
+  }
+  // 接口叶子：交由父级做完整性校验（B 方案：未配置完全拒绝加入并弹配置窗）
+  if (payload?.kind === 'iface' && payload.id) {
+    emit('drop-iface', payload.id)
+    return
+  }
+  // 无 JSON 负载时按 text/plain 兜底（按 id 前缀区分方案）
+  const fallback = event.dataTransfer.getData('text/plain')
+  if (!fallback) return
+  if (fallback.startsWith('scheme-')) emit('drop-scheme', fallback)
 }
 
 const setupSortable = () => {
@@ -162,6 +187,17 @@ onBeforeUnmount(() => sortable?.destroy())
   gap: 8px;
   flex-wrap: wrap;
 }
+.send-interval {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-extra-light);
+}
+.send-interval__label { font-size: 12px; color: var(--el-text-color-regular); }
+.send-interval__unit { font-size: 12px; color: var(--el-text-color-secondary); }
 .plan-table-card {
   border: 1px solid var(--el-border-color-lighter);
   transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;

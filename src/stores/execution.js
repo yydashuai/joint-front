@@ -1,17 +1,14 @@
 import { defineStore } from 'pinia'
 import { useTestTaskStore } from '@/stores/testTask'
-import { useProtocolStore } from '@/stores/protocol'
+import { useProtocolStore, collectInterfaceFields } from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
 import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
-import { useRuleStore } from '@/stores/rule'
 import { useExceptionStore } from '@/stores/exception'
 import { useRunBatchStore } from '@/stores/runBatch'
-import { evaluate, makeSample } from '@/utils/ruleEngine'
 import { bus, EVENTS } from '@/utils/bus'
 
 let runTimer = null
-let rxTimer = null
 
 const nowText = () => new Date().toLocaleString('zh-CN', { hour12: false })
 const timeText = () => new Date().toLocaleTimeString('zh-CN', { hour12: false })
@@ -20,7 +17,6 @@ const clamp = (n, min, max) => Math.max(min, Math.min(max, n))
 const rnd = (min, max) => Math.round(min + Math.random() * (max - min))
 
 const DEFAULT_REQUESTS = 8
-const FALLBACK_RULE_TYPES = ['类型校验', '取值范围', '边界值检测', '字段越界', '格式错误']
 const abnormalCountOf = (item = {}) => item.abnormal ?? ((item.failed || 0) + (item.error || 0))
 
 const emptyCounters = () => ({
@@ -44,6 +40,7 @@ const defaultConfig = () => ({
   periodicCount: null,
   timeout: 30,
   retries: 0,
+  sendInterval: 500,            // 发送间隔（毫秒），编排计划与实时监控均可调整
 })
 
 const normalizeId = (value) => String(value ?? '')
@@ -59,11 +56,69 @@ const taskInterface = (task, protocolStore) => {
     null
 }
 
-const taskDatasets = (task, dataStore, moduleName) => {
+const taskDatasets = (task, dataStore) => {
   const ids = task?.bindings?.datasetIds || []
-  const byId = dataStore.datasets.filter((item) => ids.some((id) => normalizeId(id) === normalizeId(item.id)))
-  if (byId.length) return byId
-  return dataStore.datasets.filter((item) => item.systemId === task?.systemId && item.moduleName === moduleName)
+  return dataStore.datasets.filter((item) => ids.some((id) => normalizeId(id) === normalizeId(item.id)))
+}
+
+/**
+ * 按字段约束补齐一条待发送数据的完整字段值。
+ * 数据集行已有的值优先保留；缺失的字段按约束生成默认发送值
+ * （固定值→固定值，枚举→首个枚举项，范围→范围内随机，位→0/1，其余→空串），
+ * 保证暂停后点击任一条数据时，弹窗展示的是「即将发送的完整数据」而非空表单。
+ */
+const fillFieldValues = (fields = [], baseValues) => {
+  const values = baseValues ? JSON.parse(JSON.stringify(baseValues)) : {}
+  for (const f of fields) {
+    const existing = values[f.name]
+    if (existing !== undefined && existing !== null && existing !== '') continue
+    const c = f.constraint
+    if (c?.mode === 'fixed') {
+      values[f.name] = c.value
+    } else if (c?.mode === 'enum' && c.entries?.length) {
+      const entry = c.entries[0]
+      values[f.name] = entry?.value ?? entry
+    } else if (c?.mode === 'range') {
+      const min = Number.isFinite(c.min) ? c.min : 0
+      const max = Number.isFinite(c.max) ? c.max : min
+      values[f.name] = (f.kind === 'bit' && min === 0 && max === 1) ? rnd(0, 1) : rnd(min, max)
+    } else {
+      values[f.name] = ''
+    }
+  }
+  return values
+}
+
+/**
+ * 根据字段定义自动判定一条数据是正常还是异常（无需人工标记）。
+ * 逐字段对照约束：固定值不符 / 不在枚举内 / 超出数值范围 / 约束字段值缺失 → 记为异常项。
+ * 返回 { abnormal, issues:[{name,message}] }。
+ */
+export const judgeValues = (fields = [], values = {}) => {
+  const issues = []
+  for (const f of fields) {
+    const c = f.constraint
+    if (!c || !c.mode || c.mode === 'none') continue
+    const v = values[f.name]
+    if (v === undefined || v === null || v === '') {
+      issues.push({ name: f.name, message: '值缺失' })
+      continue
+    }
+    if (c.mode === 'fixed') {
+      if (String(v) !== String(c.value)) issues.push({ name: f.name, message: `应为固定值 ${c.value}，当前 ${v}` })
+    } else if (c.mode === 'enum') {
+      const ok = (c.entries || []).some((e) => String(e?.value ?? e) === String(v))
+      if (!ok) issues.push({ name: f.name, message: `不在枚举范围内（${(c.entries || []).map((e) => e?.label ?? e?.value ?? e).join('/')}）` })
+    } else if (c.mode === 'range') {
+      const num = Number(v)
+      if (!Number.isFinite(num)) {
+        issues.push({ name: f.name, message: `应为 ${c.min}~${c.max} 内的数值，当前 ${v}` })
+      } else if ((Number.isFinite(c.min) && num < c.min) || (Number.isFinite(c.max) && num > c.max)) {
+        issues.push({ name: f.name, message: `超出范围 ${c.min}~${c.max}，当前 ${num}` })
+      }
+    }
+  }
+  return { abnormal: issues.length > 0, issues }
 }
 
 export const useExecutionStore = defineStore('execution', {
@@ -87,6 +142,8 @@ export const useExecutionStore = defineStore('execution', {
     savedRunToTasks: false,
     _stepStats: {},
     _requestCursor: 0,
+    // 发送队列：本轮全部数据（待发送/已发送），实时监控窗口从上往下逐条发送
+    sendQueue: [],
   }),
 
   getters: {
@@ -102,7 +159,7 @@ export const useExecutionStore = defineStore('execution', {
         const module = task ? connStore.nodes.find((item) => item.id === task.moduleId) : null
         const system = task ? systemStore.systems.find((item) => item.id === task.systemId) : null
         const iface = taskInterface(task, protocolStore)
-        const datasets = taskDatasets(task, dataStore, module?.name)
+        const datasets = taskDatasets(task, dataStore)
         const rowCount = datasets.reduce((sum, item) => sum + (item.rows?.length || item.rowCount || 0), 0)
         const baseRequests = rowCount || DEFAULT_REQUESTS
         const estimatedRequests = estimateRequests(baseRequests, state.config)
@@ -144,11 +201,18 @@ export const useExecutionStore = defineStore('execution', {
     currentItem() {
       return this.planItems[this.activePlanIndex] || this.planItems[0] || null
     },
+
+    /** 队列中已发送 / 待发送条数 */
+    sentCount: (state) => state.sendQueue.filter((e) => e.status === 'sent').length,
+    pendingCount: (state) => state.sendQueue.filter((e) => e.status === 'pending').length,
   },
 
   actions: {
     addToPlan(taskId) {
       if (!taskId || this.plan.some((item) => item.taskId === taskId)) return false
+      // 防御：只允许真实存在的任务进入计划（避免把方案 id 等误当任务 id 静默塞入）
+      const taskStore = useTestTaskStore()
+      if (!taskStore.tasks.some((task) => task.id === taskId)) return false
       this.plan.push({ id: uid('plan'), taskId })
       this.loadConfigFromTasks()
       return true
@@ -186,10 +250,90 @@ export const useExecutionStore = defineStore('execution', {
       this.config.periodicCount = firstTask.strategy.periodicCount ?? null
       this.config.timeout = firstTask.strategy.timeout || 30
       this.config.retries = firstTask.strategy.retries || 0
+      const iface = this.planItems[0]?.iface
+      if (iface?.sendInterval) this.config.sendInterval = iface.sendInterval
     },
 
     setConfig(patch) {
       Object.assign(this.config, patch)
+    },
+
+    /** 构建发送队列：将计划内全部数据集行展开为待发送条目（从上往下逐条发送） */
+    _buildSendQueue() {
+      const protocolStore = useProtocolStore()
+      const queue = []
+      for (const item of this.planItems) {
+        const fields = item.iface ? collectInterfaceFields(item.iface, protocolStore.protocols) : []
+        const rows = item.datasets.flatMap((ds) => (ds.rows || []).map((row) => ({ row, dsName: ds.name })))
+        const count = Math.max(1, item.estimatedRequests)
+        for (let i = 0; i < count; i += 1) {
+          const src = rows.length ? rows[i % rows.length] : null
+          const values = fillFieldValues(fields, src?.row?.values)
+          const judge = judgeValues(fields, values)
+          queue.push({
+            id: uid('sq'),
+            taskId: item.taskId,
+            planIndex: item.index,
+            iface: item.iface?.name || '未命名接口',
+            proto: item.iface?.path?.startsWith('/') ? 'HTTP' : 'TCP',
+            label: src?.row?.label || `样例数据 ${i + 1}`,
+            datasetName: src?.dsName || '',
+            fields,
+            values,
+            variant: judge.abnormal ? 'abnormal' : 'normal', // 由字段定义自动判定
+            issues: judge.issues,
+            status: 'pending',            // pending | sent
+            time: '',
+            hex: '',
+          })
+        }
+      }
+      return queue
+    },
+
+    /**
+     * 保存编辑结果（统一入口）：
+     * - 待发送数据：值有变化则就地更新，正常/异常由字段定义自动重判；
+     * - 已发送数据：值有变化则复制一条追加到队尾等待发送（原记录不动），未修改则不产生任何变化。
+     * 返回 'updated' | 'appended' | 'unchanged'。
+     */
+    saveQueueEdit(entryId, newValues) {
+      const entry = this.sendQueue.find((e) => e.id === entryId)
+      if (!entry) return 'unchanged'
+      const changed = JSON.stringify(entry.values) !== JSON.stringify(newValues)
+      if (!changed) return 'unchanged'
+
+      if (entry.status === 'pending') {
+        entry.values = JSON.parse(JSON.stringify(newValues))
+        const judge = judgeValues(entry.fields, entry.values)
+        entry.variant = judge.abnormal ? 'abnormal' : 'normal'
+        entry.issues = judge.issues
+        return 'updated'
+      }
+
+      // 已发送：复制一条到队尾待发送
+      const values = JSON.parse(JSON.stringify(newValues))
+      const judge = judgeValues(entry.fields, values)
+      this.sendQueue.push({
+        ...JSON.parse(JSON.stringify({ ...entry, fields: undefined })),
+        fields: entry.fields,
+        id: uid('sq'),
+        label: `${entry.label}（重发修改）`,
+        values,
+        variant: judge.abnormal ? 'abnormal' : 'normal',
+        issues: judge.issues,
+        status: 'pending',
+        time: '',
+        hex: '',
+      })
+      this.targetTotal = Math.max(1, this.targetTotal + 1)
+      // 若本轮已结束，回到暂停态，用户点「继续」即可发送新追加的数据
+      if (['done', 'stopped'].includes(this.status)) {
+        this.status = 'paused'
+        this.finishedAt = null
+      }
+      this._updateCounters()
+      return 'appended'
     },
 
     start() {
@@ -207,7 +351,8 @@ export const useExecutionStore = defineStore('execution', {
       this.finishedAt = null
       this.activePlanIndex = 0
       this.activeTaskId = this.planItems[0]?.taskId || null
-      this.targetTotal = Math.max(1, this.planItems.reduce((sum, item) => sum + item.estimatedRequests, 0))
+      this.sendQueue = this._buildSendQueue()
+      this.targetTotal = Math.max(1, this.sendQueue.length)
       this._stepStats = Object.fromEntries(this.planItems.map((item) => [item.taskId, {
         total: 0, success: 0, failed: 0, error: 0, abnormalTypes: {}, durations: [], traces: [],
       }]))
@@ -273,6 +418,7 @@ export const useExecutionStore = defineStore('execution', {
       this.savedRunToTasks = false
       this._stepStats = {}
       this._requestCursor = 0
+      this.sendQueue = []
     },
 
     loadBatchSnapshot(batch) {
@@ -304,193 +450,86 @@ export const useExecutionStore = defineStore('execution', {
       this.savedRunToTasks = true
       this._stepStats = {}
       this._requestCursor = 0
+      this.sendQueue = []
       return true
     },
 
     tickInterval() {
       if (this.config.mode === 'stress') return clamp(700 - this.config.stress.threadCount * 18, 180, 650)
       if (this.config.mode === 'endurance') return clamp(this.config.endurance.requestInterval, 220, 900)
-      return 520
+      return clamp(this.config.sendInterval || 500, 200, 2000)
     },
 
     _tick() {
       if (this.status !== 'running') return
-      if (this.counters.totalRequests >= this.targetTotal) {
+      const entry = this.sendQueue.find((e) => e.status === 'pending')
+      if (!entry) {
         this.finalize('done')
         return
       }
 
-      const item = this._itemForCursor()
-      if (!item) {
-        this.finalize('done')
-        return
-      }
-
-      this.activeTaskId = item.taskId
-      this.activePlanIndex = item.index
-      const traceId = uid('tr')
+      this.activeTaskId = entry.taskId
+      this.activePlanIndex = entry.planIndex
       const reqHex = makeHex(rnd(10, 18))
-      const respHex = makeHex(rnd(12, 22))
-      const txLine = {
-        traceId,
-        time: timeText(),
-        dir: 'tx',
-        taskId: item.taskId,
-        iface: item.iface?.name || '未命名接口',
-        proto: item.iface?.path?.startsWith('/') ? 'HTTP' : 'TCP',
-        hex: reqHex,
-        status: 'pass',
-        duration: 0,
-        note: '发送请求帧',
-        detail: { reqHex, respHex: '', spans: [], logs: [`${timeText()} 已发送请求帧`] },
-      }
-      this.logLines.push(txLine)
+      const isAbnormal = entry.variant === 'abnormal'
 
-      const duration = rnd(18, 260) + (this.config.mode === 'stress' ? rnd(10, 90) : 0)
-      rxTimer = window.setTimeout(() => {
-        if (this.status !== 'running') return
-        this._commitResponse(item, traceId, reqHex, respHex, duration)
-      }, clamp(duration, 80, 420))
-    },
+      entry.status = 'sent'
+      entry.time = timeText()
+      entry.hex = reqHex
 
-    _commitResponse(item, traceId, reqHex, respHex, duration) {
-      const exceptionStore = useExceptionStore()
-      const judged = this._judgeResponse(item, duration)
-      const status = judged.status
-      const note = judged.note
-      const issueType = judged.issueType
-      const step = this._stepStats[item.taskId]
-      const line = {
-        traceId,
-        time: timeText(),
-        dir: 'rx',
-        taskId: item.taskId,
-        iface: item.iface?.name || '未命名接口',
-        proto: item.iface?.path?.startsWith('/') ? 'HTTP' : 'TCP',
-        hex: respHex,
-        status,
-        duration,
-        note,
-        detail: {
-          reqHex,
-          respHex,
-          spans: [
-            { op: 'build sampler', start: 0, dur: rnd(4, 12), status: 'pass' },
-            { op: 'send request', start: 12, dur: rnd(10, 40), status: 'pass' },
-            { op: 'assert response', start: 52, dur: rnd(8, 26), status },
-          ],
-          logs: [
-            `${timeText()} 接收响应帧`,
-            ...judged.logs,
-          ],
-        },
-      }
-
-      this.logLines.push(line)
       this.counters.totalRequests += 1
       this._requestCursor += 1
-      step.total += 1
-      step.durations.push(duration)
-      step.traces.push(line)
-
-      if (status === 'pass') {
-        this.counters.successRequests += 1
-        step.success += 1
-      } else {
-        const abnormalType = issueType || '响应超时'
-        step.abnormalTypes[abnormalType] = (step.abnormalTypes[abnormalType] || 0) + 1
-        const captured = exceptionStore.capture({
-          type: abnormalType,
-          level: status === 'error' ? '高' : (Math.random() > 0.5 ? '中' : '高'),
-          systemId: item.system?.id || item.task?.systemId,
-          moduleId: item.module?.id || item.task?.moduleId,
-          interfaceId: item.iface?.id || item.task?.bindings?.interfaceId || '',
-          iface: line.iface,
+      const step = this._stepStats[entry.taskId]
+      if (step) {
+        step.total += 1
+        step.traces.push({
+          traceId: entry.id,
+          time: entry.time,
+          dir: 'tx',
+          taskId: entry.taskId,
+          iface: entry.iface,
+          proto: entry.proto,
+          hex: reqHex,
+          status: isAbnormal ? 'fail' : 'pass',
+          duration: 0,
+          note: isAbnormal ? '发送异常数据' : '已发送',
+        })
+      }
+      if (isAbnormal) {
+        const issueText = (entry.issues || []).map((i) => `${i.name}：${i.message}`).join('；') || '字段值不符合定义'
+        if (step) {
+          step.failed += 1
+          step.abnormalTypes['异常数据'] = (step.abnormalTypes['异常数据'] || 0) + 1
+        }
+        const item = this.planItems[entry.planIndex]
+        const exceptionStore = useExceptionStore()
+        const ex = exceptionStore.capture({
+          type: '异常数据',
+          level: '中',
+          systemId: item?.system?.id || item?.task?.systemId,
+          moduleId: item?.module?.id || item?.task?.moduleId,
+          interfaceId: item?.iface?.id || item?.task?.bindings?.interfaceId || '',
+          iface: entry.iface,
           source: 'execution',
           runId: this.currentRunId,
-          taskId: item.taskId,
+          taskId: entry.taskId,
           detail: {
             reqHex,
-            respHex,
-            ruleMessage: `${item.task.name} / ${line.iface}：${judged.ruleMessage || note}，trace=${traceId}`,
-            fieldPath: judged.fieldPath || '',
-            recvMs: duration,
+            respHex: '',
+            ruleMessage: `${entry.label}：${issueText}`,
+            fieldPath: (entry.issues || [])[0]?.name || '',
+            recvMs: 0,
           },
           capturedTime: nowText(),
         })
-        const ex = captured || {
-          id: uid('ex'),
-          runId: this.currentRunId,
-          taskId: item.taskId,
-          systemId: item.system?.id || item.task?.systemId || '',
-          moduleId: item.module?.id,
-          interfaceId: item.iface?.id || item.task?.bindings?.interfaceId || '',
-          type: abnormalType,
-          iface: line.iface,
-          level: status === 'error' ? '高' : '中',
-          detail: `${item.task.name} / ${line.iface}：${judged.ruleMessage || note}，trace=${traceId}`,
-          time: nowText(),
-          capturedTime: nowText(),
-        }
-        this.exceptions.unshift(ex)
-        if (status === 'fail') {
-          this.counters.failedRequests += 1
-          step.failed += 1
-        } else {
-          this.counters.errorRequests += 1
-          step.error += 1
-        }
+        if (ex) this.exceptions.unshift(ex)
+        this.counters.failedRequests += 1
+      } else {
+        if (step) step.success += 1
+        this.counters.successRequests += 1
       }
-
       this._updateCounters()
-      if (this.counters.totalRequests >= this.targetTotal) this.finalize('done')
-    },
-
-    _judgeResponse(item, duration) {
-      const ruleStore = useRuleStore()
-      const ruleSetId = item.task?.strategy?.ruleSetId
-      const ruleSet = ruleStore.ruleSets.find((set) => set.id === ruleSetId)
-      if (ruleSet) {
-        const variant = Math.random() < 0.14 ? 'bad' : 'valid'
-        const sample = makeSample(item.iface, variant)
-        const results = evaluate(ruleSet, sample, item.iface, { recvMs: duration })
-        const firstError = results.find((result) => result.level === 'error')
-        const firstWarning = results.find((result) => result.level === 'warning')
-        if (firstError) {
-          return {
-            status: firstError.ruleType === 'timeout' ? 'error' : 'fail',
-            note: firstError.ruleType === 'timeout' ? '响应超时' : '规则判定失败',
-            issueType: firstError.ruleLabel,
-            fieldPath: firstError.path,
-            ruleMessage: firstError.message,
-            logs: results.slice(0, 5).map((result) => `${result.ruleLabel}: ${result.message}`),
-          }
-        }
-        return {
-          status: 'pass',
-          note: firstWarning ? '通过有提醒' : '通过',
-          issueType: firstWarning?.ruleLabel || '通过',
-          logs: results.slice(0, 5).map((result) => `${result.ruleLabel}: ${result.message}`),
-        }
-      }
-
-      const roll = Math.random()
-      const status = roll < 0.85 ? 'pass' : (roll < 0.95 ? 'fail' : 'error')
-      return {
-        status,
-        note: status === 'pass' ? '通过' : (status === 'fail' ? '规则判定失败' : '响应超时'),
-        issueType: status === 'error' ? '响应超时' : FALLBACK_RULE_TYPES[Math.floor(Math.random() * FALLBACK_RULE_TYPES.length)],
-        logs: [status === 'pass' ? '断言通过：类型、范围、格式均符合基础规则' : '未绑定规则集，使用静态兜底判定'],
-      }
-    },
-
-    _itemForCursor() {
-      let cursor = this._requestCursor
-      for (const item of this.planItems) {
-        if (cursor < item.estimatedRequests) return item
-        cursor -= item.estimatedRequests
-      }
-      return this.planItems.at(-1)
+      if (!this.sendQueue.some((e) => e.status === 'pending')) this.finalize('done')
     },
 
     _updateCounters() {
@@ -601,9 +640,7 @@ export const useExecutionStore = defineStore('execution', {
 
     _clearTimers() {
       if (runTimer) window.clearInterval(runTimer)
-      if (rxTimer) window.clearTimeout(rxTimer)
       runTimer = null
-      rxTimer = null
     },
   },
 })

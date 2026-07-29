@@ -69,11 +69,12 @@
             <div class="wizard-body">
               <div v-show="activeTab === 'plan'" class="step-panel plan-layout">
                 <PlanTable
-                  :selected-task="selectedTask"
+                  :selected-iface="selectedIface"
                   :selected-in-plan="!!isSelectedInPlan"
                   :total-estimated-requests="totalEstimatedRequests"
-                  @add-selected="addSelectedTask"
-                  @drop-task="addTask"
+                  @add-selected="addSelectedIface"
+                  @drop-scheme="addScheme"
+                  @drop-iface="addInterfaceFromDrop"
                   @reset-run="execution.reset()"
                 />
               </div>
@@ -164,12 +165,21 @@
         <el-button type="primary" @click="confirmScheme">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 接口快捷配置弹窗（模块层「+接口」/ 双击接口叶子 / 拖入被拒后自动弹出） -->
+    <InterfaceQuickConfig
+      v-model="ifaceConfigVisible"
+      :interface-id="ifaceConfigId"
+      :context="ifaceConfigContext"
+      @plan="(id) => addInterfaceToPlan(id)"
+      @test="(id) => addInterfaceToPlan(id, { test: true })"
+    />
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   ArrowLeft, ArrowRight, RefreshRight, Search, SwitchButton, VideoPause, VideoPlay
@@ -177,15 +187,17 @@ import {
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import PlanTable from '@/components/execution/PlanTable.vue'
 import LiveConsole from '@/components/execution/LiveConsole.vue'
+import InterfaceQuickConfig from '@/components/execution/InterfaceQuickConfig.vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useExecutionStore } from '@/stores/execution'
 import { useRunBatchStore } from '@/stores/runBatch'
 import { useSystemStore } from '@/stores/system'
-import { useTestTaskStore, TASK_STATUS } from '@/stores/testTask'
+import { useTestTaskStore } from '@/stores/testTask'
 import { usePlanSchemeStore } from '@/stores/planScheme'
 import { useProtocolStore } from '@/stores/protocol'
 
 const route = useRoute()
+const router = useRouter()
 const taskStore = useTestTaskStore()
 const systemStore = useSystemStore()
 const connStore = useConnectionStore()
@@ -198,7 +210,7 @@ const selectedKey = ref('')
 const taskSearch = ref('')
 const activeTab = ref('plan')
 const wizardSteps = [
-  { name: 'plan', title: '编排计划', desc: '选择接口并确认顺序', helper: '先把要执行的测试接口加入计划，并检查模块、数据是否就绪。' },
+  { name: 'plan', title: '编排计划', desc: '选择接口并确认顺序', helper: '先把要测试的接口按顺序加入编排计划，并检查模块、数据是否就绪。' },
   { name: 'monitor', title: '实时监控', desc: '启动联试并观察收发', helper: '执行过程中关注发送、接收、规则判定与异常捕捉。' },
 ]
 
@@ -212,11 +224,16 @@ const systemSelectValue = computed({
   set: (value) => systemStore.setCurrent(value === ALL_SYSTEM_VALUE ? null : value),
 })
 
-const selectedTask = computed(() => {
-  const id = selectedKey.value.startsWith('task-') ? selectedKey.value.slice(5) : ''
-  return taskStore.tasks.find((task) => task.id === id) || null
+const selectedIface = computed(() => {
+  const m = selectedKey.value.match(/^iface-(.+)$/)
+  if (!m) return null
+  return protocolStore.interfaces.find((i) => String(i.id) === String(m[1])) || null
 })
-const isSelectedInPlan = computed(() => selectedTask.value && execution.plan.some((item) => item.taskId === selectedTask.value.id))
+const isSelectedInPlan = computed(() => {
+  if (!selectedIface.value) return false
+  const task = taskStore.tasks.find((t) => t.bindings?.interfaceId != null && String(t.bindings.interfaceId) === String(selectedIface.value.id))
+  return task ? execution.plan.some((item) => item.taskId === task.id) : false
+})
 const totalEstimatedRequests = computed(() => execution.planItems.reduce((sum, item) => sum + item.estimatedRequests, 0))
 const activeStepIndex = computed(() => Math.max(0, wizardSteps.findIndex((step) => step.name === activeTab.value)))
 const currentStep = computed(() => wizardSteps[activeStepIndex.value] || wizardSteps[0])
@@ -228,7 +245,7 @@ const maxReachableStepIndex = computed(() => {
 const canOpenStep = (index) => index <= maxReachableStepIndex.value
 const prevDisabled = computed(() => activeStepIndex.value === 0 || ['running', 'paused'].includes(execution.status))
 const startTip = computed(() => {
-  if (!execution.planItems.length) return '请先从左侧接口树加入执行计划'
+  if (!execution.planItems.length) return '请先从左侧接口树加入编排计划'
   return '可以开始执行'
 })
 const primaryButtonText = computed(() => {
@@ -247,8 +264,6 @@ const primaryTip = computed(() => {
   if (activeTab.value === 'monitor') return '执行完成后可重新执行'
   return ''
 })
-
-const statusLabel = (val) => TASK_STATUS.find((s) => s.value === val)?.label || '待配置'
 
 /* ---- 接口方案：与模块同级的树节点 ---- */
 const extraSystemChildren = (sys) => {
@@ -310,27 +325,39 @@ const onSchemeAddLeaf = ({ groupKind, module }) => {
   }
 }
 
+/* 接口配置状态徽标：未配置字段 → 「未配置字段」；未关联数据集 → 「未关联数据」；已配置 → N数据集·触发方式 */
+const TRIGGER_LABEL = { manual: '手动', scheduled: '定时', periodic: '周期' }
+const ifaceBadge = (iface) => {
+  if (!(iface.protocolRefs || []).length) return '未配置字段'
+  const dsCount = (iface.datasetIds || []).length
+  if (!dsCount) return '未关联数据'
+  const trigger = TRIGGER_LABEL[iface.strategy?.trigger] || '手动'
+  return `${dsCount}数据集·${trigger}`
+}
+
 const leafGroups = (module) => {
-  let tasks = taskStore.tasksOfModule(module.id)
-  if (taskSearch.value) {
-    const kw = taskSearch.value.toLowerCase()
-    tasks = tasks.filter((task) =>
-      task.name.toLowerCase().includes(kw) ||
-      (task.remark || '').toLowerCase().includes(kw)
+  const kw = taskSearch.value.toLowerCase()
+  let ifaces = protocolStore.interfaces.filter((i) => i.moduleId === module.id)
+  if (kw) {
+    ifaces = ifaces.filter((i) =>
+      i.name.toLowerCase().includes(kw) ||
+      (i.desc || '').toLowerCase().includes(kw)
     )
   }
+  // 模块下直接展开接口（扁平化，不再有「接口」中间节点）；「+接口」按钮落在模块行上
   return [{
     flat: true,
-    kind: 'task',
-    addLabel: '+全加',
-    addType: 'primary',
-    items: tasks.map((task) => ({
-      key: `task-${task.id}`,
-      kind: 'task',
-      icon: 'Document',
-      label: `${execution.plan.some((item) => item.taskId === task.id) ? '● ' : ''}${task.name}`,
-      badge: statusLabel(task.status),
-      ref: task,
+    kind: 'iface',
+    addLabel: '+接口',
+    addType: 'success',
+    items: ifaces.map((iface) => ({
+      key: `iface-${iface.id}`,
+      kind: 'iface',
+      icon: 'Link',
+      label: iface.name,
+      badge: ifaceBadge(iface),
+      ref: iface,
+      module,
     })),
   }]
 }
@@ -339,11 +366,14 @@ const leafContextActions = (nodeData) => {
   if (nodeData?.kind === 'scheme' && nodeData.ref) {
     return [{ label: '编辑方案', action: 'edit-scheme' }]
   }
-  if (!nodeData?.ref || nodeData.kind !== 'task') return []
-  const inPlan = execution.plan.some((item) => item.taskId === nodeData.ref.id)
-  return [
-    { label: inPlan ? '已在执行计划' : '加入执行计划', action: 'add-to-plan' },
-  ]
+  if (nodeData?.kind === 'iface' && nodeData.ref) {
+    return [
+      { label: '配置接口', action: 'config-iface' },
+      { label: '加入编排计划', action: 'iface-to-plan' },
+      { label: '发送测试', action: 'iface-test' },
+    ]
+  }
+  return []
 }
 
 const onTreeSelect = (data) => {
@@ -353,28 +383,149 @@ const onTreeSelect = (data) => {
     openSchemeDialog(data.ref.systemId || currentSchemeSystemId.value, data.ref)
     return
   }
-  if (data.kind !== 'task' || !data.ref) return
-  selectedKey.value = data.key
-  taskStore.select(data.ref.id)
+  if (data.kind === 'iface' && data.ref) {
+    selectedKey.value = data.key
+    return
+  }
 }
 
-const addTask = (taskId) => {
-  const ok = execution.addToPlan(taskId)
-  if (ok) ElMessage.success('已加入执行计划')
-  else ElMessage.info('任务已在执行计划中')
+const addSelectedIface = () => {
+  if (!selectedIface.value) return
+  addInterfaceToPlan(selectedIface.value.id)
+}
+
+/* ---- 接口快捷配置弹窗 ---- */
+const ifaceConfigVisible = ref(false)
+const ifaceConfigId = ref(null)
+const ifaceConfigContext = ref(null)
+const openIfaceConfig = (interfaceId = null, module = null) => {
+  ifaceConfigId.value = interfaceId
+  ifaceConfigContext.value = module ? { systemId: module.systemId, moduleId: module.id } : null
+  ifaceConfigVisible.value = true
+}
+
+/* ---- 接口完整性校验（B 方案）：未配置完全禁止进入计划 ---- */
+/* 必须显式关联数据集：不再以「模块下存在数据集」作为兜底，避免未绑定数据集的接口被误判可用。 */
+const interfaceReadiness = (iface) => {
+  const reasons = []
+  if (!(iface.protocolRefs || []).length) reasons.push('未引用任何协议字段（报文为空帧）')
+  if (!(iface.datasetIds || []).length) {
+    reasons.push('未关联测试数据集（请在接口配置中绑定至少一个数据集）')
+  }
+  return { ok: !reasons.length, reasons }
+}
+
+/**
+ * 接口 → 编排计划统一入口（拖拽 / 右键 / 弹窗按钮 / 路由跳转共用）。
+ * B 方案：未配置完全 → 拒绝加入 + 错误提示 + 自动弹出配置弹窗。
+ * @returns {boolean} 是否成功加入
+ */
+const addInterfaceToPlan = (interfaceId, { test = false, silent = false } = {}) => {
+  const iface = protocolStore.interfaces.find((i) => String(i.id) === String(interfaceId))
+  if (!iface) {
+    ElMessage.warning('未找到对应接口')
+    return false
+  }
+  const readiness = interfaceReadiness(iface)
+  if (!readiness.ok) {
+    ElMessage.error(`接口「${iface.name}」未配置完全，无法加入编排计划：${readiness.reasons.join('；')}`)
+    openIfaceConfig(iface.id)
+    return false
+  }
+  const task = ensureTaskForInterface(iface)
+  // 把接口配置同步到执行配置（发送间隔 / 触发策略）
+  execution.setConfig({
+    sendInterval: iface.sendInterval || 500,
+    trigger: iface.strategy?.trigger || 'manual',
+    scheduleAt: iface.strategy?.scheduleAt || null,
+    periodicInterval: iface.strategy?.periodicInterval || 60,
+    periodicUnit: iface.strategy?.periodicUnit || 's',
+    periodicCount: iface.strategy?.periodicCount ?? null,
+  })
+  const added = execution.addToPlan(task.id)
+  selectedKey.value = `iface-${iface.id}`
+  if (test) {
+    if (execution.start()) {
+      activeTab.value = 'monitor'
+      ElMessage.success('已进入发送测试（实时监控）')
+    } else {
+      ElMessage.warning('无法开始发送测试，请检查接口配置')
+    }
+    return true
+  }
+  activeTab.value = 'plan'
+  if (!silent) {
+    if (added) ElMessage.success(`接口「${iface.name}」已加入编排计划`)
+    else ElMessage.info(`接口「${iface.name}」已在编排计划中`)
+  }
+  return true
+}
+
+// 接口叶子拖入编排计划（PlanTable drop-iface）
+const addInterfaceFromDrop = (interfaceId) => {
+  addInterfaceToPlan(interfaceId)
+}
+
+// 找到（或创建）绑定指定接口的执行条目，并同步接口上的数据集/执行策略
+const ensureTaskForInterface = (iface) => {
+  let task = taskStore.tasks.find((t) => t.bindings.interfaceId != null && String(t.bindings.interfaceId) === String(iface.id))
+  if (!task) {
+    task = taskStore.addTask({ name: `${iface.name} 联试`, systemId: iface.systemId, moduleId: iface.moduleId })
+    taskStore.updateBindings(task.id, { interfaceId: iface.id })
+  }
+  taskStore.updateBindings(task.id, { datasetIds: iface.datasetIds || [] })
+  taskStore.updateStrategy(task.id, { ...(iface.strategy || {}) })
+  return task
+}
+
+// 接口方案拖入编排计划：把方案内全部接口展开为任务逐个加入
+const addScheme = (schemeId) => {
+  const scheme = schemeStore.schemes.find((s) => s.id === schemeId)
+  if (!scheme) {
+    ElMessage.warning('未找到对应的接口方案')
+    return
+  }
+  if (!scheme.interfaceIds.length) {
+    ElMessage.info(`方案「${scheme.name}」还没有配置接口，请先编辑方案并勾选接口`)
+    return
+  }
+  let added = 0
+  let skipped = 0
+  let missing = 0
+  let unready = 0
+  scheme.interfaceIds.forEach((interfaceId) => {
+    const iface = protocolStore.interfaces.find((i) => String(i.id) === String(interfaceId))
+    if (!iface) { missing += 1; return }
+    // B 方案：未配置完全的接口拒绝加入
+    if (!interfaceReadiness(iface).ok) { unready += 1; return }
+    const task = ensureTaskForInterface(iface)
+    if (execution.addToPlan(task.id)) added += 1
+    else skipped += 1
+  })
+  const extra = [
+    skipped ? `${skipped} 个已在计划中` : '',
+    unready ? `${unready} 个未配置完全已拒绝` : '',
+    missing ? `${missing} 个接口已不存在` : '',
+  ].filter(Boolean).join('，')
+  if (added) {
+    ElMessage.success(`方案「${scheme.name}」已加入 ${added} 个接口${extra ? `（${extra}）` : ''}`)
+  } else if (unready) {
+    ElMessage.error(`方案「${scheme.name}」的接口均未配置完全，已拒绝加入；请先配置字段与数据集`)
+  } else if (skipped) {
+    ElMessage.info(`方案「${scheme.name}」的接口均已在编排计划中`)
+  } else {
+    ElMessage.warning(`方案「${scheme.name}」内的接口均已不存在，请重新编辑方案`)
+  }
   activeTab.value = 'plan'
 }
 
-const addSelectedTask = () => {
-  if (!selectedTask.value) return
-  addTask(selectedTask.value.id)
-}
-
 const onLeafAction = ({ action, data }) => {
-  if (action === 'add-to-plan' && data?.ref) addTask(data.ref.id)
   if (action === 'edit-scheme' && data?.ref) {
     openSchemeDialog(data.ref.systemId || currentSchemeSystemId.value, data.ref)
   }
+  if (action === 'config-iface' && data?.ref) openIfaceConfig(data.ref.id)
+  if (action === 'iface-to-plan' && data?.ref) addInterfaceToPlan(data.ref.id)
+  if (action === 'iface-test' && data?.ref) addInterfaceToPlan(data.ref.id, { test: true })
 }
 
 const onAddLeaf = ({ groupKind, module }) => {
@@ -382,15 +533,19 @@ const onAddLeaf = ({ groupKind, module }) => {
     openSchemeDialog(module.systemId || module.id, null)
     return
   }
-  const count = execution.addModuleTasks(module.id)
-  if (count) ElMessage.success(`已加入 ${count} 个任务`)
-  else ElMessage.info('该模块任务均已在执行计划中')
+  if (groupKind === 'iface') {
+    openIfaceConfig(null, module)
+  }
 }
 
 const onDeleteLeaf = (node) => {
   if (node.kind === 'scheme' && node.ref) {
     schemeStore.remove(node.ref.id)
     ElMessage.success('接口方案已删除')
+  }
+  if (node.kind === 'iface' && node.ref) {
+    protocolStore.removeInterface(node.ref.id)
+    ElMessage.success('接口已删除')
   }
 }
 
@@ -433,6 +588,11 @@ const rerun = () => {
   activeTab.value = 'plan'
 }
 
+// 从报文管理页「跳转到计划 / 发送测试」：统一走 addInterfaceToPlan（含 B 方案完整性校验）
+const handleInterfaceJump = (interfaceId, isTest = false) => {
+  addInterfaceToPlan(interfaceId, { test: isTest })
+}
+
 const firstQueryValue = (value) => Array.isArray(value) ? value[0] : value
 
 watch(() => execution.status, (status) => {
@@ -440,6 +600,14 @@ watch(() => execution.status, (status) => {
 })
 
 onMounted(() => {
+  // 从接口配置「跳转到计划 / 发送测试」
+  const jumpInterfaceId = firstQueryValue(route.query.interfaceId)
+  if (jumpInterfaceId) {
+    handleInterfaceJump(jumpInterfaceId, route.query.test === '1')
+    router.replace({ path: '/execution' })
+    return
+  }
+
   const runId = firstQueryValue(route.query.runId)
   if (runId) {
     const batch = batchStore.byId(String(runId))
@@ -459,7 +627,7 @@ onMounted(() => {
       taskStore.select(task.id)
       execution.addToPlan(task.id)
       activeTab.value = 'plan'
-      ElMessage.success('已从任务页带入执行计划')
+      ElMessage.success('已从接口页带入编排计划')
     }
   }
 })
