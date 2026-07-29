@@ -9,10 +9,12 @@ dist-ssr
 # Claude / 智能体相关本地文件（与项目无关，不上传）
 .claude/
 .agents/
+.workbuddy/
 AGENTS.md
 .cursor/
 .aider*
 .github/copilot-instructions.md
+.writing/
 
 # 项目需求/设计文档（本地保留，不上传）
 CLAUDE.md
@@ -25,3 +27,4 @@ docs
 # 本地开发脚本（与项目无关）
 .start-dev.bat
 .playwright-mcp
+search-mq.ps1
