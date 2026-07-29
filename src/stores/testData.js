@@ -14,7 +14,8 @@ const historyRowsFromDataset = (dataset) => {
     label: row.label || `历史行 ${index + 1}`,
     values: clone(row.values || {}),
     source: '历史优秀案例',
-    savedAt: dataset.createdAt || '2026-06-25'
+    savedAt: dataset.createdAt || '2026-06-25',
+    remark: ''
   }))
 }
 
@@ -295,10 +296,19 @@ export const useTestDataStore = defineStore('testData', {
         label: r.label || `智能生成行 ${ds.historyRows.length + 1}`,
         values: clone(r.values || {}),
         source: r.source || '智能生成',
-        savedAt: new Date().toISOString().slice(0, 10)
+        savedAt: new Date().toISOString().slice(0, 10),
+        remark: r.remark || ''
       }))
       ds.historyRows.push(...newRows)
       return newRows
+    },
+
+    /** 更新历史数据行（编辑备注、标签、值等） */
+    updateHistoryRow(datasetId, rowId, patch) {
+      const ds = this.datasets.find(d => d.id === datasetId)
+      if (!ds?.historyRows) return
+      const row = ds.historyRows.find(r => r.id === rowId)
+      if (row) Object.assign(row, patch)
     },
 
     /**

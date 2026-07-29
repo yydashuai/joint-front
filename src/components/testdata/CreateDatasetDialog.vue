@@ -15,19 +15,19 @@
       <el-form-item label="关联类型">
         <el-radio-group v-model="linkType" @change="onLinkTypeChange">
           <el-radio-button value="none">不关联</el-radio-button>
-          <el-radio-button value="protocol" :disabled="moduleProtocols.length === 0">协议</el-radio-button>
-          <el-radio-button value="interface" :disabled="moduleInterfaces.length === 0">接口</el-radio-button>
+          <el-radio-button value="protocol" :disabled="moduleProtocols.length === 0">字段</el-radio-button>
+          <el-radio-button value="interface" :disabled="moduleInterfaces.length === 0">报文</el-radio-button>
         </el-radio-group>
       </el-form-item>
 
-      <el-form-item v-if="linkType === 'protocol'" label="关联协议">
-        <el-select v-model="form.linkedProtocol" placeholder="选择协议" style="width: 100%;">
+      <el-form-item v-if="linkType === 'protocol'" label="关联字段">
+        <el-select v-model="form.linkedProtocol" placeholder="选择字段" style="width: 100%;">
           <el-option v-for="p in moduleProtocols" :key="p.id" :label="p.name" :value="p.name" />
         </el-select>
       </el-form-item>
 
-      <el-form-item v-if="linkType === 'interface'" label="关联接口">
-        <el-select v-model="form.linkedInterface" placeholder="选择接口" style="width: 100%;">
+      <el-form-item v-if="linkType === 'interface'" label="关联报文">
+        <el-select v-model="form.linkedInterface" placeholder="选择报文" style="width: 100%;">
           <el-option v-for="i in moduleInterfaces" :key="i.id" :label="i.name" :value="i.name" />
         </el-select>
       </el-form-item>

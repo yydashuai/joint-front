@@ -25,18 +25,12 @@ export const EXC_SOURCES = [
 ]
 
 const defaultTypes = [
-  { id: 'type', name: '类型校验', source: 'rule', defaultLevel: '高', suggestion: '核对协议字段类型与响应解析器配置。' },
+  { id: 'type', name: '类型校验', source: 'rule', defaultLevel: '高', suggestion: '核对字段类型与接收解析器配置。' },
   { id: 'range', name: '取值范围', source: 'rule', defaultLevel: '高', suggestion: '检查字段上下限、单位换算与现场传感器标定。' },
   { id: 'boundary', name: '边界值检测', source: 'rule', defaultLevel: '中', suggestion: '复核边界条件，确认被测系统在临界值附近的处理策略。' },
   { id: 'overflow', name: '字段越界', source: 'rule', defaultLevel: '高', suggestion: '确认报文字段长度、字节偏移与端序定义。' },
-  { id: 'timeout', name: '响应超时', source: 'rule', defaultLevel: '中', suggestion: '排查链路时延、任务负载与被测模块响应能力。' },
-  { id: 'format', name: '格式错误', source: 'rule', defaultLevel: '高', suggestion: '检查帧头、校验码、JSON/结构体格式与协议版本。' },
-  { id: 'delivery', name: '投递校验', source: 'rule', defaultLevel: '高', suggestion: '检查 MQ Broker 连通性、Topic/Queue 配置与消息 TTL。' },
-  { id: 'ordering', name: '顺序校验', source: 'rule', defaultLevel: '中', suggestion: '确认 Kafka 分区配置或 RabbitMQ 单消费者模式。' },
-  { id: 'broker_disconnect', name: 'Broker 断连', source: 'link', defaultLevel: '高', suggestion: '检查 Broker 进程状态、网络连通性与心跳超时配置。' },
-  { id: 'msg_backlog', name: '消息堆积', source: 'system', defaultLevel: '中', suggestion: '检查消费者吞吐量、队列深度阈值与告警水位线。' },
-  { id: 'consumer_offline', name: '消费者掉线', source: 'link', defaultLevel: '高', suggestion: '排查消费者进程、网络分区与 Consumer Group Rebalance。' },
-  { id: 'msg_expired', name: '消息过期', source: 'system', defaultLevel: '中', suggestion: '检查消息 TTL 配置、队列长度与消费速度。' },
+  { id: 'timeout', name: '接收超时', source: 'rule', defaultLevel: '中', suggestion: '排查链路时延、任务负载与被测模块接收能力。' },
+  { id: 'format', name: '格式错误', source: 'rule', defaultLevel: '高', suggestion: '检查帧头、校验码、JSON/结构体格式与字段版本。' },
 ].map((item) => ({ ...item, captureEnabled: true, desc: item.suggestion }))
 
 const typeIdOf = (typeName) => {
@@ -52,9 +46,8 @@ const activeStateOf = (state) => {
 }
 const seedTagsOf = (alert) => {
   const tags = []
-  if (['响应超时'].includes(alert.type)) tags.push('链路问题')
-  if (['类型校验', '取值范围', '边界值检测', '字段越界', '格式错误'].includes(alert.type)) tags.push('协议字段')
-  if (['投递校验', '顺序校验', 'Broker 断连', '消息堆积', '消费者掉线', '消息过期'].includes(alert.type)) tags.push('消息队列')
+  if (['接收超时'].includes(alert.type)) tags.push('链路问题')
+  if (['类型校验', '取值范围', '边界值检测', '字段越界', '格式错误'].includes(alert.type)) tags.push('字段')
   if (alert.level === '高') tags.push('高优先级')
   if (activeStateOf(alert.state) === '待处理') tags.push('需跟进')
   return [...new Set(tags)]
@@ -71,7 +64,7 @@ const normalizeSeed = (alert, index) => ({
   systemId: alert.systemId,
   moduleId: alert.moduleId,
   interfaceId: '',
-  iface: alert.iface || '未命名接口',
+  iface: alert.iface || '未命名报文',
   source: sourceOf(alert.type),
   runId: seedRunIdForAlert(alert, index),
   taskId: '',
@@ -208,7 +201,7 @@ export const useExceptionStore = defineStore('exception', {
         systemId: payload.systemId || '',
         moduleId: payload.moduleId || '',
         interfaceId: payload.interfaceId || '',
-        iface: payload.iface || payload.interfaceName || '未命名接口',
+        iface: payload.iface || payload.interfaceName || '未命名报文',
         source: payload.source || typeDef.source || 'execution',
         runId: payload.runId || '',
         taskId: payload.taskId || '',

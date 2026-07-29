@@ -3,7 +3,7 @@
     <div class="page__header">
       <div>
         <h2>校验规则管理</h2>
-        <div class="page__desc">从接口字段生成黑盒校验规则，绑定到任务后用于执行时实时判定</div>
+        <div class="page__desc">从报文字段生成黑盒校验规则，绑定到任务后用于执行时实时判定</div>
       </div>
       <div class="header-actions">
         <el-select v-model="systemSelectValue" class="system-select">
@@ -172,7 +172,7 @@ const onAddLeaf = ({ module }) => {
     name: `${module.name}规则集`,
     systemId: module.systemId,
     moduleId: module.id,
-    desc: '从接口字段自动生成后，可按现场需要微调阈值。',
+    desc: '从报文字段自动生成后，可按现场需要微调阈值。',
   })
   selectedKey.value = `rule-${ruleSet.id}`
   ElMessage.success('规则集已创建')
@@ -225,7 +225,7 @@ const exportJson = () => {
   URL.revokeObjectURL(url)
 }
 
-/* ---- 协议 ↔ 规则 双向跳转 ---- */
+/* ---- 字段 ↔ 规则 双向跳转 ---- */
 const jumpToProtocol = (interfaceId) => {
   const iface = protoStore.interfaces.find((item) => item.id === interfaceId)
   if (!iface) return
@@ -235,7 +235,7 @@ const jumpToProtocol = (interfaceId) => {
   router.push({ path: '/protocol', query: { interfaceId: String(iface.id) } })
 }
 
-// 从协议页跳转过来时，自动选中同模块规则集并弹出规则生成对话框
+// 从字段页跳转过来时，自动选中同模块规则集并弹出规则生成对话框
 watch(() => route.query.interfaceId, (ifaceId) => {
   if (!ifaceId) {
     targetInterfaceId.value = null
@@ -254,7 +254,7 @@ watch(() => route.query.interfaceId, (ifaceId) => {
       name: `${iface.name}规则集`,
       systemId: iface.systemId,
       moduleId: iface.moduleId,
-      desc: '从接口字段自动生成后，可按现场需要微调阈值。',
+      desc: '从报文字段自动生成后，可按现场需要微调阈值。',
     })
   }
   if (route.query.action === 'generate') {

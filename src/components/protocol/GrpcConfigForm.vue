@@ -2,14 +2,14 @@
   <el-card class="main" shadow="never" :body-style="mainBody">
     <template #header>
       <div class="proto-head">
-        <el-input v-model="protocol.name" class="proto-name" placeholder="协议名称" />
+        <el-input v-model="protocol.name" class="proto-name" placeholder="字段名称" />
         <div class="proto-head__right">
           <span class="lbl">当前类型</span>
           <el-select :model-value="protocol.type" style="width: 100px" @change="(v) => $emit('switchType', v)">
             <el-option v-for="t in PROTOCOL_TYPES" :key="t.value" :label="t.label" :value="t.value" />
           </el-select>
-          <el-tooltip content="保存当前协议配置"><el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button></el-tooltip>
-          <el-popconfirm title="删除该协议？" @confirm="$emit('delete')">
+          <el-tooltip content="保存当前字段配置"><el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button></el-tooltip>
+          <el-popconfirm title="删除该字段？" @confirm="$emit('delete')">
             <template #reference><el-button :icon="Delete" plain>删除</el-button></template>
           </el-popconfirm>
         </div>
@@ -17,7 +17,7 @@
     </template>
 
     <div class="field-label">备注说明</div>
-    <el-input v-model="protocol.desc" placeholder="可选，描述该协议的用途" class="proto-desc" />
+    <el-input v-model="protocol.desc" placeholder="可选，描述该字段的用途" class="proto-desc" />
 
     <div class="meta-row">
       <span class="meta-row__label req">所属系统</span>
@@ -33,7 +33,7 @@
     <!-- ====== 区块1: 流式模式 ====== -->
     <el-divider content-position="left">gRPC 传输配置</el-divider>
     <div class="section-hint">
-      协议只定义传输层规范（流模式、地址、超时）。具体的服务名、方法名、消息结构由引用此协议的接口定义。
+      字段只定义传输层规范（流模式、地址、超时）。具体的服务名、方法名、消息结构由引用此字段的报文定义。
     </div>
 
     <el-radio-group v-model="cfg.streamingMode" class="stream-modes">

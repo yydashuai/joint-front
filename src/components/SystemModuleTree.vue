@@ -52,7 +52,7 @@
             <span v-if="data.kind === 'system'" class="tnode__ops">
               <el-button link type="primary" size="small" @click.stop="newModule(data)">+模块</el-button>
             </span>
-            <span v-else-if="data.kind === 'module' && data.addActions.length" class="tnode__ops">
+            <span v-else-if="data.addActions && data.addActions.length" class="tnode__ops">
               <el-button
                 v-for="a in data.addActions"
                 :key="a.groupKind"
@@ -72,7 +72,7 @@
     <teleport to="body">
       <div v-if="ctx.visible" class="ctx-mask" @click="closeCtx" @contextmenu.prevent="closeCtx">
         <ul class="ctx-menu" :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }" @click.stop>
-          <li @click="ctxRename">重命名</li>
+          <li v-if="ctx.data?.kind !== 'schemeGroup'" @click="ctxRename">重命名</li>
           <template v-if="ctx.data?.kind === 'system'">
             <li @click="ctxNewModule">新建模块</li>
             <li v-if="showEditJump" @click="ctxEdit">在链路连接管理中编辑</li>
@@ -88,6 +88,9 @@
             </template>
             <li v-if="showEditJump" @click="ctxEdit">在链路连接管理中编辑</li>
             <li class="danger" @click="ctxDelete">删除模块</li>
+          </template>
+          <template v-else-if="ctx.data?.kind === 'schemeGroup'">
+            <li v-for="a in ctx.data.addActions" :key="a.groupKind" @click="ctxAddLeaf(a.groupKind)">{{ a.label }}</li>
           </template>
           <template v-else>
             <template v-if="leafContextActions">
@@ -108,7 +111,7 @@
 /**
  * 通用「系统 → 模块 →（可选叶子）」IDE 式层级树。
  * - 系统、模块为通用层：内部直接读 systemStore / connStore，自带 新建/重命名/删除/+模块/编辑跳转。
- * - 叶子层由各页面通过 leafGroups(module) 注入（如 协议/接口、数据集、规则集…）；
+ * - 叶子层由各页面通过 leafGroups(module) 注入（如 字段/报文、数据集、规则集…）；
  *   不传 leafGroups 时，「模块」本身即可选叶子（连接管理就是这种用法）。
  *
  * leafGroups(module) => [
@@ -126,6 +129,7 @@ const props = defineProps({
   modelValue: { type: String, default: '' }, // 当前选中节点 key
   title: { type: String, default: '系统 · 模块' },
   leafGroups: { type: Function, default: null }, // (module) => groups[]
+  extraSystemChildren: { type: Function, default: null }, // (system) => extra nodes at module level
   showEditJump: { type: Boolean, default: false }, // 右键是否含「在链路连接管理中编辑」
   emptyText: { type: String, default: '暂无系统/模块，请先在链路连接管理添加' },
   leafContextActions: { type: Function, default: null }, // (leafData) => [{ label, action, danger? }]
@@ -162,13 +166,8 @@ const titleLines = computed(() => {
 const treeData = computed(() => {
   const cur = systemStore.currentId
   const systems = cur ? systemStore.systems.filter((s) => s.id === cur) : systemStore.systems
-  return systems.map((sys) => ({
-    key: `sys-${sys.id}`,
-    kind: 'system',
-    icon: 'Cpu',
-    label: sys.name,
-    ref: sys,
-    children: connStore.nodes
+  return systems.map((sys) => {
+    const moduleChildren = connStore.nodes
       .filter((m) => m.systemId === sys.id)
       .map((mod) => {
         const groups = props.leafGroups ? (props.leafGroups(mod) || []) : []
@@ -195,7 +194,16 @@ const treeData = computed(() => {
           )
         }
       })
-  }))
+    const extraChildren = props.extraSystemChildren ? (props.extraSystemChildren(sys) || []) : []
+    return {
+      key: `sys-${sys.id}`,
+      kind: 'system',
+      icon: 'Cpu',
+      label: sys.name,
+      ref: sys,
+      children: [...moduleChildren, ...extraChildren]
+    }
+  })
 })
 
 const collectExpandableKeys = (nodes) => {
@@ -298,7 +306,7 @@ const toggleAll = () => {
 /* ---- 选择：叶子（无 leafGroups 时为模块；否则为叶子项） ---- */
 const isSelectableLeaf = (d) =>
   (d.kind === 'module' && modulesAreLeaves.value) ||
-  (!!d.ref && d.kind !== 'system' && d.kind !== 'module')
+  (!!d.ref && d.kind !== 'system' && d.kind !== 'module' && d.kind !== 'schemeGroup')
 const onNodeClick = (d) => {
   if (isSelectableLeaf(d)) {
     emit('update:modelValue', d.key)
@@ -357,10 +365,17 @@ const ctxNewModule = () => { newModule(ctx.data); closeCtx() }
 const ctxAddLeaf = (groupKind) => { addLeaf(groupKind, ctx.data); closeCtx() }
 const ctxDelete = () => {
   const d = ctx.data
-  if (d.kind === 'system') { connStore.unassignSystem(d.ref.id); systemStore.remove(d.ref.id) }
-  else if (d.kind === 'module') connStore.remove(d.ref.id)
-  else emit('delete-leaf', d)
   closeCtx()
+  const typeLabel = d.kind === 'system' ? '系统' : d.kind === 'module' ? '模块' : '节点'
+  ElMessageBox.confirm(`确认删除${typeLabel}「${d.label}」？`, '删除确认', {
+    confirmButtonText: '确定删除',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    if (d.kind === 'system') { connStore.unassignSystem(d.ref.id); systemStore.remove(d.ref.id) }
+    else if (d.kind === 'module') connStore.remove(d.ref.id)
+    else emit('delete-leaf', d)
+  }).catch(() => {})
 }
 // 编辑 = 跳转到链路连接管理定位该系统/模块
 const ctxEdit = () => {
@@ -413,6 +428,9 @@ const ctxEdit = () => {
   &--module { font-weight: 500; }
   &--protocol .tnode__icon { color: var(--el-color-warning); }
   &--interface .tnode__icon { color: var(--el-color-success); }
+  &--schemeGroup { font-weight: 500; }
+  &--schemeGroup .tnode__icon { color: var(--el-color-warning); }
+  &--scheme .tnode__icon { color: #e6a23c; }
   &--draggable { cursor: grab; }
   &--draggable:active { cursor: grabbing; }
 }

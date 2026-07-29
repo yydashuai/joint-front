@@ -2,8 +2,8 @@
   <div class="page proto">
     <div class="page__header">
       <div>
-        <h2>接口协议管理</h2>
-        <div class="page__desc">系统 → 模块 → 协议 / 接口</div>
+        <h2>报文管理</h2>
+        <div class="page__desc">系统 → 模块 → 字段 / 报文</div>
       </div>
     </div>
 
@@ -11,7 +11,7 @@
       <SystemModuleTree
         class="proto-tree"
         :model-value="currentKey"
-        title="系统 · 模块 · 协议"
+        title="系统 · 模块 · 字段"
         :leaf-groups="protocolLeafGroups"
         :leaf-context-actions="leafContextActions"
         show-edit-jump
@@ -23,7 +23,7 @@
       />
 
       <div class="proto-detail">
-        <!-- 协议摘要: 数据结构信息 -->
+        <!-- 字段摘要: 数据结构信息 -->
         <div v-if="selectedKind === 'protocol' && curProto" class="proto-summary">
           <span class="proto-summary__chip">
             <el-icon><Grid /></el-icon>
@@ -43,7 +43,7 @@
           </span>
           <span v-if="store.interfacesByProtocol(curProto.id).length" class="proto-summary__msg">
             <el-icon><List /></el-icon>
-            {{ store.interfacesByProtocol(curProto.id).length }} 个接口引用
+            {{ store.interfacesByProtocol(curProto.id).length }} 个报文引用
           </span>
         </div>
 
@@ -81,7 +81,7 @@
           @navigate-protocol="onNavigateProtocol"
         />
 
-        <el-empty v-if="!curProto && !curIf" class="main main--empty" description="从左侧选择一个协议或接口进行编辑" />
+        <el-empty v-if="!curProto && !curIf" class="main main--empty" description="从左侧选择一个字段或报文进行编辑" />
       </div>
     </div>
 
@@ -110,7 +110,7 @@ const connStore = useConnectionStore()
 const router = useRouter()
 const route = useRoute()
 
-// 进入协议页时, 自动跑一次 v1→v2 数据迁移(幂等)
+// 进入字段页时, 自动跑一次 v1→v2 数据迁移(幂等)
 // 未来 v2 概念完全接管后, 可删除此调用
 onMounted(() => store.migrateAllFromV1())
 
@@ -147,9 +147,9 @@ const protocolLeafGroups = (module) => {
       key: `pg-${module.id}`,
       kind: 'protoGroup',
       icon: 'Files',
-      label: '协议',
+      label: '字段',
       count: protos.length,
-      addLabel: '+协议',
+      addLabel: '+字段',
       addType: 'primary',
       items: protos.map((p) => ({ key: `p-${p.id}`, kind: 'protocol', icon: 'Document', label: p.name, ref: p, module }))
     },
@@ -157,9 +157,9 @@ const protocolLeafGroups = (module) => {
       key: `ig-${module.id}`,
       kind: 'ifGroup',
       icon: 'Operation',
-      label: '接口',
+      label: '报文',
       count: ifaces.length,
-      addLabel: '+接口',
+      addLabel: '+报文',
       addType: 'success',
       items: ifaces.map((i) => ({ key: `i-${i.id}`, kind: 'interface', icon: 'Link', label: i.name, ref: i, module }))
     }
@@ -182,7 +182,7 @@ const onTreeSelect = (data) => {
   }
 }
 
-const DEFAULT_NAME = { protocol: '新建协议', interface: '新建接口' }
+const DEFAULT_NAME = { protocol: '新建字段', interface: '新建报文' }
 const typeDialogVisible = ref(false)
 const pendingModule = ref(null)
 
@@ -223,7 +223,7 @@ const onTreeDeleteLeaf = (node) => {
   if (node.kind === 'interface') store.removeInterface(node.ref.id)
 }
 
-/* ---- 接口右键菜单：跳转到规则管理 ---- */
+/* ---- 报文右键菜单：跳转到规则管理 ---- */
 const leafContextActions = (nodeData) => {
   if (nodeData?.kind !== 'interface') return []
   return [{ label: '生成校验规则', action: 'generateRules' }]
@@ -234,7 +234,7 @@ const onLeafAction = ({ action, data }) => {
   }
 }
 
-// 从规则页跳转过来时，自动选中对应接口
+// 从规则页跳转过来时，自动选中对应报文
 watch(() => route.query.interfaceId, (ifaceId) => {
   if (!ifaceId) return
   const iface = store.interfaces.find((i) => String(i.id) === String(ifaceId))
@@ -250,7 +250,7 @@ const onSave = () => {
   byteTreeRef.value?.fillAllGaps?.()
   nextTick(() => {
     byteTreeRef.value?.markClean?.()
-    ElMessage.success('协议已保存')
+    ElMessage.success('字段已保存')
   })
 }
 
@@ -263,7 +263,7 @@ const exportProto = () => {
   a.download = `${curProto.value.name || 'protocol'}.json`
   a.click()
   URL.revokeObjectURL(a.href)
-  ElMessage.success('已导出协议模板 JSON')
+  ElMessage.success('已导出字段模板 JSON')
 }
 
 const fileInput = ref()
@@ -276,7 +276,7 @@ const onImportFile = (e) => {
     try {
       const obj = JSON.parse(reader.result)
       store.addProtocol({
-        name: (obj.name || '导入协议') + '(导入)',
+        name: (obj.name || '导入字段') + '(导入)',
         type: obj.type || 'TCP',
         desc: obj.desc || '',
         systemId: curProto.value?.systemId ?? null,
@@ -284,9 +284,9 @@ const onImportFile = (e) => {
         config: obj.config || { endian: 'big', fields: [] }
       })
       selectedKind.value = 'protocol'
-      ElMessage.success('协议模板已导入')
+      ElMessage.success('字段模板已导入')
     } catch {
-      ElMessage.error('文件解析失败，请确认为协议 JSON')
+      ElMessage.error('文件解析失败，请确认为字段 JSON')
     }
     e.target.value = ''
   }
@@ -311,7 +311,7 @@ const onImportFile = (e) => {
   background: var(--el-bg-color);
 }
 
-/* ============ v2 协议摘要条 ============ */
+/* ============ v2 字段摘要条 ============ */
 .proto-summary {
   display: flex;
   align-items: center;

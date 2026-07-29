@@ -62,7 +62,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="目标接口" min-width="150">
+        <el-table-column label="目标报文" min-width="150">
           <template #default="{ row }">
             <span v-if="row.iface">{{ row.iface.name }}</span>
             <span v-else class="text-danger">未配置</span>
@@ -76,16 +76,8 @@
             <div class="muted">{{ row.rowCount || 8 }} 行 → {{ row.estimatedRequests }} 请求</div>
           </template>
         </el-table-column>
-        <el-table-column label="就绪" width="90" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.ready ? 'success' : 'danger'" size="small">
-              {{ row.ready ? '就绪' : '缺配置' }}
-            </el-tag>
-          </template>
-        </el-table-column>
         <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
-            <el-tooltip content="跳转到任务详情页"><el-button link type="primary" size="small" @click="router.push({ path: '/task', query: { id: row.task.id } })">编辑</el-button></el-tooltip>
             <el-popconfirm title="确认从计划中移除？" @confirm="store.removeFromPlan(row.id)">
               <template #reference><el-button link type="danger" size="small">移除</el-button></template>
             </el-popconfirm>
@@ -93,59 +85,16 @@
         </el-table-column>
       </el-table>
 
-      <el-empty v-if="!items.length" class="plan-empty" :image-size="88" description="从左侧任务树拖入或添加到执行计划，也可先去测试任务管理组建任务">
-        <el-button type="primary" plain @click="router.push('/task')">去组建任务</el-button>
-      </el-empty>
+      <el-empty v-if="!items.length" class="plan-empty" :image-size="88" description="从左侧系统树拖入接口，或新建方案后添加多个接口到执行计划" />
     </el-card>
 
-    <el-card shadow="never" class="exec-card">
-      <template #header>
-        <div class="card-head">
-          <div>
-            <span class="card-title">就绪检查</span>
-            <span class="card-sub">只拦截会导致无法执行的条件，数据集和规则集会降级提示</span>
-          </div>
-          <el-tag :type="store.canStart ? 'success' : 'warning'" effect="plain">
-            {{ store.canStart ? '可开始' : '待处理' }}
-          </el-tag>
-        </div>
-      </template>
-
-      <div v-if="!items.length" class="muted">加入任务后显示逐项检查。</div>
-      <div v-else class="check-list">
-        <div v-for="item in items" :key="item.id" class="check-task">
-          <div class="check-task__title">
-            <span>{{ item.task.name }}</span>
-            <el-tag :type="item.ready ? 'success' : 'danger'" size="small" effect="plain">
-              {{ item.ready ? '关键项通过' : '关键项未通过' }}
-            </el-tag>
-          </div>
-          <div class="check-grid">
-            <div
-              v-for="check in item.checks"
-              :key="check.key"
-              class="check-item"
-              :class="{ 'check-item--warn': !check.ok && !check.blocking, 'check-item--bad': !check.ok && check.blocking }"
-            >
-              <el-icon><component :is="check.ok ? CircleCheck : Warning" /></el-icon>
-              <div class="check-item__body">
-                <span>{{ check.label }}</span>
-                <small>{{ check.detail }}</small>
-              </div>
-              <el-button v-if="!check.ok" link type="primary" size="small" @click="router.push(check.route)">去修复</el-button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </el-card>
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import Sortable from 'sortablejs'
-import { CircleCheck, Plus, Rank, RefreshRight, Warning } from '@element-plus/icons-vue'
+import { Plus, Rank, RefreshRight } from '@element-plus/icons-vue'
 import { useExecutionStore } from '@/stores/execution'
 
 defineProps({
@@ -156,7 +105,6 @@ defineProps({
 const emit = defineEmits(['add-selected', 'drop-task', 'reset-run'])
 
 const store = useExecutionStore()
-const router = useRouter()
 const tableRef = ref()
 const items = computed(() => store.planItems)
 const dragOver = ref(false)
@@ -240,27 +188,4 @@ onBeforeUnmount(() => sortable?.destroy())
 }
 .status-dot--online { background: var(--el-color-success); }
 .status-dot--pinging { background: var(--el-color-warning); }
-.check-list { display: flex; flex-direction: column; gap: 12px; }
-.check-task { padding: 10px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-fill-color-extra-light); }
-.check-task__title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-weight: 600; }
-.check-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.check-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 48px;
-  padding: 8px;
-  border-radius: 6px;
-  background: #fff;
-  border: 1px solid transparent;
-  color: var(--el-color-success);
-}
-.check-item--warn { color: var(--el-color-warning); border-color: var(--el-color-warning-light-7); }
-.check-item--bad { color: var(--el-color-danger); border-color: var(--el-color-danger-light-7); }
-.check-item__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; color: var(--el-text-color-primary); }
-.check-item__body small { color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-@media (max-width: 1100px) {
-  .check-grid { grid-template-columns: 1fr; }
-}
 </style>

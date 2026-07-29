@@ -8,14 +8,14 @@
         </div>
         <h1 class="login-brand__title">便携式智能联试工具</h1>
         <p class="login-brand__desc">
-          多系统联合测试 · 链路监控 · 协议管理 · 智能诊断
+          多系统联合测试 · 链路监控 · 字段管理 · 智能诊断
         </p>
         <div class="login-brand__features">
           <div class="login-brand__feat">
             <span class="feat-dot" />实时链路状态监控
           </div>
           <div class="login-brand__feat">
-            <span class="feat-dot" />接口协议可视化管理
+            <span class="feat-dot" />报文字段可视化管理
           </div>
           <div class="login-brand__feat">
             <span class="feat-dot" />测试任务全流程追踪

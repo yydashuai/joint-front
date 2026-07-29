@@ -1,9 +1,9 @@
 export const RULE_TYPES = [
   { value: 'type', label: '类型校验', tag: 'primary', icon: 'DataAnalysis', level: 'error', desc: '收到的字段是不是声明的类型' },
-  { value: 'range', label: '取值范围', tag: 'danger', icon: 'Aim', level: 'error', desc: '数值有没有超出协议规定的上下限' },
+  { value: 'range', label: '取值范围', tag: 'danger', icon: 'Aim', level: 'error', desc: '数值有没有超出字段规定的上下限' },
   { value: 'boundary', label: '边界值检测', tag: 'warning', icon: 'Crop', level: 'warning', desc: '卡在临界值时表现对不对' },
   { value: 'overflow', label: '字段越界', tag: 'danger', icon: 'FullScreen', level: 'error', desc: '帧长够不够、该有的字段在不在' },
-  { value: 'timeout', label: '响应超时', tag: 'danger', icon: 'Timer', level: 'error', desc: '回得够不够快' },
+  { value: 'timeout', label: '接收超时', tag: 'danger', icon: 'Timer', level: 'error', desc: '回得够不够快' },
   { value: 'format', label: '格式错误', tag: 'danger', icon: 'Tickets', level: 'error', desc: '帧格式、校验码、报文结构对不对' },
   { value: 'delivery', label: '投递校验', tag: 'success', icon: 'Promotion', level: 'error', desc: '消息是否在指定时间内被成功投递（MQ）' },
   { value: 'ordering', label: '顺序校验', tag: 'warning', icon: 'Sort', level: 'warning', desc: '消息是否按预期顺序到达（MQ）' },
@@ -35,7 +35,7 @@ const warn = (rule, path, message) => result('warning', rule, path, message)
 
 const result = (level, rule, path, message) => ({
   level,
-  path: path || rule.target?.fieldPath || rule.target?.interfaceName || '接口',
+  path: path || rule.target?.fieldPath || rule.target?.interfaceName || '报文',
   message,
   ruleType: rule.type,
   ruleLabel: RULE_TYPE_MAP[rule.type]?.label || rule.type,
@@ -67,7 +67,7 @@ export function flattenInterfaceFields(iface) {
 }
 
 /**
- * 从接口字段节点中提取共识体子结构，生成 structFields 数组。
+ * 从报文字段节点中提取共识体子结构，生成 structFields 数组。
  * 递归处理嵌套共识体。
  */
 export function extractStructFields(children = []) {
@@ -129,8 +129,8 @@ export function evaluate(ruleSet, sample, iface, opts = { recvMs: null }) {
     if (rule.type === 'timeout') {
       const threshold = Number(rule.params?.timeoutMs || 500)
       const recvMs = Number(opts.recvMs ?? 0)
-      if (recvMs > threshold) results.push(fail(rule, rule.target?.interfaceName, `响应 ${recvMs}ms，超过阈值 ${threshold}ms`))
-      else results.push(ok(rule, rule.target?.interfaceName, `响应 ${recvMs}ms，未超过 ${threshold}ms`))
+      if (recvMs > threshold) results.push(fail(rule, rule.target?.interfaceName, `接收 ${recvMs}ms，超过阈值 ${threshold}ms`))
+      else results.push(ok(rule, rule.target?.interfaceName, `接收 ${recvMs}ms，未超过 ${threshold}ms`))
       return
     }
 
@@ -233,7 +233,7 @@ export function evaluate(ruleSet, sample, iface, opts = { recvMs: null }) {
   })
 
   if (!results.length && parsed.valid) {
-    results.push({ level: 'success', path: iface?.name || '接口', message: '无启用规则需要判定', ruleType: 'none', ruleLabel: '无规则' })
+    results.push({ level: 'success', path: iface?.name || '报文', message: '无启用规则需要判定', ruleType: 'none', ruleLabel: '无规则' })
   }
   return results
 }

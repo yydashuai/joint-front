@@ -4,7 +4,7 @@
     <div class="page__header">
       <div>
         <h2>测试任务管理</h2>
-        <div class="page__desc">组建联试任务：绑定协议 / 接口 / 数据集，配置执行策略</div>
+        <div class="page__desc">组建联试任务：绑定字段 / 报文 / 数据集，配置执行策略</div>
       </div>
       <div class="header-actions">
         <el-button :icon="Share" @click="goExecution" :disabled="!currentTask">执行调度</el-button>
@@ -408,7 +408,7 @@ const runLogLines = computed(() => {
   const lines = [
     { time: start, level: 'info', levelText: 'INFO', text: '任务进入执行队列，加载资源绑定与运行策略。' },
     { time: start, level: 'info', levelText: 'INFO', text: `目标模块：${moduleName.value || '未绑定模块'}。` },
-    { time: start, level: 'info', levelText: 'INFO', text: '检查接口、测试数据集与规则集绑定状态。' },
+    { time: start, level: 'info', levelText: 'INFO', text: '检查报文、测试数据集与规则集绑定状态。' },
   ]
 
   if (result === '执行中') {
@@ -430,7 +430,7 @@ const canSubmit = computed(() => {
 const onSubmitExecution = () => {
   if (!currentTask.value) return
   if (!canSubmit.value) {
-    ElMessage.warning('请先在「资源绑定」中选择一个接口')
+    ElMessage.warning('请先在「资源绑定」中选择一个报文')
     activeTab.value = 'bindings'
     return
   }

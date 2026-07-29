@@ -6,30 +6,32 @@ export const uid = () => ++seq
 
 export const makeProtocolRef = (protocolId, role = 'frame') => ({ protocolId, role })
 
-// ─── 传输类型（接口使用） ───
+// ─── 传输类型（报文使用） ───
+// OSE:   基于 UDP 的报文传输（消息头 + 消息体）
+// 4908A: 基于 TCP/IP 的实时 / 可靠传输（UDP + TCP）
+// MDS:   传输类型待确认，配置暂留空，待确认后再完善
 export const TRANSPORT_TYPES = [
-  { value: 'TCP', label: 'TCP', desc: '面向连接的字节流传输' },
-  { value: 'HTTP', label: 'HTTP', desc: '超文本传输协议' },
-  { value: 'gRPC', label: 'gRPC', desc: '高性能远程过程调用' },
-  { value: 'MQ', label: '消息队列', desc: '异步消息中间件' },
+  { value: 'OSE', label: 'OSE', desc: '基于 UDP 的报文传输（消息头 + 消息体）' },
+  { value: '4908A', label: '4908A', desc: '基于 TCP/IP 的实时 / 可靠传输（UDP + TCP）' },
+  { value: 'MDS', label: 'MDS', desc: '传输类型待确认，配置暂未开放', placeholder: true },
 ]
 
-// ─── 协议角色（接口引用协议时标注其在通信中的作用）───
+// ─── 字段角色（报文引用字段时标注其在通信中的作用）───
 // 统一两种角色，所有传输类型通用
 export const PROTOCOL_ROLES = [
-  { value: 'request', label: '请求', desc: '发送方向的数据结构' },
-  { value: 'response', label: '响应', desc: '接收方向的数据结构' },
+  { value: 'request', label: '发送', desc: '发送方向的数据结构' },
+  { value: 'response', label: '接收', desc: '接收方向的数据结构' },
 ]
 // 向后兼容
 export const TRANSPORT_ROLES = {
-  HTTP: PROTOCOL_ROLES, TCP: PROTOCOL_ROLES, gRPC: PROTOCOL_ROLES, MQ: PROTOCOL_ROLES,
+  OSE: PROTOCOL_ROLES, '4908A': PROTOCOL_ROLES, MDS: PROTOCOL_ROLES,
 }
 export const ALL_TRANSPORT_ROLES = ['request', 'response']
 
 // ─── 五类数据规则（便携式智能联试工具设计文档 V7.4 定义）───
-// 用户定义协议字段时，必须先选择数据规则类别，再选择具体数据类型：
+// 用户定义字段时，必须先选择数据规则类别，再选择具体数据类型：
 //   标量：单一数值，可表示整数或实数，不附带维度或结构信息。例如温度、压力、时间间隔。
-//   位组序流：连续二进制位序列，强调顺序与位级解析，区别于传统的"字节流"。适用于底层通信协议、编码载荷。
+//   位组序流：连续二进制位序列，强调顺序与位级解析，区别于传统的"字节流"。适用于底层通信字段、编码载荷。
 //   共识体：由多个字段组成的结构化数据块，字段间存在语义或业务上的强关联。例如一条完整的指令或状态报告。
 //   流文件：持久化的二进制或文本文件，以文件整体为操作单元，适用于日志、报文存储与回放。
 //   结构矩阵：二维表格形式的数据，行列有明确语义，适用于批量参数、配置表或测试用例集。
@@ -205,7 +207,7 @@ export const makeRepeatGroup = (o = {}) => ({
   ...o
 })
 
-// ─── 接口参数节点（使用五类数据规则） ───
+// ─── 报文参数节点（使用五类数据规则） ───
 // 五类: scalar(标量) / bitstream(位组序流) / struct(共识体) / matrix(结构矩阵) / file(流文件)
 export const makeParam = (o = {}) => ({
   id: uid(),
@@ -258,7 +260,7 @@ export const makeHttpParam = (o = {}) => ({
   ...o
 })
 
-// ─── HTTP 请求体字段（支持嵌套） ───
+// ─── HTTP 发送体字段（支持嵌套） ───
 export const makeBodyField = (o = {}) => ({
   id: uid(),
   name: '',
@@ -270,7 +272,7 @@ export const makeBodyField = (o = {}) => ({
   ...o
 })
 
-// ─── HTTP 响应配置工厂 ───
+// ─── HTTP 接收配置工厂 ───
 export const makeHttpResponse = (o = {}) => ({
   id: uid(),
   statusCode: 200,
@@ -290,29 +292,6 @@ export const makeProtoField = (o = {}) => ({
   constraint: noneConstraint(),
   desc: '',
   children: [],
-  ...o
-})
-
-// ─── MQ 消息体字段工厂（支持嵌套，类似 HTTP bodyField） ───
-export const makeMqBodyField = (o = {}) => ({
-  id: uid(),
-  name: '',
-  dataType: 'uint8',
-  required: true,
-  constraint: noneConstraint(),
-  desc: '',
-  children: [],
-  ...o
-})
-
-// ─── MQ 消息头属性工厂 ───
-export const makeMqHeader = (o = {}) => ({
-  id: uid(),
-  key: '',
-  dataType: 'utf8',
-  required: false,
-  defaultValue: '',
-  desc: '',
   ...o
 })
 
@@ -344,50 +323,7 @@ export const COMMON_HEADERS = [
   'Cache-Control', 'User-Agent', 'Accept-Language', 'X-Api-Version',
 ]
 
-// ─── MQ 消息体字段数据类型（与 BYTE_DATA_TYPES 统一 + 共识体复合类型） ───
-export const MQ_BODY_DATA_TYPES = [
-  { value: 'uint8',   label: 'uint8',   group: '数值' },
-  { value: 'int8',    label: 'int8',    group: '数值' },
-  { value: 'uint16',  label: 'uint16',  group: '数值' },
-  { value: 'int16',   label: 'int16',   group: '数值' },
-  { value: 'uint32',  label: 'uint32',  group: '数值' },
-  { value: 'int32',   label: 'int32',   group: '数值' },
-  { value: 'uint64',  label: 'uint64',  group: '数值' },
-  { value: 'int64',   label: 'int64',   group: '数值' },
-  { value: 'float32', label: 'float32', group: '数值' },
-  { value: 'float64', label: 'float64', group: '数值' },
-  { value: 'utf8',    label: 'UTF-8',   group: '字符' },
-  { value: '共识体',  label: '共识体',  group: '复合' },
-]
-
-// ─── MQ Broker 类型枚举 ───
-export const MQ_BROKER_TYPES = ['RabbitMQ', 'Kafka', 'RocketMQ', 'ActiveMQ']
-
-// ─── MQ 接口操作类型 ───
-export const MQ_OPERATION_TYPES = [
-  { value: 'publish',      label: '发布消息',   desc: '向 Topic/Exchange 发布消息' },
-  { value: 'subscribe',    label: '订阅消费',   desc: '从 Topic/Queue 消费消息' },
-  { value: 'request-reply',label: '请求-响应', desc: '发布并等待 Reply-To 响应' },
-]
-
-// ─── MQ 消息头数据类型 ───
-export const MQ_HEADER_DATA_TYPES = [
-  { value: 'utf8',    label: 'UTF-8' },
-  { value: 'uint8',   label: 'uint8' },
-  { value: 'int32',   label: 'int32' },
-  { value: 'uint32',  label: 'uint32' },
-  { value: 'int64',   label: 'int64' },
-]
-
-// ─── MQ 消息键数据类型 ───
-export const MQ_KEY_DATA_TYPES = [
-  { value: 'utf8',    label: 'UTF-8' },
-  { value: 'int32',   label: 'int32' },
-  { value: 'uint32',  label: 'uint32' },
-  { value: 'int64',   label: 'int64' },
-]
-
-// ── 接口传输配置工厂 ───
+// ── 报文传输配置工厂 ───
 export const makeTransportConfig = (transportType) => {
   switch (transportType) {
     case 'TCP':
@@ -410,14 +346,48 @@ export const makeTransportConfig = (transportType) => {
         timeout: 30,
         compression: 'none',
       }
-    case 'MQ':
+    // ── OSE：基于 UDP 的报文传输（消息头 + 消息体）──
+    // OSE 消息头含嵌套结构体与常量；消息长度等由 OSE 自动生成，目标地址 / 消息类型等由用户填写。
+    // OSE 消息体同样为嵌套结构体 + 常量，类似 UDP 协议，最终以 uint16 等基础类型组合（由下方发送/接收字段定义）。
+    case 'OSE':
       return {
-        topic: '',
-        brokerType: 'RabbitMQ',
-        qos: 0,
-        ackMode: 'auto',
-        messageFormat: 'JSON',
+        baseTransport: 'UDP',           // 底层基于 UDP 传输
+        srcPort: 50001,                 // 源端口 uint16  0xC331
+        dstPort: 9999,                  // 目的端口 uint16 0x270F
+        totalLength: 14,                // OSE 总长 uint16 0x000E（由 OSE 自动计算，用户只读）
+        checksum: '0x2A71',             // 校验和 uint16
+        targetAddress: '',              // 目标地址（用户填写）
+        messageType: '',                // 消息类型（用户填写）
+        bodyDesc: '',                   // 消息体结构说明（嵌套结构体 + 常量）
+        autoGenerated: ['totalLength'], // OSE 自动生成的字段
       }
+    // ── 4908A：基于 TCP/IP（UDP + TCP）──
+    // UDP 承载实时数据传输 / 实时数据控制传输；TCP 承载可靠数据控制传输。
+    // 实时数据传输根据数据长短决定是否分组及是否启用应答：有可靠需求时不分组并启用应答；
+    // 无可靠需求时（分组或不分组）均不设置应答。首部字段按位 / 按字节定义后组装，形如 TCP 首部。
+    case '4908A':
+      return {
+        baseTransport: 'TCP',           // 底层基于 TCP/IP（含 UDP 与 TCP）
+        channelMode: 'UDP-REALTIME',     // UDP-REALTIME / UDP-CTRL / TCP-RELIABLE
+        srcPort: 80,                     // 源端口 16bit    0x0050
+        dstPort: 52013,                  // 目的端口 16bit  0xCAED
+        seq: 12000,                      // 序号 SEQ 32bit  0x00002EE0
+        ack: 35679,                      // 确认号 ACK 32bit 0x00008B1F
+        dataOffset: 5,                   // 数据偏移 4bit
+        reserved: 0,                     // 保留 6bit
+        flags: { URG: false, ACK: true, PSH: false, RST: false, SYN: true, FIN: false },
+        window: 65535,                   // 窗口 16bit     0xFFFF
+        checksum: '0x482C',              // 检验和 16bit
+        urgentPointer: 0,                // 紧急指针 16bit  0x0000
+        options: '',                     // 选项（可变）
+        padding: '',                     // 填充
+        // 实时传输策略
+        groupEnabled: false,             // 是否分组（长报文分组传输）
+        ackEnabled: false,               // 是否启用应答机制（有可靠需求时开启）
+      }
+    // ── MDS：传输类型待确认，配置暂留空 ──
+    case 'MDS':
+      return {}
     default:
       return {}
   }
@@ -520,9 +490,11 @@ const migrateV1Interface = (iface) => {
 export const useProtocolStore = defineStore('protocol', {
   state: () => ({
     protocols: JSON.parse(JSON.stringify(seedProtocols)),
-    // 协议 = 纯数据结构定义（可复用字段模板）
-    // 接口 = 传输类型 + 传输配置 + 协议引用组合
-    interfaces: JSON.parse(JSON.stringify(seedInterfaces)).map(migrateV1Interface),
+    // 字段 = 纯数据结构定义（可复用字段模板）
+    // 报文 = 传输类型 + 传输配置 + 字段引用组合
+    interfaces: JSON.parse(JSON.stringify(seedInterfaces))
+      .map(migrateV1Interface)
+      .map((i) => { i.transportConfig = makeTransportConfig(i.transportType); return i; }),
     selectedProtocolId: null,
     selectedInterfaceId: null
   }),
@@ -533,13 +505,13 @@ export const useProtocolStore = defineStore('protocol', {
     selectedInterface: (s) => s.interfaces.find((i) => i.id === s.selectedInterfaceId) || null,
     protocolName: (s) => (id) => s.protocols.find((p) => p.id === id)?.name || '—',
 
-    /** 查询引用了某协议的接口列表 */
+    /** 查询引用了某字段的报文列表 */
     interfacesByProtocol: (s) => (protocolId) => s.interfaces.filter((i) =>
       (i.protocolRefs || []).some(ref => (typeof ref === 'object' ? ref.protocolId : ref) === protocolId)
     ),
 
     /**
-     * 协议摘要: 数据结构信息（用于 Protocol.vue 头部摘要）
+     * 字段摘要: 数据结构信息（用于 Protocol.vue 头部摘要）
      * 返回 { fieldCount, hasFraming, hasChecksum, endian }
      */
     protocolSummary: (s) => (id) => {
@@ -559,14 +531,14 @@ export const useProtocolStore = defineStore('protocol', {
   actions: {
     /* ---- v1 → v2 数据迁移 ---- */
     migrateAllFromV1() {
-      // ── 阶段1: 从接口的 request/response 生成内联协议 ──
+      // ── 阶段1: 从报文的 request/response 生成内联字段 ──
       let inlineSeq = 3000
       const inlinePid = () => ++inlineSeq
       const inlineProtocols = []
 
       // 角色映射：统一使用 request/response
-      const REQUEST_ROLES = { HTTP: 'request', TCP: 'request', gRPC: 'request', MQ: 'request' }
-      const RESPONSE_ROLES = { HTTP: 'response', TCP: 'response', gRPC: 'response', MQ: 'response' }
+      const REQUEST_ROLES = { OSE: 'request', '4908A': 'request', MDS: 'request' }
+      const RESPONSE_ROLES = { OSE: 'response', '4908A': 'response', MDS: 'response' }
 
       const migrateParamTree = (params) => {
         if (!Array.isArray(params)) return []
@@ -589,19 +561,19 @@ export const useProtocolStore = defineStore('protocol', {
             const parts = iface.path.replace(/^\//, '').split('/')
             tc.serviceName = parts[0] || ''
             tc.methodName = parts.slice(1).join('/') || ''
-          } else if (tt === 'MQ') tc.topic = iface.path
+          }
           else if (tt === 'TCP') tc.port = tc.port || 0  // TCP path was decorative
         }
 
-        // ── 从 request 生成内联协议 ──
+        // ── 从 request 生成内联字段 ──
         if (Array.isArray(iface.request) && iface.request.length > 0) {
           const reqFields = migrateParamTree(iface.request)
           const reqProto = {
             id: inlinePid(),
-            name: `${iface.name} — 请求`,
+            name: iface.name,
             systemId: iface.systemId,
             moduleId: iface.moduleId,
-            desc: `${iface.name} 请求参数`,
+            desc: `${iface.name} 参数`,
             endian: 'big',
             fields: reqFields,
             framing: null,
@@ -613,15 +585,15 @@ export const useProtocolStore = defineStore('protocol', {
           newRefs.push({ protocolId: reqProto.id, role })
         }
 
-        // ── 从 response 生成内联协议 ──
+        // ── 从 response 生成内联字段 ──
         if (Array.isArray(iface.response) && iface.response.length > 0) {
           const resFields = migrateParamTree(iface.response)
           const resProto = {
             id: inlinePid(),
-            name: `${iface.name} — 响应`,
+            name: iface.name,
             systemId: iface.systemId,
             moduleId: iface.moduleId,
-            desc: `${iface.name} 响应参数`,
+            desc: `${iface.name} 参数`,
             endian: 'big',
             fields: resFields,
             framing: null,
@@ -650,12 +622,12 @@ export const useProtocolStore = defineStore('protocol', {
         }
       })
 
-      // ── 将内联协议追加到协议列表 ──
+      // ── 将内联字段追加到字段列表 ──
       if (inlineProtocols.length) {
         this.protocols.push(...inlineProtocols)
       }
 
-      // ── 阶段2: 协议字段迁移 ──
+      // ── 阶段2: 字段迁移 ──
       this.protocols.forEach((p) => {
         if (Array.isArray(p.config?.requestBody?.fields)) {
           p.config.requestBody.fields = p.config.requestBody.fields.map(migrateV1Param)
@@ -683,11 +655,11 @@ export const useProtocolStore = defineStore('protocol', {
       })
     },
 
-    /* ---- 协议 ---- */
+    /* ---- 字段 ---- */
     addProtocol(p = {}) {
       const np = {
         id: uid(),
-        name: p.name || '新建协议',
+        name: p.name || '新建字段',
         systemId: p.systemId ?? null,
         moduleId: p.moduleId ?? null,
         desc: p.desc || '',
@@ -802,12 +774,12 @@ export const useProtocolStore = defineStore('protocol', {
       Object.assign(protocol.checksum, patch)
     },
 
-    /* ---- 接口 ---- */
+    /* ---- 报文 ---- */
     addInterface(it = {}) {
       const transportType = it.transportType || null
       const ni = {
         id: uid(),
-        name: it.name || '新建接口',
+        name: it.name || '新建报文',
         transportType,
         transportConfig: it.transportConfig || (transportType ? makeTransportConfig(transportType) : {}),
         protocolRefs: it.protocolRefs || [],

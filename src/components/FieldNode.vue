@@ -76,7 +76,7 @@ const meta = computed(() => {
   if (isV2Type.value) {
     switch (n.type) {
       case 'scalar': return n.encoding || 'uint8'
-      case 'bitstream': return n.protocolRef ? `协议：${store.protocolName(n.protocolRef)}` : '未绑定协议'
+      case 'bitstream': return n.protocolRef ? `字段：${store.protocolName(n.protocolRef)}` : '未绑定字段'
       case 'struct': return `${n.children.length} 个字段`
       case 'matrix': return `${n.children.length} 列 × 结构矩阵`
       case 'file': return n.fileName || '未上传'
@@ -86,7 +86,7 @@ const meta = computed(() => {
   // 旧类型兼容渲染
   switch (n.type) {
     case '常量': return n.dataType
-    case '位组序流': return n.protocolRef ? `协议：${store.protocolName(n.protocolRef)}` : '未绑定协议'
+    case '位组序流': return n.protocolRef ? `字段：${store.protocolName(n.protocolRef)}` : '未绑定字段'
     case '共识体': return `${n.children.length} 个字段`
     case '流文件': return '文本文件'
     case '结构矩阵': return '表格文件'

@@ -2,8 +2,8 @@
   <div class="page execution-page">
     <div class="page__header">
       <div>
-        <h2>测试执行编排</h2>
-        <div class="page__desc">生成执行计划、调度收发数据流、汇总本次联试结果</div>
+        <h2>测试接口编排</h2>
+        <div class="page__desc">编排测试接口、调度收发数据流、实时监控联试过程</div>
       </div>
       <div class="header-actions">
         <el-select v-model="systemSelectValue" class="system-select" placeholder="系统上下文">
@@ -22,7 +22,7 @@
         <div class="tree-search">
           <el-input
             v-model="taskSearch"
-            placeholder="搜索任务..."
+            placeholder="搜索接口..."
             :prefix-icon="Search"
             size="small"
             clearable
@@ -30,12 +30,14 @@
         </div>
         <SystemModuleTree
           v-model="selectedKey"
-          title="执行任务"
+          title="测试接口"
           draggable-leaves
           :leaf-groups="leafGroups"
+          :extra-system-children="extraSystemChildren"
           :leaf-context-actions="leafContextActions"
           @select="onTreeSelect"
           @add-leaf="onAddLeaf"
+          @delete-leaf="onDeleteLeaf"
           @leaf-action="onLeafAction"
         />
       </div>
@@ -75,14 +77,8 @@
                   @reset-run="execution.reset()"
                 />
               </div>
-              <div v-show="activeTab === 'strategy'" class="step-panel plan-layout">
-                <RunStrategy />
-              </div>
               <div v-show="activeTab === 'monitor'" class="step-panel">
                 <LiveConsole />
-              </div>
-              <div v-show="activeTab === 'summary'" class="step-panel">
-                <RunSummary />
               </div>
             </div>
 
@@ -131,6 +127,43 @@
         </el-card>
       </div>
     </div>
+
+    <!-- 接口方案编辑对话框 -->
+    <el-dialog
+      v-model="schemeDialogVisible"
+      :title="editingSchemeId ? '编辑接口方案' : '新建接口方案'"
+      width="560px"
+      destroy-on-close
+    >
+      <el-form label-width="80px" label-position="left">
+        <el-form-item label="方案名称">
+          <el-input v-model="schemeForm.name" placeholder="留空默认「新建接口方案」" clearable />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="schemeForm.remark" type="textarea" :rows="2" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="选择接口">
+          <el-select
+            v-model="schemeForm.interfaceIds"
+            multiple
+            filterable
+            placeholder="选择要纳入方案的接口"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="iface in availableInterfaces"
+              :key="iface.id"
+              :label="iface.name"
+              :value="iface.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="schemeDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmScheme">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -143,14 +176,14 @@ import {
 } from '@element-plus/icons-vue'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import PlanTable from '@/components/execution/PlanTable.vue'
-import RunStrategy from '@/components/execution/RunStrategy.vue'
 import LiveConsole from '@/components/execution/LiveConsole.vue'
-import RunSummary from '@/components/execution/RunSummary.vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useExecutionStore } from '@/stores/execution'
 import { useRunBatchStore } from '@/stores/runBatch'
 import { useSystemStore } from '@/stores/system'
 import { useTestTaskStore, TASK_STATUS } from '@/stores/testTask'
+import { usePlanSchemeStore } from '@/stores/planScheme'
+import { useProtocolStore } from '@/stores/protocol'
 
 const route = useRoute()
 const taskStore = useTestTaskStore()
@@ -158,15 +191,15 @@ const systemStore = useSystemStore()
 const connStore = useConnectionStore()
 const execution = useExecutionStore()
 const batchStore = useRunBatchStore()
+const schemeStore = usePlanSchemeStore()
+const protocolStore = useProtocolStore()
 
 const selectedKey = ref('')
 const taskSearch = ref('')
 const activeTab = ref('plan')
 const wizardSteps = [
-  { name: 'plan', title: '编排计划', desc: '选择任务并确认顺序', helper: '先把要执行的测试任务加入计划，并检查接口、模块、数据是否就绪。' },
-  { name: 'strategy', title: '运行策略', desc: '设置模式、触发和重试', helper: '确认冒烟、压测或耐久策略，以及触发方式、超时和重试参数。' },
-  { name: 'monitor', title: '实时监控', desc: '启动联试并观察收发', helper: '执行过程中关注请求、响应、规则判定与异常捕捉。' },
-  { name: 'summary', title: '结果统计', desc: '查看本轮执行结果', helper: '汇总通过率、异常清单和分步骤结果，再进入统计或报告模块。' },
+  { name: 'plan', title: '编排计划', desc: '选择接口并确认顺序', helper: '先把要执行的测试接口加入计划，并检查模块、数据是否就绪。' },
+  { name: 'monitor', title: '实时监控', desc: '启动联试并观察收发', helper: '执行过程中关注发送、接收、规则判定与异常捕捉。' },
 ]
 
 const ALL_SYSTEM_VALUE = '__all__'
@@ -188,42 +221,94 @@ const totalEstimatedRequests = computed(() => execution.planItems.reduce((sum, i
 const activeStepIndex = computed(() => Math.max(0, wizardSteps.findIndex((step) => step.name === activeTab.value)))
 const currentStep = computed(() => wizardSteps[activeStepIndex.value] || wizardSteps[0])
 const maxReachableStepIndex = computed(() => {
-  if (['done', 'stopped'].includes(execution.status)) return 3
-  if (['running', 'paused'].includes(execution.status)) return 2
+  if (['done', 'stopped', 'running', 'paused'].includes(execution.status)) return 1
   if (execution.planItems.length) return 1
   return 0
 })
 const canOpenStep = (index) => index <= maxReachableStepIndex.value
 const prevDisabled = computed(() => activeStepIndex.value === 0 || ['running', 'paused'].includes(execution.status))
 const startTip = computed(() => {
-  if (!execution.planItems.length) return '请先从左侧任务树加入执行计划'
-  return execution.blockingReasons.join('；') || '可以开始执行'
+  if (!execution.planItems.length) return '请先从左侧接口树加入执行计划'
+  return '可以开始执行'
 })
 const primaryButtonText = computed(() => {
-  if (activeTab.value === 'plan') return '下一步：运行策略'
-  if (activeTab.value === 'strategy') {
-    if (['done', 'stopped'].includes(execution.status)) return '查看结果统计'
-    if (execution.status === 'idle') return '开始执行并监控'
-    return '进入实时监控'
-  }
-  if (activeTab.value === 'monitor') return '查看结果统计'
-  return '重新执行'
+  if (activeTab.value === 'plan') return '开始执行并监控'
+  if (['done', 'stopped'].includes(execution.status)) return '重新执行'
+  return '进入实时监控'
 })
-const primaryIcon = computed(() => activeTab.value === 'summary' ? RefreshRight : ArrowRight)
+const primaryIcon = computed(() => (['done', 'stopped'].includes(execution.status) && activeTab.value === 'monitor') ? RefreshRight : ArrowRight)
 const primaryDisabled = computed(() => {
   if (activeTab.value === 'plan') return !execution.planItems.length
-  if (activeTab.value === 'strategy') return execution.status === 'idle' && !execution.canStart
   if (activeTab.value === 'monitor') return !['done', 'stopped'].includes(execution.status)
   return false
 })
 const primaryTip = computed(() => {
-  if (activeTab.value === 'plan') return '请先加入至少一个执行任务'
-  if (activeTab.value === 'strategy') return startTip.value
-  if (activeTab.value === 'monitor') return '执行完成后查看结果统计'
+  if (activeTab.value === 'plan') return '请先加入至少一个测试接口'
+  if (activeTab.value === 'monitor') return '执行完成后可重新执行'
   return ''
 })
 
 const statusLabel = (val) => TASK_STATUS.find((s) => s.value === val)?.label || '待配置'
+
+/* ---- 接口方案：与模块同级的树节点 ---- */
+const extraSystemChildren = (sys) => {
+  const schemes = schemeStore.schemesOfSystem(sys.id)
+  return [{
+    key: `schemes-${sys.id}`,
+    kind: 'schemeGroup',
+    icon: 'FolderOpened',
+    label: '接口方案',
+    ref: { id: `schemes-${sys.id}`, systemId: sys.id },
+    addActions: [{ groupKind: 'scheme', label: '+方案', type: 'warning' }],
+    children: schemes.map((s) => ({
+      key: `scheme-${s.id}`,
+      kind: 'scheme',
+      icon: 'Notebook',
+      label: s.name,
+      badge: `${s.interfaceIds.length} 接口`,
+      ref: s,
+    })),
+  }]
+}
+
+const schemeDialogVisible = ref(false)
+const schemeForm = ref({ name: '', interfaceIds: [], remark: '' })
+const editingSchemeId = ref(null)
+const currentSchemeSystemId = ref(null)
+
+const availableInterfaces = computed(() => protocolStore.interfaces.filter((i) => {
+  if (!currentSchemeSystemId.value) return true
+  return i.systemId === currentSchemeSystemId.value
+}))
+
+const openSchemeDialog = (systemId, scheme) => {
+  currentSchemeSystemId.value = systemId
+  if (scheme) {
+    editingSchemeId.value = scheme.id
+    schemeForm.value = { name: scheme.name, interfaceIds: [...scheme.interfaceIds], remark: scheme.remark || '' }
+  } else {
+    editingSchemeId.value = null
+    schemeForm.value = { name: '', interfaceIds: [], remark: '' }
+  }
+  schemeDialogVisible.value = true
+}
+
+const confirmScheme = () => {
+  if (editingSchemeId.value) {
+    schemeStore.update(editingSchemeId.value, { ...schemeForm.value })
+    ElMessage.success('接口方案已更新')
+  } else {
+    schemeStore.add({ ...schemeForm.value, systemId: currentSchemeSystemId.value })
+    ElMessage.success('接口方案已创建')
+  }
+  schemeDialogVisible.value = false
+}
+
+const onSchemeAddLeaf = ({ groupKind, module }) => {
+  if (groupKind === 'scheme') {
+    openSchemeDialog(module.systemId || module.id, null)
+  }
+}
 
 const leafGroups = (module) => {
   let tasks = taskStore.tasksOfModule(module.id)
@@ -251,6 +336,9 @@ const leafGroups = (module) => {
 }
 
 const leafContextActions = (nodeData) => {
+  if (nodeData?.kind === 'scheme' && nodeData.ref) {
+    return [{ label: '编辑方案', action: 'edit-scheme' }]
+  }
   if (!nodeData?.ref || nodeData.kind !== 'task') return []
   const inPlan = execution.plan.some((item) => item.taskId === nodeData.ref.id)
   return [
@@ -259,6 +347,12 @@ const leafContextActions = (nodeData) => {
 }
 
 const onTreeSelect = (data) => {
+  if (data.kind === 'scheme' && data.ref) {
+    selectedKey.value = data.key
+    schemeStore.select(data.ref.id)
+    openSchemeDialog(data.ref.systemId || currentSchemeSystemId.value, data.ref)
+    return
+  }
   if (data.kind !== 'task' || !data.ref) return
   selectedKey.value = data.key
   taskStore.select(data.ref.id)
@@ -278,12 +372,26 @@ const addSelectedTask = () => {
 
 const onLeafAction = ({ action, data }) => {
   if (action === 'add-to-plan' && data?.ref) addTask(data.ref.id)
+  if (action === 'edit-scheme' && data?.ref) {
+    openSchemeDialog(data.ref.systemId || currentSchemeSystemId.value, data.ref)
+  }
 }
 
-const onAddLeaf = ({ module }) => {
+const onAddLeaf = ({ groupKind, module }) => {
+  if (groupKind === 'scheme') {
+    openSchemeDialog(module.systemId || module.id, null)
+    return
+  }
   const count = execution.addModuleTasks(module.id)
   if (count) ElMessage.success(`已加入 ${count} 个任务`)
   else ElMessage.info('该模块任务均已在执行计划中')
+}
+
+const onDeleteLeaf = (node) => {
+  if (node.kind === 'scheme' && node.ref) {
+    schemeStore.remove(node.ref.id)
+    ElMessage.success('接口方案已删除')
+  }
 }
 
 const startRun = () => {
@@ -305,24 +413,14 @@ const prevStep = () => {
 }
 
 const nextStep = () => {
-  if (activeTab.value === 'strategy') {
-    if (['done', 'stopped'].includes(execution.status)) {
-      activeTab.value = 'summary'
-      return
-    }
-    if (execution.status === 'idle') {
-      startRun()
-      return
-    }
-    activeTab.value = 'monitor'
+  if (activeTab.value === 'plan') {
+    startRun()
     return
   }
-  if (activeTab.value === 'summary') {
+  if (activeTab.value === 'monitor') {
     rerun()
     return
   }
-  const next = wizardSteps[activeStepIndex.value + 1]
-  if (next) activeTab.value = next.name
 }
 
 const resumeRun = () => {
@@ -339,7 +437,6 @@ const firstQueryValue = (value) => Array.isArray(value) ? value[0] : value
 
 watch(() => execution.status, (status) => {
   if (status === 'running') activeTab.value = 'monitor'
-  if (status === 'done' || status === 'stopped') activeTab.value = 'summary'
 })
 
 onMounted(() => {
@@ -347,7 +444,7 @@ onMounted(() => {
   if (runId) {
     const batch = batchStore.byId(String(runId))
     if (batch && execution.loadBatchSnapshot(batch)) {
-      activeTab.value = 'summary'
+      activeTab.value = 'monitor'
       if (batch.systemId) systemStore.setCurrent(batch.systemId)
       ElMessage.success('已打开执行批次摘要')
       return
@@ -453,7 +550,7 @@ onBeforeUnmount(() => {
 .wizard-steps {
   flex-shrink: 0;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--el-border-color-lighter);

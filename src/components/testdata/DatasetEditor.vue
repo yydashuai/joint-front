@@ -19,10 +19,10 @@
       </div>
       <div class="ds-header__right">
         <el-tag v-if="ds.linkedProtocol" type="success" effect="plain" size="small">
-          协议：{{ ds.linkedProtocol }}
+          字段：{{ ds.linkedProtocol }}
         </el-tag>
         <el-tag v-if="ds.linkedInterface" type="warning" effect="plain" size="small">
-          接口：{{ ds.linkedInterface }}
+          报文：{{ ds.linkedInterface }}
         </el-tag>
         <el-tooltip content="基于现有数据模式智能生成新的测试行"><el-button size="small" :icon="MagicStick" @click="showGenDialog = true">智能生成</el-button></el-tooltip>
         <el-tooltip content="将数据集导出为 CSV 文件"><el-button size="small" :icon="Download" @click="onExportCsv">导出 CSV</el-button></el-tooltip>
@@ -41,7 +41,7 @@
       <el-collapse-item name="ref">
         <template #title>
           <span class="fields-ref__title">
-            关联{{ ds.linkedProtocol ? '协议' : '接口' }}字段定义
+            关联{{ ds.linkedProtocol ? '字段' : '报文' }}字段定义
             <el-tag size="small" type="info" effect="plain">{{ linkedFields.length }} 个字段</el-tag>
           </span>
         </template>
@@ -122,9 +122,9 @@
 
     <!-- ======== 空数据集引导 (优化点 23) ======== -->
     <div v-if="dynamicFields.length === 0" class="empty-guide">
-      <el-empty :image-size="60" description="此数据集尚未关联协议或接口，暂无数据列">
+      <el-empty :image-size="60" description="此数据集尚未关联字段或报文，暂无数据列">
         <template #description>
-          <p>请删除后重新创建并关联协议/接口，或手动添加列。</p>
+          <p>请删除后重新创建并关联字段/报文，或手动添加列。</p>
         </template>
       </el-empty>
     </div>
@@ -433,7 +433,7 @@ const protoStore = useProtocolStore()
 const ds = computed(() => props.dataset)
 
 /* ========== 字段解析 ========== */
-// 展平协议字段树（byte/bit/repeat 嵌套 → 平面列表）
+// 展平字段字段树（byte/bit/repeat 嵌套 → 平面列表）
 const flattenProtoFields = (fields) => {
   const result = []
   fields.forEach(f => {
@@ -947,7 +947,13 @@ const onKeydown = (e) => {
     }
   }
   if (e.key === 'Delete' && selectedRows.value.length > 0) {
-    onBatchDelete()
+    e.preventDefault()
+    const count = selectedRows.value.length
+    ElMessageBox.confirm(`确认删除 ${count} 行？`, '删除确认', {
+      confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning'
+    }).then(() => {
+      onBatchDelete()
+    }).catch(() => {})
   }
 }
 </script>

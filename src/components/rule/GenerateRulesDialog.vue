@@ -1,8 +1,8 @@
 <template>
-  <el-dialog v-model="visible" title="从接口自动生成规则" width="760px">
+  <el-dialog v-model="visible" title="从报文自动生成规则" width="760px">
     <el-form label-width="92px">
-      <el-form-item label="目标接口">
-        <el-select v-model="interfaceId" filterable placeholder="选择当前模块下的接口" style="width: 100%;">
+      <el-form-item label="目标报文">
+        <el-select v-model="interfaceId" filterable placeholder="选择当前模块下的报文" style="width: 100%;">
           <el-option v-for="iface in moduleInterfaces" :key="iface.id" :label="iface.name" :value="iface.id">
             <span>{{ iface.name }}</span>
             <span class="option-path">{{ iface.path }}</span>
@@ -31,12 +31,12 @@
           <span class="preview-desc">
             {{ rule.desc }}
             <template v-if="getProtoRange(rule)">
-              <span class="proto-range">（协议范围：{{ getProtoRange(rule) }}）</span>
+              <span class="proto-range">（字段范围：{{ getProtoRange(rule) }}）</span>
             </template>
           </span>
         </label>
       </el-checkbox-group>
-      <el-empty v-if="!preview.length" :image-size="80" description="请选择接口与规则类型" />
+      <el-empty v-if="!preview.length" :image-size="80" description="请选择报文与规则类型" />
     </el-scrollbar>
 
     <template #footer>

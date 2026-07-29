@@ -16,20 +16,9 @@
       <div class="meta-row">
         <span class="meta-row__label req">传输类型</span>
         <el-select v-model="iface.transportType" placeholder="选择传输类型" class="meta-sel" clearable style="width: 160px" @change="onTransportTypeChange">
-          <el-option v-for="t in TRANSPORT_TYPES" :key="t.value" :label="t.label" :value="t.value">
+          <el-option v-for="t in transportTypeOptions" :key="t.value" :label="t.label" :value="t.value">
             <span>{{ t.label }}</span>
             <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px">{{ t.desc }}</span>
-          </el-option>
-        </el-select>
-      </div>
-
-      <!-- MQ 接口操作类型 -->
-      <div class="meta-row" v-if="hasMqProtocol">
-        <span class="meta-row__label">操作类型</span>
-        <el-select v-model="iface.operationType" placeholder="选择 MQ 操作类型" style="width: 200px" clearable>
-          <el-option v-for="op in MQ_OPERATION_TYPES" :key="op.value" :label="op.label" :value="op.value">
-            <span>{{ op.label }}</span>
-            <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px">{{ op.desc }}</span>
           </el-option>
         </el-select>
       </div>
@@ -51,14 +40,14 @@
         :transport-type="iface.transportType"
       />
 
-      <!-- 请求协议 -->
+      <!-- 发送字段 -->
       <div class="proto-refs-section proto-refs-section--request">
         <div class="section-head">
-          <span class="section-title section-title--request">请求协议</span>
+          <span class="section-title section-title--request">发送字段</span>
           <el-button size="small" type="primary" plain :icon="Plus" @click="openPicker('request')">添加</el-button>
         </div>
         <el-table v-if="requestProtocols.length" :data="requestProtocols" border size="small">
-          <el-table-column label="协议" min-width="200">
+          <el-table-column label="字段" min-width="200">
             <template #default="{ row }">
               <span style="font-weight:500">{{ protocolName(row.protocolId) }}</span>
               <span class="proto-sys-tag" v-if="getProtocolSys(row.protocolId)">{{ getProtocolSys(row.protocolId) }}</span>
@@ -70,17 +59,17 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-empty v-else description="暂无请求协议" :image-size="40" />
+        <el-empty v-else description="暂无发送字段" :image-size="40" />
       </div>
 
-      <!-- 响应协议 -->
+      <!-- 接收字段 -->
       <div class="proto-refs-section proto-refs-section--response">
         <div class="section-head">
-          <span class="section-title section-title--response">响应协议</span>
+          <span class="section-title section-title--response">接收字段</span>
           <el-button size="small" type="success" plain :icon="Plus" @click="openPicker('response')">添加</el-button>
         </div>
         <el-table v-if="responseProtocols.length" :data="responseProtocols" border size="small">
-          <el-table-column label="协议" min-width="200">
+          <el-table-column label="字段" min-width="200">
             <template #default="{ row }">
               <span style="font-weight:500">{{ protocolName(row.protocolId) }}</span>
               <span class="proto-sys-tag" v-if="getProtocolSys(row.protocolId)">{{ getProtocolSys(row.protocolId) }}</span>
@@ -92,13 +81,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-empty v-else description="暂无响应协议" :image-size="40" />
+        <el-empty v-else description="暂无接收字段" :image-size="40" />
       </div>
 
-      <!-- 协议选择弹窗 -->
+      <!-- 字段选择弹窗 -->
       <el-dialog v-model="pickerVisible" :title="pickerTitle" width="520px" :append-to-body="true">
         <div class="picker-filter">
-          <el-input v-model="pickerSearch" placeholder="搜索协议名称..." clearable size="small" :prefix-icon="Search" style="flex:1" />
+          <el-input v-model="pickerSearch" placeholder="搜索字段名称..." clearable size="small" :prefix-icon="Search" style="flex:1" />
           <el-checkbox v-model="showAllProtocols" size="small">显示全部（不限模块）</el-checkbox>
         </div>
         <div class="picker-list">
@@ -109,18 +98,18 @@
             </div>
             <el-tag size="small" :type="p.isInline ? 'warning' : 'info'" effect="plain">{{ p.isInline ? '内联' : '通用' }}</el-tag>
           </div>
-          <el-empty v-if="!filteredPickerList.length" :description="showAllProtocols ? '无匹配协议' : '当前模块无可引用协议，尝试开启「显示全部」'" :image-size="50" />
+          <el-empty v-if="!filteredPickerList.length" :description="showAllProtocols ? '无匹配字段' : '当前模块无可引用字段，尝试开启「显示全部」'" :image-size="50" />
         </div>
         <template #footer>
           <el-button @click="pickerVisible = false">关闭</el-button>
         </template>
       </el-dialog>
 
-      <!-- 数据预览（只读，展示引用协议的字段结构） -->
+      <!-- 数据预览（只读，展示引用字段的结构） -->
       <div class="data-preview" v-if="iface.protocolRefs.length">
         <div class="section-head">
           <span class="section-title">数据预览</span>
-          <span class="preview-hint">只读 · 点击协议名可跳转编辑</span>
+          <span class="preview-hint">只读 · 点击字段名可跳转编辑</span>
         </div>
         <div v-for="ref in iface.protocolRefs" :key="ref.protocolId" class="preview-block">
           <div class="preview-header" @click="$emit('navigateProtocol', ref.protocolId)">
@@ -143,8 +132,9 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { Plus, Delete, Search } from '@element-plus/icons-vue'
+import { ElMessageBox } from 'element-plus'
 import {
-  TRANSPORT_TYPES, PROTOCOL_ROLES, MQ_OPERATION_TYPES,
+  TRANSPORT_TYPES, PROTOCOL_ROLES,
   makeTransportConfig, useProtocolStore, makeProtocolRef,
 } from '@/stores/protocol'
 import TransportConfigForm from './TransportConfigForm.vue'
@@ -160,8 +150,6 @@ defineEmits(['delete', 'systemChange', 'navigateProtocol'])
 const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }
 const protoStore = useProtocolStore()
 
-const hasMqProtocol = computed(() => props.iface.transportType === 'MQ')
-
 // Split protocol refs by role
 const requestProtocols = computed(() =>
   props.iface.protocolRefs.filter(r => r.role === 'request')
@@ -169,6 +157,16 @@ const requestProtocols = computed(() =>
 const responseProtocols = computed(() =>
   props.iface.protocolRefs.filter(r => r.role === 'response')
 )
+
+// 传输类型下拉选项（兼容旧类型 TCP/HTTP/gRPC 数据，避免下拉空白）
+const transportTypeOptions = computed(() => {
+  const opts = TRANSPORT_TYPES.map(t => ({ ...t }))
+  const cur = props.iface.transportType
+  if (cur && !opts.some(o => o.value === cur)) {
+    opts.push({ value: cur, label: cur, desc: '（旧类型，已不再支持）' })
+  }
+  return opts
+})
 
 // Protocol name lookup
 const protocolName = (id) => protoStore.protocols.find(p => p.id === id)?.name || '未知协议'
@@ -189,8 +187,14 @@ const getProtocolFields = (id) => {
 
 // Remove a protocol ref
 const removeRef = (row) => {
-  const idx = props.iface.protocolRefs.indexOf(row)
-  if (idx !== -1) props.iface.protocolRefs.splice(idx, 1)
+  ElMessageBox.confirm('确认移除该协议引用？', '移除确认', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    const idx = props.iface.protocolRefs.indexOf(row)
+    if (idx !== -1) props.iface.protocolRefs.splice(idx, 1)
+  }).catch(() => {})
 }
 
 // ── 协议选择弹窗 ──
@@ -200,7 +204,7 @@ const showAllProtocols = ref(false)
 const pickerRole = ref('request')
 
 const pickerTitle = computed(() =>
-  pickerRole.value === 'request' ? '添加请求协议' : '添加响应协议'
+  pickerRole.value === 'request' ? '添加发送字段' : '添加接收字段'
 )
 
 const openPicker = (role) => {
@@ -231,7 +235,7 @@ const enrichedProtocols = computed(() => {
 // Filtered list for picker dialog
 const filteredPickerList = computed(() => {
   let list = enrichedProtocols.value
-  // 按当前系统/模块过滤（除非开启"全部协议"）
+  // 按当前系统/模块过滤（除非开启"全部字段"）
   if (!showAllProtocols.value) {
     const sysId = props.iface.systemId
     const modId = props.iface.moduleId
@@ -326,7 +330,7 @@ const onTransportTypeChange = (type) => {
   background: var(--el-fill-color); padding: 1px 6px; border-radius: 3px; margin-left: 6px;
 }
 
-// 协议选择弹窗
+// 字段选择弹窗
 .picker-filter { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .picker-list { max-height: 360px; overflow-y: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
 .picker-item {

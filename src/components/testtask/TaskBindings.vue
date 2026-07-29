@@ -6,7 +6,7 @@
         <el-icon class="summary-item__icon"><Connection /></el-icon>
         <div class="summary-item__body">
           <span class="summary-item__count">{{ hasInterface ? 1 : 0 }}</span>
-          <span class="summary-item__label">接口</span>
+          <span class="summary-item__label">报文</span>
         </div>
       </div>
       <div class="summary-item" :class="{ 'summary-item--empty': localBindings.datasetIds.length === 0 }">
@@ -32,11 +32,11 @@
       </div>
     </div>
 
-    <!-- 目标接口 -->
+    <!-- 目标报文 -->
     <el-card shadow="never" class="bind-card">
       <template #header>
         <div class="bind-card__head">
-          <span class="bind-card__title">目标接口</span>
+          <span class="bind-card__title">目标报文</span>
           <el-tag v-if="hasInterface" type="success" size="small" effect="plain">{{ selectedInterfaceName }}</el-tag>
           <el-tag v-else type="warning" size="small" effect="plain">未选择</el-tag>
         </div>
@@ -45,7 +45,7 @@
         v-model="localBindings.interfaceId"
         filterable
         clearable
-        placeholder="选择当前模块下的接口"
+        placeholder="选择当前模块下的报文"
         style="width: 100%;"
         @change="onInterfaceChange"
       >
@@ -60,13 +60,13 @@
         </el-option>
       </el-select>
       <div v-if="moduleInterfaces.length === 0" class="bind-hint">
-        当前模块暂无接口，请先在
-        <el-link type="primary" :underline="false" @click="$router.push('/protocol')">协议管理</el-link>
+        当前模块暂无报文，请先在
+        <el-link type="primary" :underline="false" @click="$router.push('/protocol')">字段管理</el-link>
         中定义
       </div>
     </el-card>
 
-    <!-- 关联数据集（按所选接口自动过滤） -->
+    <!-- 关联数据集（按所选报文自动过滤） -->
     <el-card shadow="never" class="bind-card">
       <template #header>
         <div class="bind-card__head">
@@ -81,7 +81,7 @@
         filterable
         collapse-tags
         collapse-tags-tooltip
-        :placeholder="hasInterface ? '选择测试数据集（可多选）' : '请先选择接口'"
+        :placeholder="hasInterface ? '选择测试数据集（可多选）' : '请先选择报文'"
         :disabled="!hasInterface"
         style="width: 100%;"
         @change="emitChange"
@@ -96,10 +96,10 @@
       <div v-if="hasInterface && filteredDatasets.length === 0" class="bind-hint">
         暂无关联「{{ selectedInterfaceName }}」的数据集，请先在
         <el-link type="primary" :underline="false" @click="$router.push('/test-data')">测试数据</el-link>
-        中创建并关联该接口
+        中创建并关联该报文
       </div>
       <div v-if="!hasInterface" class="bind-hint">
-        请先选择目标接口，数据集将自动按关联过滤
+        请先选择目标报文，数据集将自动按关联过滤
       </div>
     </el-card>
 
@@ -163,19 +163,10 @@
       <div v-if="!moduleRuleSets.length" class="bind-hint">
         当前模块暂无规则集，可先到
         <el-link type="primary" :underline="false" @click="$router.push('/rule')">校验规则管理</el-link>
-        中从接口自动生成
+        中从报文自动生成
       </div>
     </el-card>
 
-    <!-- MQ 专项测试配置（仅当模块关联 MQ 协议时显示） -->
-    <el-card v-if="hasMqProtocol && localBindings.mqTest" shadow="never" class="bind-card">
-      <template #header>
-        <div class="bind-card__head">
-          <span class="bind-card__title">MQ 专项测试配置</span>
-        </div>
-      </template>
-      <MqTestConfig :mq-test="localBindings.mqTest" />
-    </el-card>
   </div>
 </template>
 
@@ -186,8 +177,6 @@ import { useProtocolStore } from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
 import { useConnectionStore } from '@/stores/connection'
 import { useRuleStore } from '@/stores/rule'
-import MqTestConfig from '@/components/testtask/MqTestConfig.vue'
-import { defaultMqTest } from '@/stores/testTask'
 
 const props = defineProps({
   task: { type: Object, required: true },
@@ -205,14 +194,6 @@ const localBindings = reactive({
   datasetIds: [],
   fileIds: [],
   ruleSetId: null,
-  mqTest: null,
-})
-
-/** 检测当前模块是否关联 MQ 协议 */
-const hasMqProtocol = computed(() => {
-  return protoStore.protocols.some(
-    p => p.moduleId === props.task.moduleId && p.type === 'MQ'
-  )
 })
 
 /** 同步 props.task.bindings → localBindings */
@@ -222,7 +203,6 @@ watch(() => props.task, (t) => {
     localBindings.datasetIds = [...(t.bindings.datasetIds || [])]
     localBindings.fileIds = [...(t.bindings.fileIds || [])]
     localBindings.ruleSetId = t.bindings.ruleSetId ?? null
-    localBindings.mqTest = t.bindings.mqTest ? JSON.parse(JSON.stringify(t.bindings.mqTest)) : defaultMqTest()
   }
 }, { immediate: true })
 
@@ -239,7 +219,7 @@ const moduleFiles = computed(() =>
   tdStore.files.filter(f => f.systemId === props.task.systemId && f.moduleName === moduleName.value)
 )
 
-/* ========== 按所选接口过滤数据集 ========== */
+/* ========== 按所选报文过滤数据集 ========== */
 const selectedInterfaceName = computed(() => {
   if (localBindings.interfaceId == null) return ''
   return protoStore.interfaces.find(i => i.id === localBindings.interfaceId)?.name || ''
@@ -258,7 +238,7 @@ const filteredDatasets = computed(() => {
 const hasInterface = computed(() => localBindings.interfaceId != null)
 
 const onInterfaceChange = () => {
-  // 切换接口时清空已选数据集（可能不再匹配）
+  // 切换报文时清空已选数据集（可能不再匹配）
   localBindings.datasetIds = []
   emitChange()
 }
@@ -271,7 +251,6 @@ const emitChange = () => {
     datasetIds: [...localBindings.datasetIds],
     fileIds: [...localBindings.fileIds],
     ruleSetId: localBindings.ruleSetId,
-    mqTest: hasMqProtocol.value ? (localBindings.mqTest || defaultMqTest()) : undefined,
   })
 }
 </script>

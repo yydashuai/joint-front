@@ -3,7 +3,7 @@
     <div class="page__header">
       <div>
         <h2>测试数据管理</h2>
-        <div class="page__desc">构造基于协议/接口的测试报文数据集，管理测试资源文件</div>
+        <div class="page__desc">构造基于字段/报文的测试报文数据集，管理测试资源文件</div>
       </div>
       <div class="header-actions">
         <el-button-group>
@@ -283,7 +283,7 @@ const onCreateDataset = (data) => {
   selectedKey.value = `ds-${ds.id}`
   ElMessage.success('数据集已创建')
   if (!ds.linkedProtocol && !ds.linkedInterface) {
-    ElMessage.warning('未关联协议或接口，数据集暂无数据列，建议重新创建并关联')
+    ElMessage.warning('未关联字段或报文，数据集暂无数据列，建议重新创建并关联')
   }
 }
 

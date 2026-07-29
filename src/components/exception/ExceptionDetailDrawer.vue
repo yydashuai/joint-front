@@ -177,7 +177,7 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Close, Plus, Search } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { EXC_SOURCES, EXC_STATES, useExceptionStore } from '@/stores/exception'
@@ -298,9 +298,15 @@ const cancelCreateTag = () => {
   creatingTag.value = false
 }
 const deleteTag = (tag) => {
-  store.deleteTag(tag)
-  tagDraft.value = tagDraft.value.filter((item) => item !== tag)
-  ElMessage.success('标签已删除')
+  ElMessageBox.confirm(`确认删除标签「${tag}」？`, '删除确认', {
+    confirmButtonText: '确定删除',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    store.deleteTag(tag)
+    tagDraft.value = tagDraft.value.filter((item) => item !== tag)
+    ElMessage.success('标签已删除')
+  }).catch(() => {})
 }
 const openBatchSummary = () => {
   if (!props.exception?.runId) return

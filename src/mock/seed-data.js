@@ -1,6 +1,6 @@
 ﻿/**
  * 模拟数据种子文件 —— 便携式智能联试工具 Demo
- * 8 个系统 · 每系统 2-4 模块 · 每模块 1-3 协议/接口
+ * 8 个系统 · 每系统 2-4 模块 · 每模块 1-3 字段/报文
  *
  * 数据结构与 stores 保持一致，各 store 直接 import 使用。
  */
@@ -57,7 +57,7 @@ const repeatGroup = (o) => ({
   ...o
 })
 
-/* ========== 辅助：接口参数 ========== */
+/* ========== 辅助：报文参数 ========== */
 const param = (o) => ({
   id: pid(),
   name: '',
@@ -125,8 +125,8 @@ const sysModules = [
  *  一、系统 (Systems)
  * ──────────────────────────────────────────── */
 export const systems = [
-  { id: 'sys-weapon', name: '综合武器管理系统', desc: '覆盖武器挂载、状态监测与装控指令接口的被测系统', owner: '装备联试组' },
-  { id: 'sys-fire',   name: '火控指挥联试系统', desc: '覆盖目标分配、火控解算与指挥链路接口的被测系统', owner: '火控联试组' },
+  { id: 'sys-weapon', name: '综合武器管理系统', desc: '覆盖武器挂载、状态监测与装控指令报文的被测系统', owner: '装备联试组' },
+  { id: 'sys-fire',   name: '火控指挥联试系统', desc: '覆盖目标分配、火控解算与指挥链路报文的被测系统', owner: '火控联试组' },
   { id: 'sys-radar',  name: '雷达探测系统',     desc: '覆盖雷达信号处理、天线伺服与目标识别的联试系统', owner: '雷达联试组' },
   { id: 'sys-comm',   name: '通信保障系统',     desc: '覆盖战术数据链与卫星通信的联试保障系统',       owner: '通信联试组' },
   { id: 'sys-nav',    name: '导航定位系统',     desc: '覆盖惯导、卫导及组合导航的联试定位系统',       owner: '导航联试组' },
@@ -143,33 +143,13 @@ export const nodes = sysModules.map(
     node({ systemId, name, ip, port, desc, reachable, status, latency })
 )
 
-// 记录每个模块的 id，供协议/接口引用
+// 记录每个模块的 id，供字段/报文引用
 nodes.forEach((n, i) => { M[i] = n.id })
 // 便捷索引：按 [系统, 模块名] 查找
 const byName = (sys, name) => nodes.find(n => n.systemId === sys && n.name === name)?.id
 
-/* ========== Broker 节点 ========== */
-const brokerNodes = [
-  node({ systemId: 'sys-weapon', name: 'RabbitMQ Broker', ip: '192.168.10.33', port: 5672, desc: '武器管理系统 RabbitMQ 消息中间件', reachable: true, status: 'online', latency: 3, nodeType: 'broker', brokerType: 'RabbitMQ', managementPort: 15672, authInfo: { username: 'admin', password: '******' }, healthCheck: { level1: { status: 'pass', latency: 2, detail: 'TCP 192.168.10.33:5672 连接成功 (2ms)' }, level2: { status: 'pass', latency: 45, detail: 'AMQP 握手成功，认证通过 (45ms)' }, level3: { status: 'pass', detail: '2 节点在线，12 队列正常，8 消费者活跃', metrics: { nodes: 2, queues: 12, consumers: 8 } }, lastCheck: '2026-06-28 14:23:05', overall: 'healthy' } }),
-  node({ systemId: 'sys-fire', name: 'Kafka Broker', ip: '192.168.20.47', port: 9092, desc: '火控系统 Kafka 消息中间件', reachable: true, status: 'online', latency: 5, nodeType: 'broker', brokerType: 'Kafka', managementPort: 9090, authInfo: { username: 'kafka_admin', password: '******' }, healthCheck: { level1: { status: 'pass', latency: 3, detail: 'TCP 192.168.20.47:9092 连接成功 (3ms)' }, level2: { status: 'pass', latency: 67, detail: 'AdminClient 连接成功，SASL 认证通过 (67ms)' }, level3: { status: 'pass', detail: '3 节点在线，18 分区正常，6 消费者活跃', metrics: { nodes: 3, queues: 18, consumers: 6 } }, lastCheck: '2026-06-28 14:22:58', overall: 'healthy' } }),
-  node({ systemId: 'sys-cmd', name: 'Kafka Broker', ip: '192.168.80.63', port: 9092, desc: '指控系统 Kafka 消息中间件', reachable: true, status: 'online', latency: 4, nodeType: 'broker', brokerType: 'Kafka', managementPort: 9090, authInfo: { username: 'kafka_admin', password: '******' }, healthCheck: { level1: { status: 'pass', latency: 4, detail: 'TCP 192.168.80.63:9092 连接成功 (4ms)' }, level2: { status: 'pass', latency: 52, detail: 'AdminClient 连接成功，SASL 认证通过 (52ms)' }, level3: { status: 'warning', detail: '3 节点在线（1 节点磁盘使用率 > 85%），24 分区', metrics: { nodes: 3, queues: 24, consumers: 12 } }, lastCheck: '2026-06-28 14:23:12', overall: 'warning' } }),
-  node({ systemId: 'sys-cmd', name: 'RabbitMQ Broker', ip: '192.168.80.60', port: 5672, desc: '指控系统 RabbitMQ 消息中间件', reachable: true, status: 'online', latency: 2, nodeType: 'broker', brokerType: 'RabbitMQ', managementPort: 15672, authInfo: { username: 'guest', password: '******' }, healthCheck: { level1: { status: 'pass', latency: 2, detail: 'TCP 192.168.80.60:5672 连接成功 (2ms)' }, level2: { status: 'pass', latency: 38, detail: 'AMQP 握手成功，认证通过 (38ms)' }, level3: { status: 'pass', detail: '1 节点在线，8 队列正常，5 消费者活跃', metrics: { nodes: 1, queues: 8, consumers: 5 } }, lastCheck: '2026-06-28 14:23:08', overall: 'healthy' } }),
-]
-nodes.push(...brokerNodes)
-
-// 关联 MQ 模块到 Broker
-const linkBrokerByName = (sys, moduleName, brokerName) => {
-  const mod = nodes.find(n => n.systemId === sys && n.name === moduleName && n.nodeType !== 'broker')
-  const broker = nodes.find(n => n.systemId === sys && n.name === brokerName && n.nodeType === 'broker')
-  if (mod && broker) mod.connectedBrokerId = broker.id
-}
-linkBrokerByName('sys-weapon', '挂载检测模块', 'RabbitMQ Broker')
-linkBrokerByName('sys-fire', '目标跟踪模块', 'Kafka Broker')
-linkBrokerByName('sys-cmd', '日志审计模块', 'Kafka Broker')
-linkBrokerByName('sys-cmd', '态势感知模块', 'RabbitMQ Broker')
-
 /* ────────────────────────────────────────────
- *  三、协议 (Protocols) —— 字节/位层级结构
+ *  三、字段 (Protocols) —— 字节/位层级结构
  * ──────────────────────────────────────────── */
 
 const _p = (o) => ({
@@ -200,7 +180,7 @@ const calcOffsets = (fields) => {
 export const protocols = [
   // ── 武器管理 ──
   _p({
-    name: '帧控制字节协议', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
+    name: '帧控制字节字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
     desc: '1 字节帧控制位标志（bit7 → bit0），适用于压缩/加密等按位场景',
     endian: 'big',
     fields: calcOffsets([
@@ -209,14 +189,14 @@ export const protocols = [
         bitField({ name: '压缩标志', bitStart: 6, bitEnd: 6, constraint: range(0, 1), desc: '1=压缩，0=未压缩' }),
         bitField({ name: '分片标志', bitStart: 5, bitEnd: 5, constraint: range(0, 1), desc: '1=分片包，0=完整包' }),
         bitField({ name: '应答标志', bitStart: 4, bitEnd: 4, constraint: range(0, 1), desc: '1=应答包，0=业务包' }),
-        bitField({ name: '保留位', bitStart: 3, bitEnd: 3, constraint: fixed(0), desc: '预留协议扩展' }),
-        bitField({ name: '保留位', bitStart: 2, bitEnd: 2, constraint: fixed(0), desc: '预留协议扩展' }),
+        bitField({ name: '保留位', bitStart: 3, bitEnd: 3, constraint: fixed(0), desc: '预留字段扩展' }),
+        bitField({ name: '保留位', bitStart: 2, bitEnd: 2, constraint: fixed(0), desc: '预留字段扩展' }),
         bitField({ name: '数据类型', bitStart: 1, bitEnd: 0, constraint: range(0, 3), desc: '00=JSON 01=二进制 10=字符串 11=XML' }),
       ]}),
     ])
   }),
   _p({
-    name: '武器挂载识别协议', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'),
+    name: '武器挂载识别字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'),
     desc: '挂点载荷识别与状态上报帧',
     endian: 'big',
     framing: { mode: 'delimiter', fixedLength: 0, lengthFieldId: null, lengthIncludesHeader: true, lengthIncludesSelf: true, headerBytes: 'AA55', footerBytes: '' },
@@ -233,7 +213,7 @@ export const protocols = [
     ])
   }),
   _p({
-    name: '弹药编目协议', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '弹药状态模块'),
+    name: '弹药编目字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '弹药状态模块'),
     desc: '弹药类型与批次编目帧',
     endian: 'big',
     fields: calcOffsets([
@@ -244,7 +224,7 @@ export const protocols = [
     ])
   }),
   _p({
-    name: '武器遥测广播协议', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
+    name: '武器遥测广播字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
     desc: '武器状态广播帧，周期性上报各挂点实时状态',
     endian: 'big',
     framing: { mode: 'fixed', fixedLength: 0, lengthFieldId: null, lengthIncludesHeader: true, lengthIncludesSelf: true, headerBytes: '', footerBytes: '' },
@@ -260,7 +240,7 @@ export const protocols = [
 
   // ── 火控指挥 ──
   _p({
-    name: '遥测帧协议', systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
+    name: '遥测帧字段', systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
     desc: '遥测下行帧（按位定义，可跨字节）',
     endian: 'big',
     fields: calcOffsets([
@@ -270,7 +250,7 @@ export const protocols = [
     ])
   }),
   _p({
-    name: '目标航迹帧协议', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'),
+    name: '目标航迹帧字段', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'),
     desc: '多目标航迹融合输出帧',
     endian: 'big',
     fields: calcOffsets([
@@ -286,7 +266,7 @@ export const protocols = [
 
   // ── 雷达探测 ──
   _p({
-    name: '雷达回波帧协议', systemId: 'sys-radar', moduleId: byName('sys-radar', '信号处理模块'),
+    name: '雷达回波帧字段', systemId: 'sys-radar', moduleId: byName('sys-radar', '信号处理模块'),
     desc: '雷达基带回波 IQ 采样帧（含重复组示例）',
     endian: 'big',
     framing: { mode: 'delimiter', fixedLength: 0, lengthFieldId: null, lengthIncludesHeader: true, lengthIncludesSelf: true, headerBytes: 'DEADBEEF', footerBytes: '' },
@@ -306,7 +286,7 @@ export const protocols = [
     ])
   }),
   _p({
-    name: '天线伺服控制协议', systemId: 'sys-radar', moduleId: byName('sys-radar', '天线控制模块'),
+    name: '天线伺服控制字段', systemId: 'sys-radar', moduleId: byName('sys-radar', '天线控制模块'),
     desc: '天线方位/俯仰指令与反馈帧',
     endian: 'big',
     fields: calcOffsets([
@@ -318,7 +298,7 @@ export const protocols = [
     ])
   }),
   _p({
-    name: '目标特征帧协议', systemId: 'sys-radar', moduleId: byName('sys-radar', '目标识别模块'),
+    name: '目标特征帧字段', systemId: 'sys-radar', moduleId: byName('sys-radar', '目标识别模块'),
     desc: '目标 RCS 特征与分类结果帧',
     endian: 'big',
     fields: calcOffsets([
@@ -332,7 +312,7 @@ export const protocols = [
 
   // ── 通信保障 ──
   _p({
-    name: '数据链帧协议', systemId: 'sys-comm', moduleId: byName('sys-comm', '数据链模块'),
+    name: '数据链帧字段', systemId: 'sys-comm', moduleId: byName('sys-comm', '数据链模块'),
     desc: '战术数据链 TADIL 帧格式',
     endian: 'big',
     framing: { mode: 'delimiter', fixedLength: 0, lengthFieldId: null, lengthIncludesHeader: true, lengthIncludesSelf: true, headerBytes: '1ACF', footerBytes: '' },
@@ -349,7 +329,7 @@ export const protocols = [
     ])
   }),
   _p({
-    name: '卫通链路管理协议', systemId: 'sys-comm', moduleId: byName('sys-comm', '卫星通信模块'),
+    name: '卫通链路管理字段', systemId: 'sys-comm', moduleId: byName('sys-comm', '卫星通信模块'),
     desc: '卫星通信建链/保链/断链控制帧',
     endian: 'big',
     fields: calcOffsets([
@@ -362,7 +342,7 @@ export const protocols = [
 
   // ── 导航定位 ──
   _p({
-    name: '惯导数据帧协议', systemId: 'sys-nav', moduleId: byName('sys-nav', '惯性导航模块'),
+    name: '惯导数据帧字段', systemId: 'sys-nav', moduleId: byName('sys-nav', '惯性导航模块'),
     desc: 'IMU 六轴原始数据与姿态角输出帧',
     endian: 'big',
     fields: calcOffsets([
@@ -376,7 +356,7 @@ export const protocols = [
     ])
   }),
   _p({
-    name: '卫通定位帧协议', systemId: 'sys-nav', moduleId: byName('sys-nav', '卫星定位模块'),
+    name: '卫通定位帧字段', systemId: 'sys-nav', moduleId: byName('sys-nav', '卫星定位模块'),
     desc: '北斗/GPS 双模定位解算输出帧',
     endian: 'big',
     fields: calcOffsets([
@@ -392,7 +372,7 @@ export const protocols = [
 
   // ── 电子对抗 ──
   _p({
-    name: '电磁侦察帧协议', systemId: 'sys-ew', moduleId: byName('sys-ew', '侦察分析模块'),
+    name: '电磁侦察帧字段', systemId: 'sys-ew', moduleId: byName('sys-ew', '侦察分析模块'),
     desc: '电磁环境信号侦察与参数测量帧',
     endian: 'big',
     fields: calcOffsets([
@@ -404,7 +384,7 @@ export const protocols = [
     ])
   }),
   _p({
-    name: '干扰指令帧协议', systemId: 'sys-ew', moduleId: byName('sys-ew', '干扰执行模块'),
+    name: '干扰指令帧字段', systemId: 'sys-ew', moduleId: byName('sys-ew', '干扰执行模块'),
     desc: '有源/无源干扰参数下发帧',
     endian: 'big',
     fields: calcOffsets([
@@ -418,7 +398,7 @@ export const protocols = [
 
   // ── 无人机管控 ──
   _p({
-    name: '飞控遥测帧协议', systemId: 'sys-uav', moduleId: byName('sys-uav', '飞行控制模块'),
+    name: '飞控遥测帧字段', systemId: 'sys-uav', moduleId: byName('sys-uav', '飞行控制模块'),
     desc: '无人机飞行状态遥测下行帧',
     endian: 'big',
     fields: calcOffsets([
@@ -431,7 +411,7 @@ export const protocols = [
     ])
   }),
   _p({
-    name: '载荷控制帧协议', systemId: 'sys-uav', moduleId: byName('sys-uav', '任务载荷模块'),
+    name: '载荷控制帧字段', systemId: 'sys-uav', moduleId: byName('sys-uav', '任务载荷模块'),
     desc: '光电/红外载荷指令帧',
     endian: 'big',
     fields: calcOffsets([
@@ -445,7 +425,7 @@ export const protocols = [
 
   // ── 指挥控制 ──
   _p({
-    name: '态势标注帧协议', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'),
+    name: '态势标注帧字段', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'),
     desc: '战场态势目标标注与更新帧',
     endian: 'big',
     fields: calcOffsets([
@@ -457,7 +437,7 @@ export const protocols = [
     ])
   }),
   _p({
-    name: '作战指令编码协议', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '指令下发模块'),
+    name: '作战指令编码字段', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '指令下发模块'),
     desc: '作战指令结构化编码帧',
     endian: 'big',
     fields: calcOffsets([
@@ -472,9 +452,9 @@ export const protocols = [
     ])
   }),
 
-  // ── 共识体（可复用数据结构协议） ──
+  // ── 共识体（可复用数据结构字段） ──
   _p({
-    name: '装订参数协议', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
+    name: '装订参数字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
     desc: '武器装订参数共识体，定义引信模式、射程与装订角度',
     fields: [
       param({ name: 'fuseMode', type: '常量', dataType: 'uint8', desc: '引信模式' }),
@@ -483,7 +463,7 @@ export const protocols = [
     ]
   }),
   _p({
-    name: '雷达参数协议', systemId: 'sys-radar', moduleId: byName('sys-radar', '信号处理模块'),
+    name: '雷达参数字段', systemId: 'sys-radar', moduleId: byName('sys-radar', '信号处理模块'),
     desc: '雷达工作参数共识体，定义功率、位置与频率',
     fields: [
       param({ name: 'power', type: '常量', dataType: 'uint16', desc: '发射功率 W' }),
@@ -493,7 +473,7 @@ export const protocols = [
     ]
   }),
   _p({
-    name: '武器状态协议', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
+    name: '武器状态字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
     desc: '武器状态共识体，定义设备编号、在线状态与挂点列表',
     fields: [
       param({ name: 'deviceId', type: '常量', dataType: 'uint8', desc: '设备编号' }),
@@ -505,7 +485,7 @@ export const protocols = [
     ]
   }),
   _p({
-    name: '航迹位置协议', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'),
+    name: '航迹位置字段', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'),
     desc: '航迹位置共识体，定义方位角、俯仰角与距离',
     fields: [
       param({ name: 'azimuth', type: '常量', dataType: 'float32', desc: '方位角 °' }),
@@ -516,7 +496,7 @@ export const protocols = [
 ]
 
 /* ────────────────────────────────────────────
- *  四、接口 (Interfaces) —— 请求/响应参数树
+ *  四、报文 (Interfaces) 参数树
  * ──────────────────────────────────────────── */
 const _i = (o) => ({
   id: pid(),
@@ -536,11 +516,11 @@ export const interfaces = [
   // ── 武器管理 ──
   _i({
     name: '查询设备状态', path: '/device/status',
-    transportType: 'HTTP',
+    transportType: 'OSE',
     transportConfig: { method: 'GET', contentType: 'application/json', headers: [{ key: 'Accept', value: 'application/json' }], auth: { type: 'basic', username: 'admin', password: '' } },
-    protocolRefs: [protoByName('sys-weapon', '武器遥测广播协议')],
+    protocolRefs: [protoByName('sys-weapon', '武器遥测广播字段')],
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    desc: '请求设备状态，返回遥测帧',
+    desc: '发送设备状态，返回遥测帧',
     request: [
       param({ name: 'deviceId', type: '常量', dataType: 'uint8', desc: '目标设备' }),
       param({ name: 'options', type: '共识体', desc: '查询选项', children: [
@@ -555,9 +535,9 @@ export const interfaces = [
   }),
   _i({
     name: '武器装订指令', path: '/weapon/bind',
-    transportType: 'TCP',
+    transportType: '4908A',
     transportConfig: { port: 9001, timeout: 3000 },
-    protocolRefs: [protoByName('sys-weapon', '装订参数协议'), protoByName('sys-weapon', '帧控制字节协议')],
+    protocolRefs: [protoByName('sys-weapon', '装订参数字段'), protoByName('sys-weapon', '帧控制字节字段')],
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
     desc: '下发武器装订参数并确认',
     request: [
@@ -575,9 +555,9 @@ export const interfaces = [
   }),
   _i({
     name: '上报弹药余量', path: '/ammo/report',
-    transportType: 'gRPC',
+    transportType: '4908A',
     transportConfig: { serverAddress: '192.168.10.32:50051', streamingMode: 'unary', tls: { enabled: false }, timeout: 10 },
-    protocolRefs: [protoByName('sys-weapon', '弹药编目协议')],
+    protocolRefs: [protoByName('sys-weapon', '弹药编目字段')],
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '弹药状态模块'),
     desc: '查询并上报各类弹药余量',
     request: [
@@ -595,9 +575,9 @@ export const interfaces = [
   }),
   _i({
     name: '挂载状态查询', path: '/pylon/status',
-    transportType: 'TCP',
+    transportType: '4908A',
     transportConfig: { port: 9200, timeout: 2000 },
-    protocolRefs: [protoByName('sys-weapon', '武器挂载识别协议'), protoByName('sys-weapon', '武器状态协议')],
+    protocolRefs: [protoByName('sys-weapon', '武器挂载识别字段'), protoByName('sys-weapon', '武器状态字段')],
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'),
     desc: '查询全部挂点挂载状态',
     request: [
@@ -616,9 +596,9 @@ export const interfaces = [
   // ── 火控指挥 ──
   _i({
     name: '目标分配解算', path: '/fire/solve',
-    transportType: 'TCP',
+    transportType: '4908A',
     transportConfig: { port: 8080, timeout: 300 },
-    protocolRefs: [protoByName('sys-fire', '遥测帧协议')],
+    protocolRefs: [protoByName('sys-fire', '遥测帧字段')],
     systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
     desc: '提交目标列表，返回火力分配方案',
     request: [
@@ -636,9 +616,9 @@ export const interfaces = [
   }),
   _i({
     name: '航迹订阅', path: '/track/subscribe',
-    transportType: 'gRPC',
+    transportType: '4908A',
     transportConfig: { serverAddress: '192.168.20.47:50051', streamingMode: 'server-stream', tls: { enabled: false }, timeout: 30 },
-    protocolRefs: [protoByName('sys-fire', '目标航迹帧协议'), protoByName('sys-fire', '航迹位置协议')],
+    protocolRefs: [protoByName('sys-fire', '目标航迹帧字段'), protoByName('sys-fire', '航迹位置字段')],
     systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'),
     desc: '订阅指定目标的实时航迹数据',
     request: [
@@ -654,9 +634,9 @@ export const interfaces = [
   }),
   _i({
     name: '指挥指令下发', path: '/cmd/dispatch',
-    transportType: 'TCP',
+    transportType: '4908A',
     transportConfig: { port: 7070, timeout: 1000 },
-    protocolRefs: [protoByName('sys-cmd', '作战指令编码协议')],
+    protocolRefs: [protoByName('sys-cmd', '作战指令编码字段')],
     systemId: 'sys-fire', moduleId: byName('sys-fire', '指挥链路模块'),
     desc: '从指挥所向下游下发作战指令',
     request: [
@@ -676,9 +656,9 @@ export const interfaces = [
   // ── 雷达探测 ──
   _i({
     name: '启动雷达扫描', path: '/radar/scan/start',
-    transportType: 'TCP',
+    transportType: '4908A',
     transportConfig: { port: 6001, timeout: 1000 },
-    protocolRefs: [protoByName('sys-radar', '雷达回波帧协议'), protoByName('sys-radar', '雷达参数协议')],
+    protocolRefs: [protoByName('sys-radar', '雷达回波帧字段'), protoByName('sys-radar', '雷达参数字段')],
     systemId: 'sys-radar', moduleId: byName('sys-radar', '信号处理模块'),
     desc: '配置雷达扫描参数并启动',
     request: [
@@ -693,9 +673,9 @@ export const interfaces = [
   }),
   _i({
     name: '天线指向控制', path: '/radar/antenna/point',
-    transportType: 'TCP',
+    transportType: '4908A',
     transportConfig: { port: 6002, timeout: 200 },
-    protocolRefs: [protoByName('sys-radar', '天线伺服控制协议')],
+    protocolRefs: [protoByName('sys-radar', '天线伺服控制字段')],
     systemId: 'sys-radar', moduleId: byName('sys-radar', '天线控制模块'),
     desc: '设置天线方位角和俯仰角',
     request: [
@@ -710,10 +690,10 @@ export const interfaces = [
     ]
   }),
   _i({
-    name: '目标识别请求', path: '/radar/identify',
-    transportType: 'gRPC',
+    name: '目标识别发送', path: '/radar/identify',
+    transportType: '4908A',
     transportConfig: { serverAddress: '192.168.30.12:50052', streamingMode: 'bidirectional', tls: { enabled: false }, timeout: 60 },
-    protocolRefs: [protoByName('sys-radar', '目标特征帧协议')],
+    protocolRefs: [protoByName('sys-radar', '目标特征帧字段')],
     systemId: 'sys-radar', moduleId: byName('sys-radar', '目标识别模块'),
     desc: '提交目标特征数据进行分类识别',
     request: [
@@ -732,7 +712,7 @@ export const interfaces = [
     name: '数据链组网', path: '/comm/datalink/join',
     transportType: 'UDP',
     transportConfig: { port: 5001, broadcast: false },
-    protocolRefs: [protoByName('sys-comm', '数据链帧协议')],
+    protocolRefs: [protoByName('sys-comm', '数据链帧字段')],
     systemId: 'sys-comm', moduleId: byName('sys-comm', '数据链模块'),
     desc: '加入战术数据链网络',
     request: [
@@ -750,9 +730,9 @@ export const interfaces = [
   }),
   _i({
     name: '卫通建链', path: '/comm/sat/link',
-    transportType: 'TCP',
+    transportType: '4908A',
     transportConfig: { port: 5002, timeout: 5000 },
-    protocolRefs: [protoByName('sys-comm', '卫通链路管理协议')],
+    protocolRefs: [protoByName('sys-comm', '卫通链路管理字段')],
     systemId: 'sys-comm', moduleId: byName('sys-comm', '卫星通信模块'),
     desc: '建立卫星通信链路',
     request: [
@@ -769,9 +749,9 @@ export const interfaces = [
   // ── 导航定位 ──
   _i({
     name: '惯导校准', path: '/nav/ins/calibrate',
-    transportType: 'TCP',
+    transportType: '4908A',
     transportConfig: { port: 4001, timeout: 2000 },
-    protocolRefs: [protoByName('sys-nav', '惯导数据帧协议')],
+    protocolRefs: [protoByName('sys-nav', '惯导数据帧字段')],
     systemId: 'sys-nav', moduleId: byName('sys-nav', '惯性导航模块'),
     desc: '执行惯导系统初始校准',
     request: [
@@ -790,9 +770,9 @@ export const interfaces = [
   }),
   _i({
     name: '定位数据查询', path: '/nav/gnss/position',
-    transportType: 'TCP',
+    transportType: '4908A',
     transportConfig: { port: 4002, timeout: 1000 },
-    protocolRefs: [protoByName('sys-nav', '卫通定位帧协议')],
+    protocolRefs: [protoByName('sys-nav', '卫通定位帧字段')],
     systemId: 'sys-nav', moduleId: byName('sys-nav', '卫星定位模块'),
     desc: '查询当前定位解算结果',
     request: [
@@ -808,9 +788,9 @@ export const interfaces = [
   }),
   _i({
     name: '组合导航输出', path: '/nav/fusion/output',
-    transportType: 'TCP',
+    transportType: '4908A',
     transportConfig: { port: 4003, timeout: 500 },
-    protocolRefs: [protoByName('sys-nav', '惯导数据帧协议'), protoByName('sys-nav', '卫通定位帧协议')],
+    protocolRefs: [protoByName('sys-nav', '惯导数据帧字段'), protoByName('sys-nav', '卫通定位帧字段')],
     systemId: 'sys-nav', moduleId: byName('sys-nav', '组合导航模块'),
     desc: '获取 INS/GNSS 紧组合滤波输出',
     request: [
@@ -834,9 +814,9 @@ export const interfaces = [
   // ── 电子对抗 ──
   _i({
     name: '威胁信号查询', path: '/ew/threat/query',
-    transportType: 'HTTP',
+    transportType: 'OSE',
     transportConfig: { method: 'POST', contentType: 'application/json', headers: [{ key: 'Accept', value: 'application/json' }], auth: { type: 'bearer', token: '' } },
-    protocolRefs: [protoByName('sys-ew', '电磁侦察帧协议')],
+    protocolRefs: [protoByName('sys-ew', '电磁侦察帧字段')],
     systemId: 'sys-ew', moduleId: byName('sys-ew', '侦察分析模块'),
     desc: '查询当前识别的威胁信号列表',
     request: [
@@ -858,9 +838,9 @@ export const interfaces = [
   }),
   _i({
     name: '干扰任务下发', path: '/ew/jam/task',
-    transportType: 'TCP',
+    transportType: '4908A',
     transportConfig: { port: 3002, timeout: 500 },
-    protocolRefs: [protoByName('sys-ew', '干扰指令帧协议')],
+    protocolRefs: [protoByName('sys-ew', '干扰指令帧字段')],
     systemId: 'sys-ew', moduleId: byName('sys-ew', '干扰执行模块'),
     desc: '下发干扰任务参数',
     request: [
@@ -876,7 +856,7 @@ export const interfaces = [
   }),
   _i({
     name: '频谱快照获取', path: '/ew/spectrum/snapshot',
-    transportType: 'HTTP',
+    transportType: 'OSE',
     transportConfig: { method: 'GET', contentType: 'application/octet-stream', headers: [], auth: { type: 'bearer', token: '' } },
     protocolRefs: [],
     systemId: 'sys-ew', moduleId: byName('sys-ew', '频谱监测模块'),
@@ -894,9 +874,9 @@ export const interfaces = [
   // ── 无人机管控 ──
   _i({
     name: '飞行计划上传', path: '/uav/flightplan',
-    transportType: 'HTTP',
+    transportType: 'OSE',
     transportConfig: { method: 'POST', contentType: 'application/json', headers: [{ key: 'Accept', value: 'application/json' }], auth: { type: 'bearer', token: '' } },
-    protocolRefs: [protoByName('sys-uav', '飞控遥测帧协议')],
+    protocolRefs: [protoByName('sys-uav', '飞控遥测帧字段')],
     systemId: 'sys-uav', moduleId: byName('sys-uav', '飞行控制模块'),
     desc: '上传无人机飞行计划航点',
     request: [
@@ -916,9 +896,9 @@ export const interfaces = [
   }),
   _i({
     name: '载荷参数配置', path: '/uav/payload/config',
-    transportType: 'TCP',
+    transportType: '4908A',
     transportConfig: { port: 2002, timeout: 1000 },
-    protocolRefs: [protoByName('sys-uav', '载荷控制帧协议')],
+    protocolRefs: [protoByName('sys-uav', '载荷控制帧字段')],
     systemId: 'sys-uav', moduleId: byName('sys-uav', '任务载荷模块'),
     desc: '配置任务载荷工作参数',
     request: [
@@ -936,7 +916,7 @@ export const interfaces = [
   }),
   _i({
     name: '实时图像流订阅', path: '/uav/video/stream',
-    transportType: 'HTTP',
+    transportType: 'OSE',
     transportConfig: { method: 'POST', contentType: 'application/json', headers: [{ key: 'Accept', value: 'application/json' }], auth: { type: 'bearer', token: '' } },
     protocolRefs: [],
     systemId: 'sys-uav', moduleId: byName('sys-uav', '图像接收模块'),
@@ -955,9 +935,9 @@ export const interfaces = [
   // ── 指挥控制 ──
   _i({
     name: '态势数据推送', path: '/cmd/situation/push',
-    transportType: 'HTTP',
+    transportType: 'OSE',
     transportConfig: { method: 'POST', contentType: 'application/json', headers: [{ key: 'Authorization', value: 'Bearer {token}' }, { key: 'X-Request-Id', value: '{uuid}' }], auth: { type: 'bearer', token: '' } },
-    protocolRefs: [protoByName('sys-cmd', '态势标注帧协议')],
+    protocolRefs: [protoByName('sys-cmd', '态势标注帧字段')],
     systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'),
     desc: '推送融合后的战场态势数据',
     request: [
@@ -980,7 +960,7 @@ export const interfaces = [
   }),
   _i({
     name: '作战方案生成', path: '/cmd/plan/generate',
-    transportType: 'HTTP',
+    transportType: 'OSE',
     transportConfig: { method: 'POST', contentType: 'multipart/form-data', headers: [{ key: 'Authorization', value: 'Bearer {token}' }, { key: 'X-Api-Version', value: '2.0' }], auth: { type: 'bearer', token: '' } },
     protocolRefs: [],
     systemId: 'sys-cmd', moduleId: byName('sys-cmd', '作战筹划模块'),
@@ -1001,9 +981,9 @@ export const interfaces = [
   }),
   _i({
     name: '指令分发确认', path: '/cmd/order/dispatch',
-    transportType: 'TCP',
+    transportType: '4908A',
     transportConfig: { port: 1003, timeout: 2000 },
-    protocolRefs: [protoByName('sys-cmd', '作战指令编码协议')],
+    protocolRefs: [protoByName('sys-cmd', '作战指令编码字段')],
     systemId: 'sys-cmd', moduleId: byName('sys-cmd', '指令下发模块'),
     desc: '分发作战指令并获取回执',
     request: [
@@ -1022,7 +1002,7 @@ export const interfaces = [
   }),
   _i({
     name: '操作日志查询', path: '/cmd/audit/log',
-    transportType: 'HTTP',
+    transportType: 'OSE',
     transportConfig: { method: 'GET', contentType: 'application/json', headers: [{ key: 'Accept', value: 'application/json' }], auth: { type: 'bearer', token: '' } },
     protocolRefs: [],
     systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'),
@@ -1046,108 +1026,6 @@ export const interfaces = [
     ]
   }),
 
-  // ── MQ 消息队列接口 ──
-  _i({
-    name: '挂载变更通知', path: 'mount.change',
-    transportType: 'MQ',
-    transportConfig: { brokerType: 'RabbitMQ', exchange: 'weapon-exchange', routingKey: 'mount.change', qos: 1, ackMode: 'auto', messageFormat: 'JSON' },
-    protocolRefs: [protoByName('sys-weapon', '武器挂载识别协议'), protoByName('sys-weapon', '武器状态协议')],
-    systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'),
-    operationType: 'publish',
-    desc: '向 RabbitMQ weapon-exchange 发布挂载状态变更消息',
-    request: [
-      param({ name: 'aircraftId', type: '常量', dataType: 'utf8', desc: '飞机编号' }),
-      param({ name: 'pylonNo', type: '常量', dataType: 'uint8', desc: '挂点编号' }),
-      param({ name: 'changeType', type: '常量', dataType: 'utf8', desc: '变更类型: mount/unmount/swap' }),
-      param({ name: 'loadType', type: '常量', dataType: 'utf8', desc: '载荷类型' }),
-      param({ name: 'weight', type: '常量', dataType: 'uint16', desc: '载荷重量 kg' }),
-    ],
-    response: [
-      param({ name: 'aircraftId', type: '常量', dataType: 'utf8', desc: '飞机编号' }),
-      param({ name: 'pylonNo', type: '常量', dataType: 'uint8', desc: '挂点编号' }),
-      param({ name: 'changeType', type: '常量', dataType: 'utf8', desc: '变更类型' }),
-      param({ name: 'loadType', type: '常量', dataType: 'utf8', desc: '载荷类型' }),
-      param({ name: 'weight', type: '常量', dataType: 'uint16', desc: '载荷重量 kg' }),
-      param({ name: 'messageId', type: '常量', dataType: 'utf8', desc: '消息ID' }),
-      param({ name: 'published', type: '常量', dataType: 'uint8', desc: '1=已发布' }),
-    ]
-  }),
-  _i({
-    name: '告警事件订阅', path: 'alert-events',
-    transportType: 'MQ',
-    transportConfig: { brokerType: 'Kafka', topic: 'alert-events', consumerGroup: 'cmd-audit-group', qos: 1, ackMode: 'manual', messageFormat: 'JSON' },
-    protocolRefs: [],
-    systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'),
-    operationType: 'subscribe',
-    desc: '从 Kafka alert-events Topic 订阅消费告警事件消息',
-    request: [
-      param({ name: 'consumerGroup', type: '常量', dataType: 'utf8', desc: '消费组: cmd-audit-group' }),
-      param({ name: 'autoOffsetReset', type: '常量', dataType: 'utf8', desc: '偏移重置策略: earliest' }),
-    ],
-    response: [
-      param({ name: 'alertId', type: '常量', dataType: 'utf8', desc: '告警ID' }),
-      param({ name: 'level', type: '常量', dataType: 'utf8', desc: '告警等级' }),
-      param({ name: 'category', type: '常量', dataType: 'utf8', desc: '告警类别' }),
-      param({ name: 'detail', type: '共识体', desc: '告警详情', children: [
-        param({ name: 'interfaceName', type: '常量', dataType: 'utf8', desc: '关联接口' }),
-        param({ name: 'message', type: '常量', dataType: 'utf8', desc: '告警描述' }),
-      ]}),
-    ]
-  }),
-  _i({
-    name: '航迹数据分发', path: 'track-data',
-    transportType: 'MQ',
-    transportConfig: { brokerType: 'Kafka', topic: 'track-data', qos: 1, ackMode: 'auto', messageFormat: 'JSON' },
-    protocolRefs: [protoByName('sys-fire', '目标航迹帧协议'), protoByName('sys-fire', '航迹位置协议')],
-    systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'),
-    operationType: 'publish',
-    desc: '向 Kafka track-data Topic 发布实时航迹数据给下游系统',
-    request: [
-      param({ name: 'trackId', type: '常量', dataType: 'uint16', desc: '航迹编号' }),
-      param({ name: 'position', type: '共识体', desc: '位置信息', children: [
-        param({ name: 'azimuth', type: '常量', dataType: 'float32', desc: '方位角 °' }),
-        param({ name: 'elevation', type: '常量', dataType: 'float32', desc: '俯仰角 °' }),
-        param({ name: 'distance', type: '常量', dataType: 'float32', desc: '距离 m' }),
-      ]}),
-      param({ name: 'velocity', type: '常量', dataType: 'float32', desc: '速度 m/s' }),
-      param({ name: 'confidence', type: '常量', dataType: 'float32', desc: '置信度' }),
-    ],
-    response: [
-      param({ name: 'trackId', type: '常量', dataType: 'uint16', desc: '航迹编号' }),
-      param({ name: 'position', type: '共识体', desc: '位置信息', children: [
-        param({ name: 'azimuth', type: '常量', dataType: 'float32', desc: '方位角 °' }),
-        param({ name: 'elevation', type: '常量', dataType: 'float32', desc: '俯仰角 °' }),
-        param({ name: 'distance', type: '常量', dataType: 'float32', desc: '距离 m' }),
-      ]}),
-      param({ name: 'velocity', type: '常量', dataType: 'float32', desc: '速度 m/s' }),
-      param({ name: 'confidence', type: '常量', dataType: 'float32', desc: '置信度' }),
-      param({ name: 'partition', type: '常量', dataType: 'uint8', desc: '目标分区号' }),
-      param({ name: 'offset', type: '常量', dataType: 'uint32', desc: '写入偏移量' }),
-    ]
-  }),
-  _i({
-    name: '态势更新广播', path: 'situation-exchange',
-    transportType: 'MQ',
-    transportConfig: { brokerType: 'RabbitMQ', exchange: 'situation-exchange', exchangeType: 'fanout', qos: 1, ackMode: 'auto', messageFormat: 'JSON' },
-    protocolRefs: [protoByName('sys-cmd', '态势标注帧协议')],
-    systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'),
-    operationType: 'publish',
-    desc: '通过 RabbitMQ situation-exchange Fanout 广播态势变更给各终端',
-    request: [
-      param({ name: 'areaId', type: '常量', dataType: 'utf8', desc: '区域编号' }),
-      param({ name: 'changeType', type: '常量', dataType: 'utf8', desc: '变更类型: add/update/remove' }),
-      param({ name: 'entities', type: '共识体', desc: '变更实体列表', children: [
-        param({ name: 'entityId', type: '常量', dataType: 'uint16', desc: '实体编号' }),
-        param({ name: 'type', type: '常量', dataType: 'utf8', desc: '实体类型' }),
-        param({ name: 'lat', type: '常量', dataType: 'float64', desc: '纬度' }),
-        param({ name: 'lon', type: '常量', dataType: 'float64', desc: '经度' }),
-      ]}),
-    ],
-    response: [
-      param({ name: 'fanoutCount', type: '常量', dataType: 'uint8', desc: '广播接收者数' }),
-      param({ name: 'ttl', type: '常量', dataType: 'uint32', desc: '消息TTL ms' }),
-    ]
-  }),
 ]
 
 /* ────────────────────────────────────────────
@@ -1155,18 +1033,18 @@ export const interfaces = [
  * ──────────────────────────────────────────── */
 export const tasks = [
   // 武器管理
-  { id: 't01', name: '武器状态接口连通性测试', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'), ruleSetId: 'rs-weapon-status', status: '执行中', time: '2026-06-24 10:31:00', remark: '验证 WM-001 接口在标准帧格式下的握手与应答流程' },
+  { id: 't01', name: '武器状态报文连通性测试', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'), ruleSetId: 'rs-weapon-status', status: '执行中', time: '2026-06-24 10:31:00', remark: '验证 WM-001 报文在标准帧格式下的握手与应答流程' },
   { id: 't02', name: '弹药余量边界值检测', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '弹药状态模块'), status: '已完成', time: '2026-06-24 09:45:00', remark: '覆盖 0%/100% 边界值，已生成测试报告' },
   { id: 't03', name: '武器挂载自检流程验证', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'), status: '已完成', time: '2026-06-24 09:10:00', remark: '' },
-  { id: 't04', name: '挂载识别协议字段校验', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), status: '执行中', time: '2026-06-24 10:50:00', remark: '逐字段对比协议 v1.3 与实物载荷数据' },
+  { id: 't04', name: '挂载识别字段字段校验', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), status: '执行中', time: '2026-06-24 10:50:00', remark: '逐字段对比字段 v1.3 与实物载荷数据' },
   // 火控指挥
   { id: 't05', name: '火控解算异常回放', systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'), status: '异常', time: '2026-06-24 09:20:00', remark: '回放 08:55 采集的异常帧数据，解算结果偏差超限' },
   { id: 't06', name: '指挥链路报告生成任务', systemId: 'sys-fire', moduleId: byName('sys-fire', '指挥链路模块'), status: '待确认', time: '2026-06-24 08:50:00', remark: '链路当前不通，待恢复后自动执行' },
-  { id: 't07', name: '目标分配协议一致性检测', systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'), status: '执行中', time: '2026-06-24 10:15:00', remark: '对比协议 v2.1 与 v2.2 的字段差异' },
+  { id: 't07', name: '目标分配字段一致性检测', systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'), status: '执行中', time: '2026-06-24 10:15:00', remark: '对比字段 v2.1 与 v2.2 的字段差异' },
   { id: 't08', name: '航迹融合精度验证', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), status: '已完成', time: '2026-06-24 08:30:00', remark: '多传感器融合误差 < 50m，满足指标' },
   // 雷达探测
   { id: 't09', name: '雷达回波帧格式验证', systemId: 'sys-radar', moduleId: byName('sys-radar', '信号处理模块'), status: '执行中', time: '2026-06-24 11:00:00', remark: '检查 IQ 采样帧头与通道编号的一致性' },
-  { id: 't10', name: '天线伺服响应时延测试', systemId: 'sys-radar', moduleId: byName('sys-radar', '天线控制模块'), status: '已完成', time: '2026-06-24 10:05:00', remark: '方位阶跃响应 < 200ms，俯仰 < 150ms' },
+  { id: 't10', name: '天线伺服接收时延测试', systemId: 'sys-radar', moduleId: byName('sys-radar', '天线控制模块'), status: '已完成', time: '2026-06-24 10:05:00', remark: '方位阶跃接收 < 200ms，俯仰 < 150ms' },
   { id: 't11', name: '目标识别模型回归测试', systemId: 'sys-radar', moduleId: byName('sys-radar', '目标识别模块'), status: '待确认', time: '2026-06-24 09:40:00', remark: '使用标准目标库 200 条记录，待人工复核' },
   // 通信保障
   { id: 't12', name: '数据链组网入网测试', systemId: 'sys-comm', moduleId: byName('sys-comm', '数据链模块'), status: '已完成', time: '2026-06-24 09:30:00', remark: '3 个节点同时入网，延迟 < 500ms' },
@@ -1181,58 +1059,13 @@ export const tasks = [
   { id: 't19', name: '频谱监测数据完整性校验', systemId: 'sys-ew', moduleId: byName('sys-ew', '频谱监测模块'), status: '异常', time: '2026-06-24 10:20:00', remark: '频谱快照存在间歇性丢帧，需排查' },
   // 无人机管控
   { id: 't20', name: '飞控遥测数据帧校验', systemId: 'sys-uav', moduleId: byName('sys-uav', '飞行控制模块'), status: '执行中', time: '2026-06-24 11:10:00', remark: '遥测帧各字段值域与实物传感器交叉验证' },
-  { id: 't21', name: '载荷控制响应测试', systemId: 'sys-uav', moduleId: byName('sys-uav', '任务载荷模块'), status: '已完成', time: '2026-06-24 10:00:00', remark: '模式切换延迟 < 100ms，变焦响应正常' },
+  { id: 't21', name: '载荷控制接收测试', systemId: 'sys-uav', moduleId: byName('sys-uav', '任务载荷模块'), status: '已完成', time: '2026-06-24 10:00:00', remark: '模式切换延迟 < 100ms，变焦接收正常' },
   { id: 't22', name: '图像流质量评估', systemId: 'sys-uav', moduleId: byName('sys-uav', '图像接收模块'), status: '执行中', time: '2026-06-24 10:45:00', remark: '高清图传丢包率与延迟测试' },
   // 指挥控制
   { id: 't23', name: '态势融合实时性测试', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'), status: '执行中', time: '2026-06-24 11:15:00', remark: '多源数据融合延迟 ≤ 1s 验证' },
   { id: 't24', name: '作战方案评估打分', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '作战筹划模块'), status: '待确认', time: '2026-06-24 10:30:00', remark: '3 套方案评分排序，待指挥员确认' },
   { id: 't25', name: '指令下发全链路测试', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '指令下发模块'), status: '已完成', time: '2026-06-24 09:55:00', remark: '指令从生成到接收确认全链路 < 2s' },
   { id: 't26', name: '操作日志合规审计', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), status: '已完成', time: '2026-06-24 08:45:00', remark: '本周操作日志全量审计完成' },
-  // ── MQ 相关测试任务 ──
-  { id: 't27', name: '挂载变更消息投递测试', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), ruleSetId: 'rs-mount-change-mq', status: '执行中', time: '2026-06-25 09:00:00', remark: '验证 RabbitMQ 挂载变更通知的投递时效与消息完整性',
-    mqTest: {
-      enabled: true,
-      dimensions: ['broker_health', 'producer_connect', 'consumer_connect'],
-      brokerHealth: { enabled: true, timeout: 3000 },
-      producer: { enabled: true, mode: 'active', triggerUrl: 'http://192.168.10.21:8081/api/mount/notify', traceIdField: 'test_trace_id', listenQueue: 'mount.change', waitTimeout: 8000, passiveWindow: 300, messageTag: 'connectivity_check' },
-      consumer: { enabled: true, expectedConsumerCount: 3, backlogThreshold: 500, checkInterval: 30 },
-      schedule: { interval: 5, unit: 'm' },
-      alertThreshold: { consecutiveFailures: 2 },
-    }
-  },
-  { id: 't28', name: '航迹数据分发有序性验证', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), ruleSetId: 'rs-track-data-mq', status: '待确认', time: '2026-06-25 10:30:00', remark: '验证 Kafka 同一分区内航迹消息按时间戳升序到达',
-    mqTest: {
-      enabled: true,
-      dimensions: ['broker_health', 'producer_connect', 'consumer_connect'],
-      brokerHealth: { enabled: true, timeout: 5000 },
-      producer: { enabled: true, mode: 'passive', triggerUrl: '', traceIdField: 'track_id', listenQueue: 'track-data', waitTimeout: 12000, passiveWindow: 600, messageTag: 'track_update' },
-      consumer: { enabled: true, expectedConsumerCount: 4, backlogThreshold: 2000, checkInterval: 60 },
-      schedule: { interval: 10, unit: 'm' },
-      alertThreshold: { consecutiveFailures: 3 },
-    }
-  },
-  { id: 't29', name: '告警事件消费吞吐测试', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), status: '已完成', time: '2026-06-24 15:00:00', remark: 'Kafka alert-events 消费吞吐量 >500 msg/s，满足要求',
-    mqTest: {
-      enabled: true,
-      dimensions: ['broker_health', 'producer_connect', 'consumer_connect'],
-      brokerHealth: { enabled: true, timeout: 3000 },
-      producer: { enabled: true, mode: 'active', triggerUrl: 'http://192.168.80.10:9090/api/alert/test', traceIdField: 'alert_id', listenQueue: 'alert-events', waitTimeout: 5000, passiveWindow: 300, messageTag: 'alert_test' },
-      consumer: { enabled: true, expectedConsumerCount: 6, backlogThreshold: 1000, checkInterval: 30 },
-      schedule: { interval: 15, unit: 'm' },
-      alertThreshold: { consecutiveFailures: 2 },
-    }
-  },
-  { id: 't30', name: '态势广播消息过期检测', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'), status: '执行中', time: '2026-06-25 11:00:00', remark: '检测 RabbitMQ 态势更新广播中消息过期(TTL=60s)比例',
-    mqTest: {
-      enabled: true,
-      dimensions: ['broker_health', 'producer_connect'],
-      brokerHealth: { enabled: true, timeout: 3000 },
-      producer: { enabled: true, mode: 'passive', triggerUrl: '', traceIdField: 'msg_id', listenQueue: 'situation-exchange', waitTimeout: 10000, passiveWindow: 120, messageTag: 'situation_update' },
-      consumer: { enabled: false, expectedConsumerCount: 1, backlogThreshold: 1000, checkInterval: 60 },
-      schedule: { interval: 5, unit: 'm' },
-      alertThreshold: { consecutiveFailures: 2 },
-    }
-  },
 ]
 
 /* ────────────────────────────────────────────
@@ -1242,20 +1075,20 @@ export const ruleSets = [
   // ── 1. 武器管理 · 查询设备状态 ──
   {
     id: 'rs-weapon-status',
-    name: '设备状态响应基础规则集',
+    name: '设备状态接收基础规则集',
     systemId: 'sys-weapon',
     moduleId: byName('sys-weapon', '武器管理模块'),
     status: 'enabled',
-    desc: '由查询设备状态接口自动生成，覆盖类型、范围、边界、越界、超时与格式判定。',
+    desc: '由查询设备状态报文自动生成，覆盖类型、范围、边界、越界、超时与格式判定。',
     createdAt: '2026-06-24',
     updatedAt: '2026-06-24 10:30',
     rules: [
       { id: 'r-type-code', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32' }, desc: '状态码必须为 int32' },
       { id: 'r-range-code', type: 'range', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32', min: -2147483648, max: 2147483647 }, desc: '状态码取值不得超出 int32 范围' },
       { id: 'r-boundary-code', type: 'boundary', enabled: true, level: 'warning', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32', min: -2147483648, max: 2147483647, boundaryMode: 'inclusive' }, desc: '命中上下边界时给出提醒' },
-      { id: 'r-overflow-payload', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.payload', fieldName: 'payload' }, params: { required: true, maxLength: 256 }, desc: '响应载荷字段必须存在且长度受控' },
-      { id: 'r-timeout-status', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '查询设备状态', fieldPath: '', fieldName: '' }, params: { timeoutMs: 500 }, desc: '接口响应时延不得超过 500ms' },
-      { id: 'r-format-status', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: '', fieldName: '' }, params: { sampleType: 'json' }, desc: '响应结构必须是合法 JSON / 结构体对象' },
+      { id: 'r-overflow-payload', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.payload', fieldName: 'payload' }, params: { required: true, maxLength: 256 }, desc: '接收载荷字段必须存在且长度受控' },
+      { id: 'r-timeout-status', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '查询设备状态', fieldPath: '', fieldName: '' }, params: { timeoutMs: 500 }, desc: '报文接收时延不得超过 500ms' },
+      { id: 'r-format-status', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: '', fieldName: '' }, params: { sampleType: 'json' }, desc: '接收结构必须是合法 JSON / 结构体对象' },
     ]
   },
 
@@ -1266,7 +1099,7 @@ export const ruleSets = [
     systemId: 'sys-weapon',
     moduleId: byName('sys-weapon', '弹药状态模块'),
     status: 'enabled',
-    desc: '覆盖弹药余量响应各字段的类型、范围、一致性与超时校验。',
+    desc: '覆盖弹药余量接收各字段的类型、范围、一致性与超时校验。',
     createdAt: '2026-06-24',
     updatedAt: '2026-06-24 11:00',
     rules: [
@@ -1274,7 +1107,7 @@ export const ruleSets = [
       { id: 'r-ammo-range-total', type: 'range', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '上报弹药余量', fieldPath: 'response.total', fieldName: 'total' }, params: { dataType: 'uint16', min: 0, max: 65535 }, desc: '弹药总量不得超出 uint16 范围' },
       { id: 'r-ammo-range-avail', type: 'range', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '上报弹药余量', fieldPath: 'response.available', fieldName: 'available' }, params: { dataType: 'uint16', min: 0, max: 65535 }, desc: '可用量不得超出 uint16 范围' },
       { id: 'r-ammo-range-typeA', type: 'range', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '上报弹药余量', fieldPath: 'response.detail.typeA', fieldName: 'typeA' }, params: { dataType: 'uint16', min: 0, max: 9999 }, desc: 'A 型弹药余量合理范围 0~9999' },
-      { id: 'r-ammo-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '上报弹药余量', fieldPath: '', fieldName: '' }, params: { timeoutMs: 800 }, desc: '弹药余量上报响应时延不得超过 800ms' },
+      { id: 'r-ammo-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '上报弹药余量', fieldPath: '', fieldName: '' }, params: { timeoutMs: 800 }, desc: '弹药余量上报接收时延不得超过 800ms' },
     ]
   },
 
@@ -1285,7 +1118,7 @@ export const ruleSets = [
     systemId: 'sys-weapon',
     moduleId: byName('sys-weapon', '挂载检测模块'),
     status: 'enabled',
-    desc: '校验挂载状态响应中挂点编号、载荷类型、锁定状态等字段。',
+    desc: '校验挂载状态接收中挂点编号、载荷类型、锁定状态等字段。',
     createdAt: '2026-06-25',
     updatedAt: '2026-06-25 09:15',
     rules: [
@@ -1293,7 +1126,7 @@ export const ruleSets = [
       { id: 'r-pylon-range-loadType', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '挂载状态查询', fieldPath: 'response.pylonList.loadType', fieldName: 'loadType' }, params: { dataType: 'uint8', min: 0, max: 15 }, desc: '载荷类型编码范围 0~15' },
       { id: 'r-pylon-range-locked', type: 'range', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '挂载状态查询', fieldPath: 'response.pylonList.locked', fieldName: 'locked' }, params: { dataType: 'uint8', min: 0, max: 1 }, desc: '锁定状态仅允许 0（未锁定）或 1（已锁定）' },
       { id: 'r-pylon-overflow-raw', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '挂载状态查询', fieldPath: 'response.rawFrame', fieldName: 'rawFrame' }, params: { required: true, maxLength: 512 }, desc: '原始识别帧必须存在且长度不超过 512 字节' },
-      { id: 'r-pylon-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '挂载状态查询', fieldPath: '', fieldName: '' }, params: { timeoutMs: 600 }, desc: '挂载状态查询响应时延不得超过 600ms' },
+      { id: 'r-pylon-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '挂载状态查询', fieldPath: '', fieldName: '' }, params: { timeoutMs: 600 }, desc: '挂载状态查询接收时延不得超过 600ms' },
     ]
   },
 
@@ -1304,7 +1137,7 @@ export const ruleSets = [
     systemId: 'sys-fire',
     moduleId: byName('sys-fire', '火控解算模块'),
     status: 'enabled',
-    desc: '覆盖火控解算响应结果码、方案文件与原始帧的完整性校验。',
+    desc: '覆盖火控解算接收结果码、方案文件与原始帧的完整性校验。',
     createdAt: '2026-06-24',
     updatedAt: '2026-06-24 14:20',
     rules: [
@@ -1313,14 +1146,14 @@ export const ruleSets = [
       { id: 'r-fire-boundary-result', type: 'boundary', enabled: true, level: 'warning', source: 'auto', target: { interfaceName: '目标分配解算', fieldPath: 'response.result', fieldName: 'result' }, params: { dataType: 'int32', min: 0, max: 255, boundaryMode: 'inclusive' }, desc: '解算结果码命中边界值时提醒' },
       { id: 'r-fire-overflow-plan', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '目标分配解算', fieldPath: 'response.plan', fieldName: 'plan' }, params: { required: true, maxLength: 4096 }, desc: '分配方案文件必须存在且不超过 4096 字节' },
       { id: 'r-fire-overflow-raw', type: 'overflow', enabled: true, level: 'warning', source: 'auto', target: { interfaceName: '目标分配解算', fieldPath: 'response.raw', fieldName: 'raw' }, params: { required: false, maxLength: 1024 }, desc: '原始解算帧长度不超过 1024 字节' },
-      { id: 'r-fire-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '目标分配解算', fieldPath: '', fieldName: '' }, params: { timeoutMs: 300 }, desc: '火控解算响应时延不得超过 300ms（实时性要求高）' },
+      { id: 'r-fire-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '目标分配解算', fieldPath: '', fieldName: '' }, params: { timeoutMs: 300 }, desc: '火控解算接收时延不得超过 300ms（实时性要求高）' },
     ]
   },
 
   // ── 5. 目标跟踪 · 航迹订阅 ──
   {
     id: 'rs-track-sub',
-    name: '航迹订阅响应校验规则集',
+    name: '航迹订阅接收校验规则集',
     systemId: 'sys-fire',
     moduleId: byName('sys-fire', '目标跟踪模块'),
     status: 'enabled',
@@ -1331,7 +1164,7 @@ export const ruleSets = [
       { id: 'r-track-type-sub', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '航迹订阅', fieldPath: 'response.subscribed', fieldName: 'subscribed' }, params: { dataType: 'uint8' }, desc: '成功订阅数必须为 uint8' },
       { id: 'r-track-range-sub', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹订阅', fieldPath: 'response.subscribed', fieldName: 'subscribed' }, params: { dataType: 'uint8', min: 0, max: 64 }, desc: '单次最多订阅 64 条航迹' },
       { id: 'r-track-type-sid', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '航迹订阅', fieldPath: 'response.sessionId', fieldName: 'sessionId' }, params: { dataType: 'uint32' }, desc: '会话标识必须为 uint32' },
-      { id: 'r-track-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹订阅', fieldPath: '', fieldName: '' }, params: { timeoutMs: 400 }, desc: '航迹订阅响应时延不得超过 400ms' },
+      { id: 'r-track-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹订阅', fieldPath: '', fieldName: '' }, params: { timeoutMs: 400 }, desc: '航迹订阅接收时延不得超过 400ms' },
     ]
   },
 
@@ -1342,23 +1175,23 @@ export const ruleSets = [
     systemId: 'sys-radar',
     moduleId: byName('sys-radar', '天线控制模块'),
     status: 'enabled',
-    desc: '覆盖天线方位角、俯仰角范围约束及响应完整性校验。',
+    desc: '覆盖天线方位角、俯仰角范围约束及接收完整性校验。',
     createdAt: '2026-06-24',
     updatedAt: '2026-06-25 10:00',
     rules: [
-      { id: 'r-ant-type-code', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '天线指向控制', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32' }, desc: '响应状态码必须为 int32' },
+      { id: 'r-ant-type-code', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '天线指向控制', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32' }, desc: '接收状态码必须为 int32' },
       { id: 'r-ant-range-az', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '天线指向控制', fieldPath: 'response.actualAz', fieldName: 'actualAz' }, params: { dataType: 'float', min: 0, max: 360 }, desc: '实际方位角范围 0°~360°' },
       { id: 'r-ant-range-el', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '天线指向控制', fieldPath: 'response.actualEl', fieldName: 'actualEl' }, params: { dataType: 'float', min: -90, max: 90 }, desc: '实际俯仰角范围 -90°~90°' },
       { id: 'r-ant-boundary-az', type: 'boundary', enabled: true, level: 'warning', source: 'auto', target: { interfaceName: '天线指向控制', fieldPath: 'response.actualAz', fieldName: 'actualAz' }, params: { dataType: 'float', min: 0, max: 360, boundaryMode: 'inclusive' }, desc: '方位角到达 0°/360° 边界时提醒' },
       { id: 'r-ant-overflow-code', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '天线指向控制', fieldPath: 'response.code', fieldName: 'code' }, params: { required: true, maxLength: 4 }, desc: '状态码字段必须存在' },
-      { id: 'r-ant-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '天线指向控制', fieldPath: '', fieldName: '' }, params: { timeoutMs: 200 }, desc: '天线伺服响应时延不得超过 200ms（阶跃响应要求）' },
+      { id: 'r-ant-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '天线指向控制', fieldPath: '', fieldName: '' }, params: { timeoutMs: 200 }, desc: '天线伺服接收时延不得超过 200ms（阶跃接收要求）' },
     ]
   },
 
-  // ── 7. 目标识别 · 目标识别请求 ──
+  // ── 7. 目标识别 · 目标识别发送 ──
   {
     id: 'rs-target-identify',
-    name: '目标识别响应校验规则集',
+    name: '目标识别接收校验规则集',
     systemId: 'sys-radar',
     moduleId: byName('sys-radar', '目标识别模块'),
     status: 'draft',
@@ -1366,43 +1199,43 @@ export const ruleSets = [
     createdAt: '2026-06-25',
     updatedAt: '2026-06-25 14:30',
     rules: [
-      { id: 'r-tgt-type-cat', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '目标识别请求', fieldPath: 'response.category', fieldName: 'category' }, params: { dataType: 'uint8' }, desc: '目标类别必须为 uint8' },
-      { id: 'r-tgt-range-cat', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '目标识别请求', fieldPath: 'response.category', fieldName: 'category' }, params: { dataType: 'uint8', min: 0, max: 10 }, desc: '目标类别编码 0~10（含未知/战斗机/运输机等）' },
-      { id: 'r-tgt-range-conf', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '目标识别请求', fieldPath: 'response.confidence', fieldName: 'confidence' }, params: { dataType: 'uint8', min: 0, max: 100 }, desc: '置信度百分比范围 0~100' },
-      { id: 'r-tgt-boundary-conf', type: 'boundary', enabled: true, level: 'warning', source: 'auto', target: { interfaceName: '目标识别请求', fieldPath: 'response.confidence', fieldName: 'confidence' }, params: { dataType: 'uint8', min: 0, max: 100, boundaryMode: 'inclusive' }, desc: '置信度为 0 或 100 时提醒' },
-      { id: 'r-tgt-range-rcs', type: 'range', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '目标识别请求', fieldPath: 'response.rcsDb', fieldName: 'rcsDb' }, params: { dataType: 'float', min: -50, max: 50 }, desc: 'RCS dBsm 合理范围 -50~50' },
-      { id: 'r-tgt-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '目标识别请求', fieldPath: '', fieldName: '' }, params: { timeoutMs: 1000 }, desc: '目标识别响应时延不得超过 1000ms' },
-      { id: 'r-tgt-format', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '目标识别请求', fieldPath: '', fieldName: '' }, params: { sampleType: 'json' }, desc: '响应结构必须是合法 JSON' },
+      { id: 'r-tgt-type-cat', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '目标识别发送', fieldPath: 'response.category', fieldName: 'category' }, params: { dataType: 'uint8' }, desc: '目标类别必须为 uint8' },
+      { id: 'r-tgt-range-cat', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '目标识别发送', fieldPath: 'response.category', fieldName: 'category' }, params: { dataType: 'uint8', min: 0, max: 10 }, desc: '目标类别编码 0~10（含未知/战斗机/运输机等）' },
+      { id: 'r-tgt-range-conf', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '目标识别发送', fieldPath: 'response.confidence', fieldName: 'confidence' }, params: { dataType: 'uint8', min: 0, max: 100 }, desc: '置信度百分比范围 0~100' },
+      { id: 'r-tgt-boundary-conf', type: 'boundary', enabled: true, level: 'warning', source: 'auto', target: { interfaceName: '目标识别发送', fieldPath: 'response.confidence', fieldName: 'confidence' }, params: { dataType: 'uint8', min: 0, max: 100, boundaryMode: 'inclusive' }, desc: '置信度为 0 或 100 时提醒' },
+      { id: 'r-tgt-range-rcs', type: 'range', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '目标识别发送', fieldPath: 'response.rcsDb', fieldName: 'rcsDb' }, params: { dataType: 'float', min: -50, max: 50 }, desc: 'RCS dBsm 合理范围 -50~50' },
+      { id: 'r-tgt-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '目标识别发送', fieldPath: '', fieldName: '' }, params: { timeoutMs: 1000 }, desc: '目标识别接收时延不得超过 1000ms' },
+      { id: 'r-tgt-format', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '目标识别发送', fieldPath: '', fieldName: '' }, params: { sampleType: 'json' }, desc: '接收结构必须是合法 JSON' },
     ]
   },
 
   // ── 8. 卫星通信 · 卫通建链 ──
   {
     id: 'rs-sat-link',
-    name: '卫通建链响应校验规则集',
+    name: '卫通建链接收校验规则集',
     systemId: 'sys-comm',
     moduleId: byName('sys-comm', '卫星通信模块'),
     status: 'enabled',
-    desc: '校验卫通建链响应的状态码、信号强度与链路速率。',
+    desc: '校验卫通建链接收的状态码、信号强度与链路速率。',
     createdAt: '2026-06-25',
     updatedAt: '2026-06-25 16:00',
     rules: [
       { id: 'r-sat-type-code', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '卫通建链', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32' }, desc: '状态码必须为 int32' },
       { id: 'r-sat-range-signal', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '卫通建链', fieldPath: 'response.signalStrength', fieldName: 'signalStrength' }, params: { dataType: 'int16', min: -120, max: 0 }, desc: '信号强度范围 -120~0 dBm' },
       { id: 'r-sat-range-rate', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '卫通建链', fieldPath: 'response.linkRate', fieldName: 'linkRate' }, params: { dataType: 'uint32', min: 0, max: 100000000 }, desc: '链路速率 0~100Mbps' },
-      { id: 'r-sat-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '卫通建链', fieldPath: '', fieldName: '' }, params: { timeoutMs: 5000 }, desc: '卫通建链响应时延不得超过 5000ms（卫星链路延迟容忍度高）' },
-      { id: 'r-sat-format', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '卫通建链', fieldPath: '', fieldName: '' }, params: { sampleType: 'hex' }, desc: '卫通响应帧格式必须合法' },
+      { id: 'r-sat-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '卫通建链', fieldPath: '', fieldName: '' }, params: { timeoutMs: 5000 }, desc: '卫通建链接收时延不得超过 5000ms（卫星链路延迟容忍度高）' },
+      { id: 'r-sat-format', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '卫通建链', fieldPath: '', fieldName: '' }, params: { sampleType: 'hex' }, desc: '卫通接收帧格式必须合法' },
     ]
   },
 
   // ── 9. 惯性导航 · 惯导校准 ──
   {
     id: 'rs-ins-calibrate',
-    name: '惯导校准响应校验规则集',
+    name: '惯导校准接收校验规则集',
     systemId: 'sys-nav',
     moduleId: byName('sys-nav', '惯性导航模块'),
     status: 'enabled',
-    desc: '校验惯导校准响应的状态码、预计就绪时间与零偏漂移。',
+    desc: '校验惯导校准接收的状态码、预计就绪时间与零偏漂移。',
     createdAt: '2026-06-24',
     updatedAt: '2026-06-24 16:45',
     rules: [
@@ -1410,8 +1243,8 @@ export const ruleSets = [
       { id: 'r-ins-range-ready', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '惯导校准', fieldPath: 'response.readyTime', fieldName: 'readyTime' }, params: { dataType: 'uint16', min: 0, max: 600 }, desc: '预计就绪时间 0~600s（10分钟内）' },
       { id: 'r-ins-range-drift', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '惯导校准', fieldPath: 'response.drift', fieldName: 'drift' }, params: { dataType: 'float', min: -10, max: 10 }, desc: '零偏漂移合理范围 -10~10' },
       { id: 'r-ins-boundary-drift', type: 'boundary', enabled: true, level: 'warning', source: 'auto', target: { interfaceName: '惯导校准', fieldPath: 'response.drift', fieldName: 'drift' }, params: { dataType: 'float', min: -10, max: 10, boundaryMode: 'inclusive' }, desc: '零偏漂移接近边界时提醒' },
-      { id: 'r-ins-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '惯导校准', fieldPath: '', fieldName: '' }, params: { timeoutMs: 2000 }, desc: '惯导校准响应时延不得超过 2000ms' },
-      { id: 'r-ins-format', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '惯导校准', fieldPath: '', fieldName: '' }, params: { sampleType: 'json' }, desc: '响应结构必须是合法 JSON' },
+      { id: 'r-ins-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '惯导校准', fieldPath: '', fieldName: '' }, params: { timeoutMs: 2000 }, desc: '惯导校准接收时延不得超过 2000ms' },
+      { id: 'r-ins-format', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '惯导校准', fieldPath: '', fieldName: '' }, params: { sampleType: 'json' }, desc: '接收结构必须是合法 JSON' },
     ]
   },
 
@@ -1422,7 +1255,7 @@ export const ruleSets = [
     systemId: 'sys-nav',
     moduleId: byName('sys-nav', '卫星定位模块'),
     status: 'enabled',
-    desc: '校验定位响应中经纬度、海拔、定位状态等字段的合理性。',
+    desc: '校验定位接收中经纬度、海拔、定位状态等字段的合理性。',
     createdAt: '2026-06-25',
     updatedAt: '2026-06-25 11:20',
     rules: [
@@ -1431,7 +1264,7 @@ export const ruleSets = [
       { id: 'r-pos-range-alt', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '定位数据查询', fieldPath: 'response.alt', fieldName: 'alt' }, params: { dataType: 'float', min: -500, max: 50000 }, desc: '海拔范围 -500m~50000m' },
       { id: 'r-pos-range-fix', type: 'range', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '定位数据查询', fieldPath: 'response.fixStatus', fieldName: 'fixStatus' }, params: { dataType: 'uint8', min: 0, max: 5 }, desc: '定位状态枚举值 0~5' },
       { id: 'r-pos-range-sat', type: 'range', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '定位数据查询', fieldPath: 'response.satCount', fieldName: 'satCount' }, params: { dataType: 'uint8', min: 0, max: 64 }, desc: '可见星数 0~64（GPS+BDS）' },
-      { id: 'r-pos-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '定位数据查询', fieldPath: '', fieldName: '' }, params: { timeoutMs: 1000 }, desc: '定位数据查询响应时延不得超过 1000ms' },
+      { id: 'r-pos-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '定位数据查询', fieldPath: '', fieldName: '' }, params: { timeoutMs: 1000 }, desc: '定位数据查询接收时延不得超过 1000ms' },
     ]
   },
 
@@ -1442,57 +1275,17 @@ export const ruleSets = [
     systemId: 'sys-ew',
     moduleId: byName('sys-ew', '干扰执行模块'),
     status: 'draft',
-    desc: '校验干扰任务下发响应的状态码与任务编号。',
+    desc: '校验干扰任务下发接收的状态码与任务编号。',
     createdAt: '2026-06-25',
     updatedAt: '2026-06-25 15:00',
     rules: [
       { id: 'r-jam-type-code', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '干扰任务下发', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32' }, desc: '状态码必须为 int32' },
       { id: 'r-jam-overflow-taskId', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '干扰任务下发', fieldPath: 'response.taskId', fieldName: 'taskId' }, params: { required: true, maxLength: 4 }, desc: '干扰任务编号必须存在' },
-      { id: 'r-jam-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '干扰任务下发', fieldPath: '', fieldName: '' }, params: { timeoutMs: 500 }, desc: '干扰任务下发响应时延不得超过 500ms' },
-      { id: 'r-jam-format', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '干扰任务下发', fieldPath: '', fieldName: '' }, params: { sampleType: 'hex' }, desc: '干扰指令响应帧格式必须合法' },
+      { id: 'r-jam-timeout', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '干扰任务下发', fieldPath: '', fieldName: '' }, params: { timeoutMs: 500 }, desc: '干扰任务下发接收时延不得超过 500ms' },
+      { id: 'r-jam-format', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '干扰任务下发', fieldPath: '', fieldName: '' }, params: { sampleType: 'hex' }, desc: '干扰指令接收帧格式必须合法' },
     ]
   },
 
-  // ── 12. 挂载检测 · 挂载变更通知（MQ） ──
-  {
-    id: 'rs-mount-change-mq',
-    name: '挂载变更通知消息校验规则集',
-    systemId: 'sys-weapon',
-    moduleId: byName('sys-weapon', '挂载检测模块'),
-    status: 'enabled',
-    desc: '校验 RabbitMQ 挂载变更通知消息的字段完整性、值域与投递时效。',
-    createdAt: '2026-06-25',
-    updatedAt: '2026-06-25 14:00',
-    rules: [
-      { id: 'r-mq-mount-type-evt', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '挂载变更通知', fieldPath: 'response.messageId', fieldName: 'messageId' }, params: { dataType: 'utf8' }, desc: 'messageId 必须为字符串' },
-      { id: 'r-mq-mount-range-pylon', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '挂载变更通知', fieldPath: 'response.pylonNo', fieldName: 'pylonNo' }, params: { dataType: 'uint8', min: 1, max: 12 }, desc: '挂点号范围 1~12' },
-      { id: 'r-mq-mount-range-aircraft', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '挂载变更通知', fieldPath: 'response.aircraftId', fieldName: 'aircraftId' }, params: { dataType: 'utf8', min: 1, max: 9999 }, desc: '飞机编号' },
-      { id: 'r-mq-mount-range-weight', type: 'range', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '挂载变更通知', fieldPath: 'response.weight', fieldName: 'weight' }, params: { dataType: 'uint16', min: 0, max: 9999 }, desc: '载荷重量 0~9999 kg' },
-      { id: 'r-mq-mount-overflow-evt', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '挂载变更通知', fieldPath: 'response.messageId', fieldName: 'messageId' }, params: { required: true, maxLength: 36 }, desc: 'messageId 必须存在且长度不超过 36' },
-      { id: 'r-mq-mount-delivery', type: 'delivery', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '挂载变更通知', fieldPath: '', fieldName: '' }, params: { timeoutMs: 3000 }, desc: '挂载变更消息必须在 3s 内投递' },
-      { id: 'r-mq-mount-ordering', type: 'ordering', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '挂载变更通知', fieldPath: '', fieldName: '' }, params: { expectedOrder: ['mount', 'unmount', 'replace'] }, desc: '变更事件应按挂载→卸载→更换顺序到达' },
-    ]
-  },
-
-  // ── 13. 目标跟踪 · 航迹数据分发（MQ） ──
-  {
-    id: 'rs-track-data-mq',
-    name: '航迹数据分发消息校验规则集',
-    systemId: 'sys-fire',
-    moduleId: byName('sys-fire', '目标跟踪模块'),
-    status: 'enabled',
-    desc: '校验 Kafka 航迹数据分发消息的字段值域与投递时效。',
-    createdAt: '2026-06-25',
-    updatedAt: '2026-06-25 15:30',
-    rules: [
-      { id: 'r-mq-track-range-id', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹数据分发', fieldPath: 'response.trackId', fieldName: 'trackId' }, params: { dataType: 'uint16', min: 1, max: 65535 }, desc: '航迹编号范围 1~65535' },
-      { id: 'r-mq-track-range-az', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹数据分发', fieldPath: 'response.position.azimuth', fieldName: 'azimuth' }, params: { dataType: 'float32', min: 0, max: 360 }, desc: '方位角 0°~360°' },
-      { id: 'r-mq-track-range-dist', type: 'range', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹数据分发', fieldPath: 'response.position.distance', fieldName: 'distance' }, params: { dataType: 'float32', min: 0, max: 500000 }, desc: '距离 0~500000m' },
-      { id: 'r-mq-track-range-conf', type: 'range', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '航迹数据分发', fieldPath: 'response.confidence', fieldName: 'confidence' }, params: { dataType: 'float32', min: 0, max: 1 }, desc: '置信度 0~1' },
-      { id: 'r-mq-track-delivery', type: 'delivery', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '航迹数据分发', fieldPath: '', fieldName: '' }, params: { timeoutMs: 2000 }, desc: '航迹数据必须在 2s 内投递' },
-      { id: 'r-mq-track-ordering', type: 'ordering', enabled: true, level: 'warning', source: 'manual', target: { interfaceName: '航迹数据分发', fieldPath: '', fieldName: '' }, params: { expectedOrder: [] }, desc: '同一航迹的消息应按时间戳升序到达' },
-    ]
-  },
 ]
 
 /* ────────────────────────────────────────────
@@ -1504,55 +1297,39 @@ export const alerts = [
   { id: 'a02', type: '格式错误', iface: 'WM-006', level: '高', state: '已转派', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '弹药状态模块'), resolvedTime: '2026-06-24 09:58:00', remark: '帧头校验码不匹配，已转派固件组排查版本一致性' },
   { id: 'a03', type: '格式错误', iface: 'PY-012', level: '中', state: '已处理', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), resolvedTime: '2026-06-24 10:30:00', remark: '载荷类型字段偶发乱码，更换线缆后恢复' },
   // 火控指挥
-  { id: 'a04', type: '响应超时', iface: 'FC-017', level: '中', state: '已记录', systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'), resolvedTime: '', remark: '连续 3 次超时 > 500ms，链路不稳定暂无法处理' },
-  { id: 'a05', type: '响应超时', iface: '指挥链路模块', level: '中', state: '自动恢复', systemId: 'sys-fire', moduleId: byName('sys-fire', '指挥链路模块'), resolvedTime: '2026-06-24 08:47:00', remark: '心跳自动恢复，根因待排查' },
+  { id: 'a04', type: '接收超时', iface: 'FC-017', level: '中', state: '已记录', systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'), resolvedTime: '', remark: '连续 3 次超时 > 500ms，链路不稳定暂无法处理' },
+  { id: 'a05', type: '接收超时', iface: '指挥链路模块', level: '中', state: '自动恢复', systemId: 'sys-fire', moduleId: byName('sys-fire', '指挥链路模块'), resolvedTime: '2026-06-24 08:47:00', remark: '心跳自动恢复，根因待排查' },
   { id: 'a06', type: '字段越界', iface: 'FC-025', level: '中', state: '已处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'), resolvedTime: '2026-06-24 10:22:00', remark: '重传机制触发后恢复正常' },
-  { id: 'a07', type: '字段越界', iface: 'TK-031', level: '高', state: '待处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), resolvedTime: '', remark: '距离字段值 520000 超过协议上限 500000' },
+  { id: 'a07', type: '字段越界', iface: 'TK-031', level: '高', state: '待处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), resolvedTime: '', remark: '距离字段值 520000 超过字段上限 500000' },
   // 雷达探测
   { id: 'a08', type: '格式错误', iface: 'RD-001', level: '高', state: '待处理', systemId: 'sys-radar', moduleId: byName('sys-radar', '信号处理模块'), resolvedTime: '', remark: '回波帧同步头 0xDEADBEEF 出现错位，疑似字节序问题' },
-  { id: 'a09', type: '响应超时', iface: 'AN-008', level: '中', state: '已处理', systemId: 'sys-radar', moduleId: byName('sys-radar', '天线控制模块'), resolvedTime: '2026-06-24 10:45:00', remark: '伺服响应超时 350ms，调整 PID 参数后恢复' },
-  { id: 'a10', type: '格式错误', iface: 'IR-015', level: '高', state: '已转派', systemId: 'sys-radar', moduleId: byName('sys-radar', '目标识别模块'), resolvedTime: '', remark: 'RCS 字段长度与协议定义不符，需固件升级' },
+  { id: 'a09', type: '接收超时', iface: 'AN-008', level: '中', state: '已处理', systemId: 'sys-radar', moduleId: byName('sys-radar', '天线控制模块'), resolvedTime: '2026-06-24 10:45:00', remark: '伺服接收超时 350ms，调整 PID 参数后恢复' },
+  { id: 'a10', type: '格式错误', iface: 'IR-015', level: '高', state: '已转派', systemId: 'sys-radar', moduleId: byName('sys-radar', '目标识别模块'), resolvedTime: '', remark: 'RCS 字段长度与字段定义不符，需固件升级' },
   // 通信保障
-  { id: 'a11', type: '响应超时', iface: 'DL-003', level: '中', state: '自动恢复', systemId: 'sys-comm', moduleId: byName('sys-comm', '数据链模块'), resolvedTime: '2026-06-24 09:35:00', remark: '数据链心跳中断 12s 后自动恢复' },
-  { id: 'a12', type: '响应超时', iface: 'SAT-007', level: '高', state: '已记录', systemId: 'sys-comm', moduleId: byName('sys-comm', '卫星通信模块'), resolvedTime: '', remark: '卫通建链超时 > 30s，信号强度不足' },
+  { id: 'a11', type: '接收超时', iface: 'DL-003', level: '中', state: '自动恢复', systemId: 'sys-comm', moduleId: byName('sys-comm', '数据链模块'), resolvedTime: '2026-06-24 09:35:00', remark: '数据链心跳中断 12s 后自动恢复' },
+  { id: 'a12', type: '接收超时', iface: 'SAT-007', level: '高', state: '已记录', systemId: 'sys-comm', moduleId: byName('sys-comm', '卫星通信模块'), resolvedTime: '', remark: '卫通建链超时 > 30s，信号强度不足' },
   // 导航定位
   { id: 'a13', type: '字段越界', iface: 'INS-002', level: '中', state: '已修复', systemId: 'sys-nav', moduleId: byName('sys-nav', '惯性导航模块'), resolvedTime: '2026-06-24 09:15:00', remark: '陀螺 Z 轴零偏超限，重新校准后正常' },
   { id: 'a14', type: '字段越界', iface: 'GNSS-005', level: '中', state: '已处理', systemId: 'sys-nav', moduleId: byName('sys-nav', '卫星定位模块'), resolvedTime: '2026-06-24 10:50:00', remark: '遮挡环境丢星 3 颗，切换到 BDS 优先后恢复' },
   // 电子对抗
-  { id: 'a15', type: '字段越界', iface: 'EW-009', level: '高', state: '待处理', systemId: 'sys-ew', moduleId: byName('sys-ew', '侦察分析模块'), resolvedTime: '', remark: '中心频率字段值 19500MHz 超过协议上限 18000MHz' },
+  { id: 'a15', type: '字段越界', iface: 'EW-009', level: '高', state: '待处理', systemId: 'sys-ew', moduleId: byName('sys-ew', '侦察分析模块'), resolvedTime: '', remark: '中心频率字段值 19500MHz 超过字段上限 18000MHz' },
   { id: 'a16', type: '格式错误', iface: 'JAM-004', level: '高', state: '已修复', systemId: 'sys-ew', moduleId: byName('sys-ew', '干扰执行模块'), resolvedTime: '2026-06-24 10:10:00', remark: '干扰模式字段编码与实际执行不一致，已同步' },
   { id: 'a17', type: '字段越界', iface: 'SP-011', level: '中', state: '已处理', systemId: 'sys-ew', moduleId: byName('sys-ew', '频谱监测模块'), resolvedTime: '2026-06-24 10:25:00', remark: '频谱快照间歇丢帧，缓冲区溢出已扩容' },
   // 无人机管控
-  { id: 'a18', type: '响应超时', iface: 'UAV-001', level: '高', state: '已处理', systemId: 'sys-uav', moduleId: byName('sys-uav', '飞行控制模块'), resolvedTime: '2026-06-24 10:35:00', remark: '遥测帧下行延迟 800ms，优化编码后降至 50ms' },
-  { id: 'a19', type: '响应超时', iface: 'PL-006', level: '中', state: '自动恢复', systemId: 'sys-uav', moduleId: byName('sys-uav', '任务载荷模块'), resolvedTime: '2026-06-24 09:50:00', remark: '载荷控制心跳短暂中断后自动恢复' },
+  { id: 'a18', type: '接收超时', iface: 'UAV-001', level: '高', state: '已处理', systemId: 'sys-uav', moduleId: byName('sys-uav', '飞行控制模块'), resolvedTime: '2026-06-24 10:35:00', remark: '遥测帧下行延迟 800ms，优化编码后降至 50ms' },
+  { id: 'a19', type: '接收超时', iface: 'PL-006', level: '中', state: '自动恢复', systemId: 'sys-uav', moduleId: byName('sys-uav', '任务载荷模块'), resolvedTime: '2026-06-24 09:50:00', remark: '载荷控制心跳短暂中断后自动恢复' },
   { id: 'a20', type: '格式错误', iface: 'VID-003', level: '中', state: '已记录', systemId: 'sys-uav', moduleId: byName('sys-uav', '图像接收模块'), resolvedTime: '', remark: '图传码流偶发花屏，编码参数待优化' },
   // 指挥控制
   { id: 'a21', type: '字段越界', iface: 'SA-008', level: '中', state: '已修复', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'), resolvedTime: '2026-06-24 10:55:00', remark: '经度字段精度溢出，已扩展为 64 位' },
-  { id: 'a22', type: '响应超时', iface: 'PLN-002', level: '中', state: '已记录', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '作战筹划模块'), resolvedTime: '', remark: '方案生成超时 > 60s，算法优化中' },
+  { id: 'a22', type: '接收超时', iface: 'PLN-002', level: '中', state: '已记录', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '作战筹划模块'), resolvedTime: '', remark: '方案生成超时 > 60s，算法优化中' },
   { id: 'a23', type: '格式错误', iface: 'ORD-005', level: '高', state: '待处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '指令下发模块'), resolvedTime: '', remark: '指令帧 CRC 校验失败率 5%，排查链路质量' },
   { id: 'a24', type: '字段越界', iface: 'LOG-012', level: '中', state: '已处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '2026-06-24 11:00:00', remark: '日志写入高并发时偶发丢失，增加缓冲队列后恢复' },
-  // ── MQ 相关异常 ──
-  { id: 'a25', type: '响应超时', iface: 'weapon-exchange', level: '高', state: '已修复', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), resolvedTime: '2026-06-22 14:30:00', remark: 'RabbitMQ Broker 进程 OOM 重启，心跳超时 30s 后自动恢复' },
-  { id: 'a26', type: '投递校验', iface: 'alert-events', level: '中', state: '待处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '', remark: 'Kafka alert-events 分区 2 消费 lag 超过 5000 条，消费者吞吐量不足' },
-  { id: 'a27', type: '响应超时', iface: 'track-data', level: '高', state: '已处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), resolvedTime: '2026-06-23 16:20:00', remark: 'Kafka consumer group rebalance 导致短暂掉线，调整 session.timeout.ms 后稳定' },
-  { id: 'a28', type: '投递校验', iface: 'situation-exchange', level: '中', state: '已记录', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'), resolvedTime: '', remark: 'RabbitMQ 队列 TTL=60s，部分终端离线导致消息过期未消费' },
-  { id: 'a29', type: '投递校验', iface: 'mount.change', level: '高', state: '已处理', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), resolvedTime: '2026-06-24 10:15:00', remark: '挂载变更消息投递延迟 >3s，调整 prefetch_count 后恢复' },
-  { id: 'a30', type: '响应超时', iface: 'alert-events', level: '高', state: '已修复', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '2026-06-23 08:45:00', remark: 'Kafka Broker 磁盘满导致 partition leader 切换，扩容磁盘后恢复' },
-  { id: 'a31', type: '投递校验', iface: 'track-data', level: '高', state: '待处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), resolvedTime: '', remark: 'Kafka track-data 分区 0~2 消费 lag 累计超过 12000 条，消费者 GC 频繁' },
-  { id: 'a32', type: '顺序校验', iface: 'track-data', level: '中', state: '已处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), resolvedTime: '2026-06-24 15:30:00', remark: '同一航迹 T-1042 的 3 条消息到达顺序乱序，partition key 配置错误已修正' },
-  { id: 'a33', type: '响应超时', iface: 'situation-exchange', level: '中', state: '已处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'), resolvedTime: '2026-06-23 11:20:00', remark: 'RabbitMQ 消费者连接超时 60s 后被 Broker 主动断开，心跳间隔从 60s 调为 30s' },
-  { id: 'a34', type: '投递校验', iface: 'mount.change', level: '中', state: '已记录', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), resolvedTime: '', remark: 'RabbitMQ mount.change 队列 TTL=30s，挂载检测模块离线期间 47 条消息过期丢弃' },
-  { id: 'a35', type: '投递校验', iface: 'alert-events', level: '高', state: '已处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '2026-06-25 09:10:00', remark: '告警事件消息投递到 Kafka 后 ACK 超时，acks=all 改为 acks=1 后吞吐恢复' },
-  { id: 'a36', type: '响应超时', iface: 'track-data', level: '高', state: '待处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), resolvedTime: '', remark: 'Kafka Broker 192.168.20.47 节点 2 网络分区，ISR 缩减至 1，数据丢失风险' },
-  { id: 'a37', type: '投递校验', iface: 'situation-exchange', level: '低', state: '已处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'), resolvedTime: '2026-06-24 16:40:00', remark: 'RabbitMQ situation-fanout 队列短暂堆积 230 条，消费端扩容后 5min 内消化完毕' },
-  { id: 'a38', type: '顺序校验', iface: 'mount.change', level: '中', state: '已修复', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), resolvedTime: '2026-06-25 10:00:00', remark: 'RabbitMQ 单队列多消费者导致挂载变更消息乱序，改为单消费者 + 并发确认模式' },
-  { id: 'a39', type: '响应超时', iface: 'alert-events', level: '高', state: '待处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '', remark: 'Kafka consumer group cmd-audit-group 中 2/6 消费者因 OOM 退出，pending 堆积 3800 条' },
 ]
 
 /* ────────────────────────────────────────────
  *  六、执行历史 (Run History) —— 统计与可视化数据底座
  *  说明：执行编排的 store.history 为会话级且字段薄；此处提供一份数值化、
- *  可复算的历史执行记录，供【统计与可视化】聚合（请求量/时延/通过率/接口覆盖等）。
+ *  可复算的历史执行记录，供【统计与可视化】聚合（发送量/时延/通过率/报文覆盖等）。
  *  全部为可客观度量的字段，不含被测系统内部资源等无法获取的指标。
  * ──────────────────────────────────────────── */
 const _stClamp = (n, min, max) => Math.max(min, Math.min(max, n))
@@ -1568,7 +1345,7 @@ const _stDays = ['2026-06-19', '2026-06-20', '2026-06-21', '2026-06-22', '2026-0
 export const runHistory = []
 let _runSeq = 0
 interfaces.forEach((iface) => {
-  // 留出部分接口"未测"，让接口覆盖率有意义（非 100%）
+  // 留出部分报文"未测"，让报文覆盖率有意义（非 100%）
   if (_stRng() < 0.22) return
   const mod = nodes.find((n) => n.id === iface.moduleId)
   const runCount = 2 + (iface.systemId === 'sys-weapon' ? 2 : (_stRng() < 0.4 ? 1 : 0))
@@ -1594,7 +1371,7 @@ interfaces.forEach((iface) => {
       taskName: `${iface.name} 联试`,
       interfaceId: iface.id,
       iface: iface.name,
-      proto: (iface.path || '').startsWith('/') ? 'HTTP' : 'TCP',
+      proto: iface.transportType || 'OSE',
       startedAt: `${day} ${hh}:${mm}:00`,
       finishedAt: `${day} ${hh}:${_pad2(_sr(0, 59))}:30`,
       dateKey: day,
@@ -1612,101 +1389,3 @@ interfaces.forEach((iface) => {
   }
 })
 
-/* ── MQ 接口专属执行历史 ── */
-const _mqIfaces = [
-  { name: 'mount.change',         systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'),  taskId: 't27', taskName: '挂载变更消息投递测试',     brokerType: 'RabbitMQ' },
-  { name: 'track-data',           systemId: 'sys-fire',   moduleId: byName('sys-fire', '目标跟踪模块'),    taskId: 't28', taskName: '航迹数据分发有序性验证',   brokerType: 'Kafka' },
-  { name: 'alert-events',         systemId: 'sys-cmd',    moduleId: byName('sys-cmd', '日志审计模块'),     taskId: 't29', taskName: '告警事件消费吞吐测试',     brokerType: 'Kafka' },
-  { name: 'situation-exchange',   systemId: 'sys-cmd',    moduleId: byName('sys-cmd', '态势感知模块'),     taskId: 't30', taskName: '态势广播消息过期检测',     brokerType: 'RabbitMQ' },
-]
-_mqIfaces.forEach((mq) => {
-  const mod = nodes.find((n) => n.id === mq.moduleId)
-  const runCount = _sr(3, 6)
-  for (let k = 0; k < runCount; k++) {
-    const day = _stDays[_sr(0, _stDays.length - 1)]
-    const hh = _pad2(_sr(8, 18))
-    const mm = _pad2(_sr(0, 59))
-    const total = _sr(50, 300)
-    const abnormal = 0
-    const success = Math.max(0, total - abnormal)
-    const baseLat = _sr(8, 65)
-    const durations = Array.from({ length: 12 }, () =>
-      _stClamp(Math.round(baseLat + (_stRng() - 0.5) * baseLat * 0.8 + (_stRng() < 0.08 ? _sr(80, 250) : 0)), 2, 500)
-    )
-    const avgMs = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
-    const executionTime = _sr(10, 120)
-    runHistory.push({
-      id: `seedrun-mq-${++_runSeq}`,
-      systemId: mq.systemId,
-      moduleId: mq.moduleId,
-      moduleName: mod?.name || '',
-      taskId: mq.taskId,
-      taskName: mq.taskName,
-      interfaceId: '',
-      iface: mq.name,
-      proto: 'MQ',
-      startedAt: `${day} ${hh}:${mm}:00`,
-      finishedAt: `${day} ${hh}:${_pad2(_sr(0, 59))}:30`,
-      dateKey: day,
-      total,
-      success,
-      abnormal,
-      abnormalTypes: {},
-      failed: abnormal,
-      error: 0,
-      avgMs,
-      durations,
-      executionTime,
-      rps: Number((total / executionTime).toFixed(1)),
-    })
-  }
-})
-
-/* ── MQ 探测历史种子（供统计与可视化 MQ Tab 展示） ── */
-const _mqProbeDays = ['2026-06-19', '2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25']
-const _brokerNames = ['RabbitMQ Broker', 'Kafka Broker']
-const _brokerSystems = ['sys-weapon', 'sys-fire', 'sys-cmd', 'sys-cmd']
-const _brokerTypes = ['RabbitMQ', 'Kafka', 'Kafka', 'RabbitMQ']
-
-export const mqProbeHistory = []
-let _mqProbeSeq = 0
-_brokerSystems.forEach((sysId, bi) => {
-  const bType = _brokerTypes[bi]
-  const bName = bType === 'Kafka' ? `Kafka Broker (${sysId === 'sys-fire' ? '火控' : '指控'})` : `RabbitMQ Broker (${sysId === 'sys-weapon' ? '武器' : '指控'})`
-  _mqProbeDays.forEach((day) => {
-    // 每天每个 Broker 做 48 次探测（每 30 分钟一次）
-    for (let h = 0; h < 48; h++) {
-      const hh = _pad2(Math.floor(h / 2))
-      const mm = (h % 2) * 30
-      const l1Ms = _sr(1, 6)
-      const l2Ms = _sr(18, 85)
-      const l1Ok = _stRng() > 0.02
-      const l2Ok = l1Ok && _stRng() > 0.03
-      const l3Ok = l2Ok && _stRng() > 0.06
-      const l1Status = l1Ok ? 'pass' : 'fail'
-      const l2Status = l2Ok ? 'pass' : (l1Ok ? 'fail' : 'pending')
-      const l3Status = l3Ok ? 'pass' : (_stRng() > 0.4 ? 'warning' : 'fail')
-      const overall = l3Ok ? 'healthy' : (l3Status === 'warning' ? 'warning' : 'error')
-      const prodLatency = _sr(8, 72)
-      const prodOk = l1Ok && _stRng() > 0.05
-      const consumerOnline = l3Ok ? _sr(3, 8) : (l3Status === 'warning' ? _sr(1, 3) : 0)
-      const backlog = l3Ok ? _sr(0, 20) : (l3Status === 'warning' ? _sr(50, 500) : _sr(500, 5000))
-      mqProbeHistory.push({
-        id: `mqprobe-${++_mqProbeSeq}`,
-        brokerName: bName,
-        brokerType: bType,
-        systemId: sysId,
-        dateKey: day,
-        time: `${day} ${hh}:${_pad2(mm)}:00`,
-        level1: { status: l1Status, latency: l1Ms },
-        level2: { status: l2Status, latency: l2Ms },
-        level3: { status: l3Status },
-        overall,
-        producerLatency: prodOk ? prodLatency : null,
-        producerPass: prodOk,
-        consumerOnline,
-        backlog,
-      })
-    }
-  })
-})

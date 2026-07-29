@@ -146,12 +146,12 @@ const props = defineProps({
 })
 const emit = defineEmits(['highlight'])
 
-// 判断是否为字节流协议（有帧结构/校验和）
+// 判断是否为字节流字段（有帧结构/校验和）
 const isByteStream = computed(() =>
   (props.protocol.fields || []).some(f => f.kind === 'byte' || f.kind === 'bit' || f.kind === 'repeat')
 )
 
-// framing/checksum 是协议的直接属性（重构后不再嵌套在 config 下）
+// framing/checksum 是字段的直接属性（重构后不再嵌套在 config 下）
 const framing = computed(() => {
   if (!props.protocol.framing) {
     props.protocol.framing = {

@@ -10,22 +10,22 @@ export const CRC_PRESETS = [
   {
     name: 'CRC-16/CCITT',
     poly: 0x1021, init: 0xFFFF, refIn: false, refOut: false, xorOut: 0x0000,
-    width: 16, desc: '常用于通信协议'
+    width: 16, desc: '常用于通信字段'
   },
   {
     name: 'CRC-16/MODBUS',
     poly: 0x8005, init: 0xFFFF, refIn: true, refOut: true, xorOut: 0x0000,
-    width: 16, desc: 'Modbus RTU 协议标准'
+    width: 16, desc: 'Modbus RTU 字段标准'
   },
   {
     name: 'CRC-16/X25',
     poly: 0x1021, init: 0xFFFF, refIn: true, refOut: true, xorOut: 0xFFFF,
-    width: 16, desc: 'X.25 / PPP 协议'
+    width: 16, desc: 'X.25 / PPP 字段'
   },
   {
     name: 'CRC-16/USB',
     poly: 0x8005, init: 0xFFFF, refIn: true, refOut: true, xorOut: 0xFFFF,
-    width: 16, desc: 'USB 协议'
+    width: 16, desc: 'USB 字段'
   },
   {
     name: 'CRC-32',

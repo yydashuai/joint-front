@@ -3,14 +3,14 @@
     <!-- ========== HEADER ========== -->
     <template #header>
       <div class="proto-head">
-        <el-input v-model="protocol.name" class="proto-name" placeholder="协议名称" />
+        <el-input v-model="protocol.name" class="proto-name" placeholder="字段名称" />
         <div class="proto-head__right">
           <el-dropdown trigger="click" @command="onIoCommand">
             <el-button :icon="Operation" plain>导入 / 导出</el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="import" :icon="Upload">导入协议 JSON</el-dropdown-item>
-                <el-dropdown-item command="export" :icon="Download">导出当前协议</el-dropdown-item>
+                <el-dropdown-item command="import" :icon="Upload">导入字段 JSON</el-dropdown-item>
+                <el-dropdown-item command="export" :icon="Download">导出当前字段</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -20,7 +20,7 @@
               <el-option v-for="e in ENDIANS" :key="e.value" :label="e.label" :value="e.value" />
             </el-select>
           </el-tooltip>
-          <el-tooltip content="保存当前协议配置">
+          <el-tooltip content="保存当前字段配置">
             <el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button>
           </el-tooltip>
           <transition name="saved-hint-fade">
@@ -28,7 +28,7 @@
               <el-icon><Check /></el-icon>已保存
             </span>
           </transition>
-          <el-popconfirm title="删除该协议？" @confirm="$emit('delete')">
+          <el-popconfirm title="删除该字段？" @confirm="$emit('delete')">
             <template #reference>
               <el-button :icon="Delete" plain>删除</el-button>
             </template>
@@ -38,7 +38,7 @@
     </template>
 
     <div class="field-label">备注说明</div>
-    <el-input v-model="protocol.desc" placeholder="可选，描述该协议的用途" class="proto-desc" />
+    <el-input v-model="protocol.desc" placeholder="可选，描述该字段的用途" class="proto-desc" />
 
     <div class="meta-row">
       <span class="meta-row__label req">所属系统</span>
@@ -483,7 +483,7 @@ const totalBytes = computed(() => {
   return computeTotalBytes(props.protocol.fields)
 })
 const topLevelFieldCount = computed(() => props.protocol.fields.length)
-// 最后偏移（按协议配置推断帧长度：固定长度模式用 fixedLength，否则用 totalBytes）
+// 最后偏移（按字段配置推断帧长度：固定长度模式用 fixedLength，否则用 totalBytes）
 const frameMaxBytes = computed(() => {
   const framing = props.protocol.framing || {}
   if (framing.mode === 'fixed' && framing.fixedLength) return Number(framing.fixedLength) || 0

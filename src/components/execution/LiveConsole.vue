@@ -28,7 +28,7 @@
     <el-card shadow="never" class="exec-card console-card">
       <template #header>
         <div class="console-tools">
-          <span class="card-title">收发数据流</span>
+          <span class="card-title">发送数据流</span>
           <div class="console-tools__right">
             <el-button link size="small" @click="store.clearLog()">清屏</el-button>
             <el-switch v-model="autoScroll" size="small" active-text="自动滚动" />
@@ -49,7 +49,7 @@
           @click="activeTrace = line"
         >
           <span class="mono">{{ line.time }}</span>
-          <span class="dir">{{ line.dir === 'tx' ? '↑发' : '↓收' }}</span>
+          <span class="dir">发送</span>
           <span class="iface">{{ line.iface }}</span>
           <span class="hex mono">{{ line.hex }}</span>
           <span class="result">{{ resultText(line) }}</span>
@@ -58,8 +58,6 @@
         <div v-if="!visibleLines.length" class="stream-empty">点击开始后显示实时帧。</div>
       </div>
     </el-card>
-
-    <MqProbePanel v-if="store.hasMqTasks" />
 
     <el-card shadow="never" class="exec-card exception-feed">
       <template #header>
@@ -109,7 +107,6 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useExecutionStore } from '@/stores/execution'
-import MqProbePanel from '@/components/execution/MqProbePanel.vue'
 
 const store = useExecutionStore()
 const router = useRouter()
@@ -124,6 +121,7 @@ const traceVisible = computed({
 
 const current = computed(() => store.currentItem)
 const visibleLines = computed(() => store.logLines.filter((line) => {
+  if (line.dir !== 'tx') return false
   if (filter.value === 'abnormal') return line.status !== 'pass'
   if (filter.value === 'error') return line.status === 'error'
   return true

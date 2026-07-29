@@ -2,10 +2,10 @@
   <el-card class="main" shadow="never" :body-style="mainBody">
     <template #header>
       <div class="proto-head">
-        <el-input v-model="protocol.name" class="proto-name" placeholder="协议名称" />
+        <el-input v-model="protocol.name" class="proto-name" placeholder="字段名称" />
         <div class="proto-head__right">
-          <el-tooltip content="保存当前协议配置"><el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button></el-tooltip>
-          <el-popconfirm title="删除该协议？" @confirm="$emit('delete')">
+          <el-tooltip content="保存当前字段配置"><el-button :type="dirty ? 'primary' : ''" :icon="Check" @click="$emit('save')">保存</el-button></el-tooltip>
+          <el-popconfirm title="删除该字段？" @confirm="$emit('delete')">
             <template #reference><el-button :icon="Delete" plain>删除</el-button></template>
           </el-popconfirm>
         </div>
@@ -13,7 +13,7 @@
     </template>
 
     <div class="field-label">备注说明</div>
-    <el-input v-model="protocol.desc" placeholder="可选，描述该协议的用途" class="proto-desc" />
+    <el-input v-model="protocol.desc" placeholder="可选，描述该字段的用途" class="proto-desc" />
 
     <div class="meta-row">
       <span class="meta-row__label req">所属系统</span>
@@ -28,15 +28,15 @@
 
     <el-divider content-position="left">字段定义</el-divider>
     <div class="section-hint">
-      定义协议的数据结构字段。每个字段使用五类数据规则（标量/位组序流/共识体/结构矩阵/流文件）。
-      此协议可被多个接口复用。
+      定义字段的数据结构。每个字段使用五类数据规则（标量/位组序流/共识体/结构矩阵/流文件）。
+      此字段可被多个报文复用。
     </div>
 
     <el-scrollbar class="tree-scroll">
       <div class="struct">
         <div class="struct__head">
-          <span class="struct__title">协议字段</span>
-          <el-tooltip content="添加一个协议字段"><el-button size="small" :icon="Plus" @click="addField">添加字段</el-button></el-tooltip>
+          <span class="struct__title">字段列表</span>
+          <el-tooltip content="添加一个字段"><el-button size="small" :icon="Plus" @click="addField">添加字段</el-button></el-tooltip>
         </div>
         <div class="struct__tree">
           <div v-for="p in protocol.fields" :key="p.id" class="struct__row" :data-field-id="p.id">
@@ -73,8 +73,8 @@
             </el-option-group>
           </el-select>
         </el-form-item>
-        <el-form-item v-if="editing.type === 'bitstream'" label="绑定协议">
-          <el-select v-model="editing.protocolRef" class="w-full" placeholder="选择解析协议" clearable>
+        <el-form-item v-if="editing.type === 'bitstream'" label="绑定字段">
+          <el-select v-model="editing.protocolRef" class="w-full" placeholder="选择解析字段" clearable>
             <el-option v-for="o in protocolOptions" :key="o.value" :label="o.label" :value="o.value" />
           </el-select>
         </el-form-item>

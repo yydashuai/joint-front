@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="visible" title="选择协议类别" width="560px" :close-on-click-modal="false" @close="onClose">
+  <el-dialog v-model="visible" title="选择字段类别" width="560px" :close-on-click-modal="false" @close="onClose">
     <div class="type-grid">
       <div
         v-for="t in PROTOCOL_CATEGORIES"
@@ -39,8 +39,8 @@ watch(() => props.modelValue, (v) => { visible.value = v }, { immediate: true })
 watch(visible, (v) => { if (!v) emit('update:modelValue', false) })
 
 const PROTOCOL_CATEGORIES = [
-  { value: 'TCP', label: '字节流协议', desc: '按字节/位定义字段，支持帧结构和校验和', icon: Connection, catLabel: '二进制', tagType: 'warning' },
-  { value: 'STRUCT', label: '共识体协议', desc: '使用五类数据规则定义结构化字段，可被多个接口复用', icon: Grid, catLabel: '结构化', tagType: 'success' },
+  { value: 'TCP', label: '字节流字段', desc: '按字节/位定义字段，支持帧结构和校验和', icon: Connection, catLabel: '二进制', tagType: 'warning' },
+  { value: 'STRUCT', label: '共识体字段', desc: '使用五类数据规则定义结构化字段，可被多个报文复用', icon: Grid, catLabel: '结构化', tagType: 'success' },
 ]
 
 const onConfirm = () => {

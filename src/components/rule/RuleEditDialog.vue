@@ -6,7 +6,7 @@
           <el-option v-for="type in RULE_TYPES" :key="type.value" :label="type.label" :value="type.value" />
         </el-select>
       </el-form-item>
-      <el-form-item label="目标接口">
+      <el-form-item label="目标报文">
         <el-select v-model="form.target.interfaceId" filterable style="width: 100%;" @change="onInterfaceChange">
           <el-option v-for="iface in moduleInterfaces" :key="iface.id" :label="iface.name" :value="iface.id" />
         </el-select>
@@ -70,16 +70,16 @@
             <div class="struct-actions">
               <el-button size="small" type="primary" plain @click="addStructField(form.params.structFields)">添加子字段</el-button>
               <el-button v-if="(currentField?.type === 'struct' || currentField?.type === '共识体') && currentField?.children?.length" size="small" plain @click="autoFillStructFromInterface">
-                从接口定义导入
+                从报文定义导入
               </el-button>
             </div>
           </div>
         </el-form-item>
       </template>
       <template v-if="form.type === 'range' || form.type === 'boundary'">
-        <el-form-item v-if="protoRange" label="协议范围">
+        <el-form-item v-if="protoRange" label="字段范围">
           <el-alert
-            :title="`协议定义范围：${protoRange.min} ~ ${protoRange.max}，规则范围不得超过此区间`"
+            :title="`字段定义范围：${protoRange.min} ~ ${protoRange.max}，规则范围不得超过此区间`"
             type="info"
             :closable="false"
             show-icon
@@ -250,7 +250,7 @@ watch(() => props.modelValue, (open) => {
   if (!open) return
   Object.assign(form, props.rule ? JSON.parse(JSON.stringify(props.rule)) : blank())
 
-  // 补全缺失的 interfaceId：优先按 interfaceName 匹配正确接口
+  // 补全缺失的 interfaceId：优先按 interfaceName 匹配正确报文
   if (!form.target.interfaceId && form.target.interfaceName) {
     const matched = protoStore.interfaces.find((i) => i.name === form.target.interfaceName)
     if (matched) {
@@ -258,7 +258,7 @@ watch(() => props.modelValue, (open) => {
     }
   }
 
-  // 仅在完全没有接口时才回退到第一个接口（新建规则或无法匹配时）
+  // 仅在完全没有报文时才回退到第一个报文（新建规则或无法匹配时）
   if (!form.target.interfaceId) {
     onInterfaceChange(moduleInterfaces.value[0]?.id)
   }
@@ -354,7 +354,7 @@ const save = () => {
     const { min: ruleMin, max: ruleMax } = form.params
     const { min: pMin, max: pMax } = protoRange.value
     if (ruleMin < pMin || ruleMax > pMax) {
-      ElMessage.warning(`规则范围 [${ruleMin}, ${ruleMax}] 超出协议定义范围 [${pMin}, ${pMax}]，请调整`)
+      ElMessage.warning(`规则范围 [${ruleMin}, ${ruleMax}] 超出字段定义范围 [${pMin}, ${pMax}]，请调整`)
       return
     }
   }
