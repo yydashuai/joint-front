@@ -15,19 +15,6 @@
             <span class="card-sub">编排要监听的接收接口，拖动手柄可调整顺序；也可从左侧接口树拖入</span>
           </div>
           <div class="plan-actions">
-            <div class="recv-interval" title="模拟接收数据的到达间隔（毫秒）">
-              <span class="recv-interval__label">接收间隔</span>
-              <el-input-number
-                v-model="store.recvInterval"
-                :min="200"
-                :max="5000"
-                :step="100"
-                controls-position="right"
-                size="small"
-                style="width: 120px"
-              />
-              <span class="recv-interval__unit">ms</span>
-            </div>
             <el-tag type="info" effect="plain">{{ items.length }} 个接口</el-tag>
             <el-tooltip content="将选中的接口添加到接收编排">
               <el-button
@@ -116,7 +103,7 @@ defineProps({
   selectedIface: { type: Object, default: null },
   selectedInPlan: { type: Boolean, default: false },
 })
-const emit = defineEmits(['add-selected', 'drop-iface', 'reset-run'])
+const emit = defineEmits(['add-selected', 'drop-iface', 'drop-scheme', 'reset-run'])
 
 const store = useReceptionStore()
 const tableRef = ref()
@@ -136,6 +123,12 @@ const onDrop = (event) => {
   const raw = event.dataTransfer.getData('application/json')
   let payload = null
   try { payload = raw ? JSON.parse(raw) : null } catch { payload = null }
+  // 监听方案拖入
+  if (payload?.kind === 'recvScheme' && payload.id) {
+    emit('drop-scheme', payload.id)
+    return
+  }
+  // 接口叶子拖入
   if (payload?.kind === 'iface' && payload.id) {
     emit('drop-iface', payload.id)
   }
@@ -176,17 +169,6 @@ onBeforeUnmount(() => sortable?.destroy())
   gap: 8px;
   flex-wrap: wrap;
 }
-.recv-interval {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  background: var(--el-fill-color-extra-light);
-}
-.recv-interval__label { font-size: 12px; color: var(--el-text-color-regular); }
-.recv-interval__unit { font-size: 12px; color: var(--el-text-color-secondary); }
 .plan-table-card {
   border: 1px solid var(--el-border-color-lighter);
   transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;

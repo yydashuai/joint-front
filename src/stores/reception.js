@@ -61,7 +61,7 @@ export const useReceptionStore = defineStore('reception', {
     // 监听计划：直接绑定接口（接收侧不需要数据集，解析依据 = 字段定义，校验依据 = 规则集）
     plan: [],                 // [{ id, interfaceId }]
     status: 'idle',           // idle | listening | paused | stopped | done
-    recvInterval: 700,        // 模拟接收间隔（毫秒）
+    recvInterval: 0,        // 模拟接收间隔（毫秒）；0=无间隔，连续生成
     recvQueue: [],            // 接收数据流（含转发记录）
     exceptions: [],           // 本次监听会话捕获的异常（同时写入 exception store，共享台账）
     startedAt: null,

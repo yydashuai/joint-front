@@ -53,12 +53,11 @@
       </el-select>
       <span class="strategy-bar__label">次数</span>
       <el-input-number
-        :model-value="store.config.periodicCount ?? 0"
+        :model-value="store.config.periodicCount"
         @update:model-value="(v) => setCfg('periodicCount', v === 0 ? null : v)"
         :min="0" :max="9999"
         size="small" controls-position="right"
-        :formatter="(v) => v === 0 ? '永久' : String(v)"
-        :parser="(s) => s === '永久' ? 0 : Number(s)"
+        placeholder="永久"
         :disabled="disabled"
       />
     </template>

@@ -33,6 +33,7 @@
           title="接收接口"
           draggable-leaves
           :leaf-groups="leafGroups"
+          :extra-system-children="extraSystemChildren"
           :leaf-context-actions="leafContextActions"
           @select="onTreeSelect"
           @add-leaf="onAddLeaf"
@@ -72,11 +73,15 @@
                   :selected-in-plan="!!isSelectedInPlan"
                   @add-selected="addSelectedIface"
                   @drop-iface="addInterfaceFromDrop"
+                  @drop-scheme="addRecvScheme"
                   @reset-run="recvStore.reset()"
                 />
               </div>
               <div v-show="activeTab === 'monitor'" class="step-panel">
                 <ReceiveMonitor />
+              </div>
+              <div v-show="activeTab === 'history'" class="step-panel" style="display:flex;flex-direction:column;height:100%;">
+                <ReceptionHistory />
               </div>
             </div>
 
@@ -126,6 +131,43 @@
       </div>
     </div>
 
+    <!-- 监听方案编辑对话框 -->
+    <el-dialog
+      v-model="recvSchemeDialogVisible"
+      :title="editingRecvSchemeId ? '编辑监听方案' : '新建监听方案'"
+      width="560px"
+      destroy-on-close
+    >
+      <el-form label-width="80px" label-position="left">
+        <el-form-item label="方案名称">
+          <el-input v-model="recvSchemeForm.name" placeholder="留空默认「新建监听方案」" clearable />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="recvSchemeForm.remark" type="textarea" :rows="2" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="选择接口">
+          <el-select
+            v-model="recvSchemeForm.interfaceIds"
+            multiple
+            filterable
+            placeholder="选择要纳入方案的接口"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="iface in availableInterfaces"
+              :key="iface.id"
+              :label="iface.name"
+              :value="iface.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="recvSchemeDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmRecvScheme">确定</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 接口快捷配置弹窗（模块层「+接口」/ 右键「配置接口」；接收侧不要求数据集，隐藏加入计划/发送测试） -->
     <InterfaceQuickConfig
       v-model="ifaceConfigVisible"
@@ -146,11 +188,13 @@ import {
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import ReceptionPlanTable from '@/components/reception/ReceptionPlanTable.vue'
 import ReceiveMonitor from '@/components/reception/ReceiveMonitor.vue'
+import ReceptionHistory from '@/components/reception/ReceptionHistory.vue'
 import InterfaceQuickConfig from '@/components/execution/InterfaceQuickConfig.vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useReceptionStore } from '@/stores/reception'
 import { useSystemStore } from '@/stores/system'
 import { useProtocolStore } from '@/stores/protocol'
+import { usePlanSchemeStore } from '@/stores/planScheme'
 
 const route = useRoute()
 const router = useRouter()
@@ -158,6 +202,7 @@ const systemStore = useSystemStore()
 const connStore = useConnectionStore()
 const protocolStore = useProtocolStore()
 const recvStore = useReceptionStore()
+const schemeStore = usePlanSchemeStore()
 
 const selectedKey = ref('')
 const ifaceSearch = ref('')
@@ -165,6 +210,7 @@ const activeTab = ref('plan')
 const wizardSteps = [
   { name: 'plan', title: '编排监听计划', desc: '选择接口并确认顺序', helper: '先把要监听的接收接口按顺序加入编排，确认字段定义（解析依据）已就绪。' },
   { name: 'monitor', title: '实时接收监控', desc: '启动监听并观察数据流', helper: '监听过程中关注接收、两层校验判定、异常台账与（无法解析报文的）转发 / 保存。' },
+  { name: 'history', title: '历史统计', desc: '查看会话统计与报文明细', helper: '查看本次监听的所有接收报文，可按状态/接口筛选，并保存到数据集。' },
 ]
 
 const ALL_SYSTEM_VALUE = '__all__'
@@ -190,7 +236,7 @@ const isSelectedInPlan = computed(() => {
 const activeStepIndex = computed(() => Math.max(0, wizardSteps.findIndex((step) => step.name === activeTab.value)))
 const currentStep = computed(() => wizardSteps[activeStepIndex.value] || wizardSteps[0])
 const maxReachableStepIndex = computed(() => {
-  if (['listening', 'paused', 'stopped', 'done'].includes(recvStore.status)) return 1
+  if (['listening', 'paused', 'stopped', 'done'].includes(recvStore.status)) return 2
   if (recvStore.planItems.length) return 1
   return 0
 })
@@ -204,11 +250,16 @@ const startTip = computed(() => {
 const primaryButtonText = computed(() => {
   if (activeTab.value === 'plan') return '开始监听并监控'
   if (['done', 'stopped'].includes(recvStore.status)) return '重新监听'
+  if (activeTab.value === 'history') return '重新监听'
   return '进入实时监控'
 })
-const primaryIcon = computed(() => (['done', 'stopped'].includes(recvStore.status) && activeTab.value === 'monitor') ? RefreshRight : ArrowRight)
+const primaryIcon = computed(() => {
+  if ((['done', 'stopped'].includes(recvStore.status) && activeTab.value === 'monitor') || activeTab.value === 'history') return RefreshRight
+  return ArrowRight
+})
 const primaryDisabled = computed(() => {
   if (activeTab.value === 'plan') return !recvStore.planItems.length
+  if (activeTab.value === 'history') return false
   if (activeTab.value === 'monitor') return !['done', 'stopped'].includes(recvStore.status)
   return false
 })
@@ -251,12 +302,36 @@ const leafGroups = (module) => {
   }]
 }
 
+/* ---- 接收方案：与模块同级的树节点 ---- */
+const extraSystemChildren = (sys) => {
+  const schemes = schemeStore.schemesOfSystem(sys.id, 'recv')
+  return [{
+    key: `recv-schemes-${sys.id}`,
+    kind: 'recvSchemeGroup',
+    icon: 'FolderOpened',
+    label: '监听方案',
+    ref: { id: `recv-schemes-${sys.id}`, systemId: sys.id },
+    addActions: [{ groupKind: 'recvScheme', label: '+方案', type: 'warning' }],
+    children: schemes.map((s) => ({
+      key: `recv-scheme-${s.id}`,
+      kind: 'recvScheme',
+      icon: 'Notebook',
+      label: s.name,
+      badge: `${s.interfaceIds.length} 接口`,
+      ref: s,
+    })),
+  }]
+}
+
 const leafContextActions = (nodeData) => {
   if (nodeData?.kind === 'iface' && nodeData.ref) {
     return [
       { label: '配置接口', action: 'config-iface' },
       { label: '加入监听计划', action: 'iface-to-plan' },
     ]
+  }
+  if (nodeData?.kind === 'recvScheme' && nodeData.ref) {
+    return [{ label: '编辑方案', action: 'edit-scheme' }]
   }
   return []
 }
@@ -311,13 +386,76 @@ const addSelectedIface = () => {
 }
 const addInterfaceFromDrop = (interfaceId) => addInterfaceToPlan(interfaceId)
 
+/* ---- 方案管理（复用 planScheme store，type='recv'） ---- */
+const recvSchemeDialogVisible = ref(false)
+const recvSchemeForm = ref({ name: '', interfaceIds: [], remark: '' })
+const editingRecvSchemeId = ref(null)
+const currentRecvSchemeSystemId = ref(null)
+
+const availableInterfaces = computed(() => {
+  if (!currentRecvSchemeSystemId.value) return protocolStore.interfaces
+  return protocolStore.interfaces.filter(i => i.systemId === currentRecvSchemeSystemId.value)
+})
+
+const openRecvSchemeDialog = (systemId, scheme) => {
+  currentRecvSchemeSystemId.value = systemId
+  if (scheme) {
+    editingRecvSchemeId.value = scheme.id
+    recvSchemeForm.value = { name: scheme.name, interfaceIds: [...scheme.interfaceIds], remark: scheme.remark || '' }
+  } else {
+    editingRecvSchemeId.value = null
+    recvSchemeForm.value = { name: '', interfaceIds: [], remark: '' }
+  }
+  recvSchemeDialogVisible.value = true
+}
+
+const confirmRecvScheme = () => {
+  if (editingRecvSchemeId.value) {
+    schemeStore.update(editingRecvSchemeId.value, { ...recvSchemeForm.value })
+    ElMessage.success('监听方案已更新')
+  } else {
+    schemeStore.add({ ...recvSchemeForm.value, systemId: currentRecvSchemeSystemId.value, type: 'recv' })
+    ElMessage.success('监听方案已创建')
+  }
+  recvSchemeDialogVisible.value = false
+}
+
+// 监听方案拖入编排计划：把方案内全部接口展开为任务逐个加入
+const addRecvScheme = (schemeId) => {
+  const scheme = schemeStore.schemes.find((s) => s.id === schemeId)
+  if (!scheme) { ElMessage.warning('未找到对应的监听方案'); return }
+  if (!scheme.interfaceIds.length) { ElMessage.info(`方案「${scheme.name}」还没有配置接口，请先编辑方案并勾选接口`); return }
+  let added = 0; let skipped = 0; let missing = 0
+  scheme.interfaceIds.forEach((interfaceId) => {
+    const iface = protocolStore.interfaces.find((i) => String(i.id) === String(interfaceId))
+    if (!iface) { missing += 1; return }
+    if (recvStore.addToPlan(iface.id)) added += 1
+    else skipped += 1
+  })
+  const extra = [skipped ? `${skipped} 个已在计划中` : '', missing ? `${missing} 个接口已不存在` : ''].filter(Boolean).join('，')
+  if (added) ElMessage.success(`方案「${scheme.name}」已加入 ${added} 个接口${extra ? `（${extra}）` : ''}`)
+  else ElMessage.info(`方案「${scheme.name}」的接口均已在监听计划中`)
+}
+
+const deleteRecvScheme = (scheme) => {
+  schemeStore.remove(scheme.id)
+  ElMessage.success('监听方案已删除')
+}
+
 const onLeafAction = ({ action, data }) => {
+  if (action === 'edit-scheme' && data?.ref) {
+    openRecvSchemeDialog(data.ref.systemId || currentRecvSchemeSystemId.value, data.ref)
+  }
   if (action === 'config-iface' && data?.ref) openIfaceConfig(data.ref.id)
   if (action === 'iface-to-plan' && data?.ref) addInterfaceToPlan(data.ref.id)
 }
 
-const onAddLeaf = ({ module }) => {
-  if (module) openIfaceConfig(null, module)
+const onAddLeaf = ({ groupKind, module }) => {
+  if (groupKind === 'recvScheme') {
+    openRecvSchemeDialog(module.systemId || module.id, null)
+  } else if (module) {
+    openIfaceConfig(null, module)
+  }
 }
 
 const onDeleteLeaf = (node) => {
@@ -352,7 +490,10 @@ const nextStep = () => {
   }
   if (activeTab.value === 'monitor') {
     rerun()
+    return
   }
+  // history → 重新监听
+  rerun()
 }
 
 const resumeRun = () => {
@@ -463,7 +604,7 @@ onBeforeUnmount(() => {
 .wizard-steps {
   flex-shrink: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--el-border-color-lighter);
@@ -588,7 +729,7 @@ onBeforeUnmount(() => {
   .reception-page { overflow: auto; }
   .split { flex-direction: column; }
   .tree-panel { width: 100%; min-height: 320px; }
-  .wizard-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wizard-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .wizard-footer { align-items: flex-start; flex-direction: column; }
   .wizard-actions { width: 100%; justify-content: flex-end; }
 }

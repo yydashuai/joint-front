@@ -139,16 +139,9 @@
               </el-tooltip>
             </template>
             <template #default="{ row }">
-              <!-- 位字段 → Switch -->
-              <el-switch
-                v-if="isFieldBit(field)"
-                :model-value="!!row[field.name]"
-                size="small"
-                @change="(v) => { row[field.name] = v ? 1 : 0 }"
-              />
               <!-- 枚举 → Select（可输入枚举外的值以构造异常数据） -->
               <el-select
-                v-else-if="isFieldEnum(field)"
+                v-if="isFieldEnum(field)"
                 v-model="row[field.name]"
                 size="small"
                 filterable
@@ -320,13 +313,11 @@ const addToExcellent = () => {
 
 /* ---- 字段控件类型（参考数据集矩阵） ---- */
 const isFieldFixed = (f) => f.constraint?.mode === 'fixed'
-const isFieldBit = (f) => f.kind === 'bit' && f.constraint?.mode === 'range' && f.constraint.min === 0 && f.constraint.max === 1
 const isFieldEnum = (f) => f.constraint?.mode === 'enum' && f.constraint.entries?.length
-const isFieldNumeric = (f) => f.constraint?.mode === 'range' && !isFieldBit(f)
+const isFieldNumeric = (f) => f.constraint?.mode === 'range'
 
 const fieldColWidth = (f) => {
   if (isFieldFixed(f)) return 90
-  if (isFieldBit(f)) return 90
   if (isFieldEnum(f)) return 140
   return isFieldNumeric(f) ? 150 : 130
 }
@@ -419,7 +410,12 @@ $stream-cols: 40px 76px 170px 150px minmax(160px, 1fr) 64px;
 .stream-line--locked:hover { background: transparent; }
 .stream-line--pending { color: rgba(215,225,234,.45); }
 .stream-line--current { background: rgba(64,158,255,.14); color: #d7e1ea; }
-.stream-line--abnormal .col-label { color: #ffb3b3; }
+/* 异常行：整行红色背景 + 浅色文字 */
+.stream-line--abnormal {
+  background-color: rgba(245, 108, 108, 0.08) !important;
+  border-left: 3px solid var(--el-color-danger);
+  > span { color: var(--el-color-danger-light-3); }
+}
 .abn-mark {
   font-style: normal;
   font-size: 11px;

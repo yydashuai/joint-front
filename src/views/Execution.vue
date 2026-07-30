@@ -267,7 +267,7 @@ const primaryTip = computed(() => {
 
 /* ---- 接口方案：与模块同级的树节点 ---- */
 const extraSystemChildren = (sys) => {
-  const schemes = schemeStore.schemesOfSystem(sys.id)
+  const schemes = schemeStore.schemesOfSystem(sys.id, 'exec')
   return [{
     key: `schemes-${sys.id}`,
     kind: 'schemeGroup',
@@ -313,7 +313,7 @@ const confirmScheme = () => {
     schemeStore.update(editingSchemeId.value, { ...schemeForm.value })
     ElMessage.success('接口方案已更新')
   } else {
-    schemeStore.add({ ...schemeForm.value, systemId: currentSchemeSystemId.value })
+    schemeStore.add({ ...schemeForm.value, systemId: currentSchemeSystemId.value, type: 'exec' })
     ElMessage.success('接口方案已创建')
   }
   schemeDialogVisible.value = false

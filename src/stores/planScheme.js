@@ -11,6 +11,7 @@ export const usePlanSchemeStore = defineStore('planScheme', {
         name: '默认接口方案',
         systemId: null,
         interfaceIds: [],
+        type: 'exec',
         remark: '系统预置接口方案',
         createdAt: '2026-07-01 09:00:00',
       },
@@ -19,8 +20,18 @@ export const usePlanSchemeStore = defineStore('planScheme', {
         name: '武器联试综合方案',
         systemId: 'sys-weapon',
         interfaceIds: [],
+        type: 'exec',
         remark: '演示用接口方案（含 3 个武器管理接口）',
         createdAt: '2026-07-30 09:00:00',
+      },
+      {
+        id: 'scheme-5003',
+        name: '默认监听方案',
+        systemId: null,
+        interfaceIds: [],
+        type: 'recv',
+        remark: '接收编排预置方案',
+        createdAt: '2026-07-01 09:00:00',
       },
     ],
     selectedId: null,
@@ -31,7 +42,7 @@ export const usePlanSchemeStore = defineStore('planScheme', {
       return state.schemes.find((s) => s.id === state.selectedId) || null
     },
     schemesOfSystem(state) {
-      return (systemId) => state.schemes.filter((s) => !s.systemId || s.systemId === systemId)
+      return (systemId, type) => state.schemes.filter((s) => (!s.systemId || s.systemId === systemId) && (!type || s.type === type))
     },
   },
 
@@ -40,12 +51,13 @@ export const usePlanSchemeStore = defineStore('planScheme', {
       this.selectedId = id
     },
 
-    add({ name, systemId, interfaceIds, remark }) {
+    add({ name, systemId, interfaceIds, remark, type }) {
       const scheme = {
         id: uid(),
         name: name || '新建接口方案',
         systemId: systemId || null,
         interfaceIds: interfaceIds || [],
+        type: type || 'exec',
         remark: remark || '',
         createdAt: new Date().toLocaleString('zh-CN', { hour12: false }),
       }
