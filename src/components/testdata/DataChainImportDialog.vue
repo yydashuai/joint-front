@@ -46,6 +46,15 @@
         description="字段类型默认按数据推断（数值→uint16，字符串→utf8），可逐字段修改。保存目标可自由勾选，文件本身始终登记到「数据文件管理」。"
       />
 
+      <div class="dci-view-toggle">
+        <span class="dci-view-toggle__label">查看：</span>
+        <el-radio-group v-model="viewMode" size="small">
+          <el-radio-button value="fields">字段定义</el-radio-button>
+          <el-radio-button value="matrix">数据矩阵</el-radio-button>
+        </el-radio-group>
+        <span class="dci-view-toggle__hint">数据矩阵可直接修改单元格值，确认导入后生效</span>
+      </div>
+
       <!-- 保存目标（可选、不互斥） -->
       <div class="dci-targets">
         <span class="dci-targets__label">保存到：</span>
@@ -57,7 +66,7 @@
       </div>
 
       <!-- 每个报文的字段类型编辑 -->
-      <el-scrollbar class="dci-scroll" max-height="42vh">
+      <el-scrollbar v-if="viewMode === 'fields'" class="dci-scroll" max-height="42vh">
         <div v-for="(para, pi) in parsed" :key="pi" class="dci-para">
           <div class="dci-para__head">
             <el-tag size="small" type="primary" effect="plain">{{ pi + 1 }}</el-tag>
@@ -66,9 +75,19 @@
           </div>
           <el-table :data="para.fields" size="small" border class="dci-field-table">
             <el-table-column prop="name" label="字段名" min-width="160" show-overflow-tooltip />
-            <el-table-column label="数据样例" min-width="150" show-overflow-tooltip>
+            <el-table-column label="取值约束" min-width="230">
               <template #default="{ row }">
-                <span class="mono text-secondary">{{ row.kind === 'numeric' ? `${row.min} ~ ${row.max}` : `字符串(最长 ${row.maxLen})` }}</span>
+                <div v-if="row.kind === 'numeric'" class="dci-constraint">
+                  <el-input-number v-model="row.constraint.min" :controls="false" size="small" class="dci-cnum" />
+                  <span class="dci-tilde">~</span>
+                  <el-input-number v-model="row.constraint.max" :controls="false" size="small" class="dci-cnum" />
+                </div>
+                <el-input
+                  v-else
+                  v-model="row.constraint.enumText"
+                  size="small"
+                  placeholder="枚举值用 / 分隔，留空为自由文本"
+                />
               </template>
             </el-table-column>
             <el-table-column label="字段类型" width="180">
@@ -78,6 +97,31 @@
                     <el-option v-for="t in grp.options" :key="t.value" :label="t.label" :value="t.value" />
                   </el-option-group>
                 </el-select>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </el-scrollbar>
+
+      <!-- 数据矩阵（可编辑） -->
+      <el-scrollbar v-else class="dci-scroll" max-height="42vh">
+        <div v-for="(para, pi) in parsed" :key="pi" class="dci-para">
+          <div class="dci-para__head">
+            <el-tag size="small" type="primary" effect="plain">{{ pi + 1 }}</el-tag>
+            <span class="dci-para__name">{{ para.name }}</span>
+            <span class="dci-para__meta">{{ para.fieldNames.length }} 字段 · {{ para.rows.length }} 行</span>
+          </div>
+          <el-table :data="para.rows" size="small" border class="dci-matrix-table" :fit="false" style="width: 100%;">
+            <el-table-column type="index" label="#" width="48" align="center" fixed="left" />
+            <el-table-column
+              v-for="fn in para.fieldNames"
+              :key="fn"
+              :prop="fn"
+              :label="fn"
+              :width="130"
+            >
+              <template #default="{ row }">
+                <el-input v-model="row[fn]" size="small" />
               </template>
             </el-table-column>
           </el-table>
@@ -101,7 +145,7 @@ import { UploadFilled, QuestionFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
-import { useProtocolStore, defaultConstraint, SCALAR_ENCODINGS, uid } from '@/stores/protocol'
+import { useProtocolStore, SCALAR_ENCODINGS, uid } from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
 import { parseDataChain } from '@/utils/dataChainImport'
 import { readFileAsText, inferFileFormat } from '@/services/testDataService'
@@ -134,6 +178,9 @@ const fromPreset = ref(false)
 // 保存目标（可选、不互斥）
 const saveFields = ref(true)
 const saveDatasets = ref(true)
+
+// 查看模式：字段定义 / 数据矩阵（可编辑）
+const viewMode = ref('fields')
 
 const form = reactive({ systemId: '', moduleName: '' })
 
@@ -179,9 +226,31 @@ const applyText = (name, text) => {
     parsed.value = []
     return false
   }
-  result.forEach((p) => p.fields.forEach((f) => { f.type = f.inferredType }))
+  result.forEach((p) => {
+    p.fields.forEach((f) => {
+      f.type = f.inferredType
+      if (f.kind === 'numeric') {
+        // 默认取值约束：依据数据范围生成
+        f.constraint = { kind: 'range', min: f.min, max: f.max }
+      } else {
+        const uniq = [...new Set(p.rows.map(r => r[f.name]))].filter(v => v !== '' && v != null)
+        f.constraint = { kind: (uniq.length && uniq.length <= 12) ? 'enum' : 'none', enumText: uniq.join('/') }
+      }
+    })
+  })
   parsed.value = result
   return true
+}
+
+// 由用户编辑后的「取值约束」构建字段约束对象
+const buildConstraint = (f) => {
+  if (f.kind === 'numeric') {
+    return { mode: 'range', min: Number(f.constraint?.min ?? 0), max: Number(f.constraint?.max ?? 0) }
+  }
+  const txt = (f.constraint?.enumText || '').trim()
+  if (!txt) return { mode: 'none' }
+  const entries = txt.split('/').map(s => s.trim()).filter(Boolean).map(v => ({ value: v, label: v }))
+  return { mode: 'enum', entries }
 }
 
 watch(() => props.modelValue, (v) => {
@@ -189,6 +258,7 @@ watch(() => props.modelValue, (v) => {
     resetAll()
     saveFields.value = true
     saveDatasets.value = true
+    viewMode.value = 'fields'
     // 初始化默认值（当前系统/模块）
     form.systemId = props.currentSystemId || ''
     form.moduleName = props.currentModuleName || ''
@@ -228,6 +298,7 @@ const resetAll = () => {
   fileName.value = ''
   rawText.value = ''
   fromPreset.value = false
+  viewMode.value = 'fields'
 }
 
 const onClose = () => emit('update:modelValue', false)
@@ -264,7 +335,7 @@ const onConfirm = () => {
           byteLength: SCALAR_ENCODINGS.find((e) => e.value === dataType)?.bytes ?? 0,
           bitMode: false,
           dataType,
-          constraint: defaultConstraint(dataType),
+          constraint: buildConstraint(f),
           desc: '',
           remark: '',
           children: []
@@ -374,6 +445,20 @@ const onConfirm = () => {
 .dci-para__name { font-weight: 600; font-size: 14px; }
 .dci-para__meta { font-size: 12px; color: var(--el-text-color-secondary); }
 .dci-field-table { margin-bottom: 4px; }
+.dci-matrix-table { margin-bottom: 4px; }
+
+.dci-view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  &__label { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+  &__hint { font-size: 12px; color: var(--el-text-color-placeholder); }
+}
+
+.dci-constraint { display: flex; align-items: center; gap: 4px; }
+.dci-cnum { width: 92px; }
+.dci-tilde { color: var(--el-text-color-placeholder); }
 
 .mono { font-family: 'Consolas', 'Monaco', monospace; }
 .text-secondary { color: var(--el-text-color-secondary); }

@@ -39,6 +39,13 @@
       <el-form-item label="方案名称">
         <el-input v-model="form.name" placeholder="如：武器状态综合数据集方案" />
       </el-form-item>
+      <el-form-item label="文件类型">
+        <el-select v-model="exportType" style="width: 180px;">
+          <el-option label="JSON 文件" value="json" />
+          <el-option label="CSV 文件" value="csv" />
+        </el-select>
+        <span class="ce-type-hint">CSV 按数据集分段拼接</span>
+      </el-form-item>
       <el-form-item label="备注">
         <el-input v-model="form.remark" type="textarea" :rows="2" placeholder="可选" />
       </el-form-item>
@@ -46,7 +53,7 @@
 
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
-      <el-button :disabled="!selectedIds.length" :icon="Document" @click="onExportFile">导出为 JSON 文件</el-button>
+      <el-button :disabled="!selectedIds.length" :icon="Document" @click="onExportFile">导出为文件</el-button>
       <el-button type="primary" :disabled="!selectedIds.length" :icon="FolderChecked" @click="onSaveScheme">保存为数据方案</el-button>
     </template>
   </el-dialog>
@@ -59,7 +66,7 @@ import { ElMessage } from 'element-plus'
 import { useTestDataStore } from '@/stores/testData'
 import { useDatasetSchemeStore } from '@/stores/datasetScheme'
 import { useSystemStore } from '@/stores/system'
-import { exportJsonFile } from '@/services/testDataService'
+import { exportJsonFile, serializeCsv, downloadBlob } from '@/services/testDataService'
 
 const props = defineProps({ modelValue: Boolean, systemId: { type: [String, Number], default: '' } })
 const emit = defineEmits(['update:modelValue', 'saved'])
@@ -75,6 +82,7 @@ const visible = computed({
 
 const selectedIds = ref([])
 const form = reactive({ name: '', remark: '' })
+const exportType = ref('json')
 
 const datasetOptions = computed(() => {
   if (!props.systemId) return tdStore.datasets
@@ -103,12 +111,30 @@ const buildBundle = () => {
   }
 }
 
+// 多数据集分段拼接为单个 CSV（每段以 # 注释行标识数据集名 / 模块 / 行数）
+const buildBundleCsv = (bundle) => {
+  const sections = []
+  for (const ds of bundle.datasets) {
+    const fieldNames = ds.rows?.length ? Object.keys(ds.rows[0].values) : []
+    sections.push(`# 数据集：${ds.name}（${ds.moduleName || '通用'}，${ds.rows?.length || 0} 行）`)
+    sections.push(serializeCsv(ds.rows || [], fieldNames))
+  }
+  return sections.join('\r\n\r\n')
+}
+
 const onExportFile = () => {
   if (!selectedIds.value.length) return
   const bundle = buildBundle()
   const sysName = bundle.systemName || '组合'
-  exportJsonFile(bundle, `数据组合_${sysName}_${bundle.datasets.length}个.json`)
-  ElMessage.success(`已导出 ${bundle.datasets.length} 个数据集为 JSON 文件`)
+  if (exportType.value === 'csv') {
+    const csv = buildBundleCsv(bundle)
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
+    downloadBlob(blob, `数据组合_${sysName}_${bundle.datasets.length}个.csv`)
+    ElMessage.success(`已导出 ${bundle.datasets.length} 个数据集为 CSV 文件`)
+  } else {
+    exportJsonFile(bundle, `数据组合_${sysName}_${bundle.datasets.length}个.json`)
+    ElMessage.success(`已导出 ${bundle.datasets.length} 个数据集为 JSON 文件`)
+  }
 }
 
 const onSaveScheme = () => {
@@ -133,4 +159,5 @@ const onSaveScheme = () => {
 .ce-alert { margin-bottom: 12px; }
 .ce-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .ce-form { margin-top: 4px; }
+.ce-type-hint { margin-left: 10px; font-size: 12px; color: var(--el-text-color-placeholder); }
 </style>

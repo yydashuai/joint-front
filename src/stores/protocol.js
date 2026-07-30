@@ -55,6 +55,88 @@ export const collectInterfaceFields = (iface, protocols = []) => {
   return out
 }
 
+/**
+ * 按接口（报文）的 request 参数树收集字段定义。
+ * 与 collectInterfaceFields（走 protocolRefs → 协议字段，用于报文构造 / 接收帧解析）不同：
+ *   - 直接遍历 iface.request，使字段名与「数据集行 values 的键」一致；
+ *   - 嵌套 struct（共识体）子字段拍平为顶层字段名（如 deviceId + options{verbose,timeoutMs}
+ *     → [deviceId, verbose, timeoutMs]），与数据矩阵列键对应；
+ *   - 携带每个参数的 constraint / desc / dataType。
+ * 适用于「数据集关联报文」场景：数据矩阵的列与约束来源于报文 request，而非其引用的协议字段。
+ */
+export const collectInterfaceRequestFields = (iface) => {
+  const out = []
+  const pushField = (f) => {
+    out.push({
+      id: f.id,
+      name: f.name,
+      remark: f.remark || '',
+      desc: f.desc || '',
+      dataType: f.dataType || f.type || f.encoding || '',
+      constraint: f.constraint || null,
+    })
+  }
+  const walk = (fields) => {
+    if (!Array.isArray(fields)) return
+    for (const f of fields) {
+      if (f.children?.length) walk(f.children) // 拍平：struct 子字段提升到顶层
+      else pushField(f)
+    }
+  }
+  walk(iface?.request)
+  return out
+}
+
+/**
+ * 收集报文的全部数据集字段：request 参数树（拍平）+ protocolRefs 引用字段（拍平，跳过 byte 容器）。
+ * 兼容 migrateAllFromV1 前后：迁移前 request 存在；迁移后 request 被清空，protocolRefs 含由 request 生成的内联协议。
+ * bit 字段携带 startBit / endBit（来自 bitStart / bitEnd），便于数据矩阵区分「单 bit 开关」与「多 bit 数值」。
+ * 按字段名去重（保留首个）。用于数据集矩阵列、约束校验、智能生成。
+ */
+export const collectInterfaceDatasetFields = (iface, protocols = []) => {
+  const out = []
+  // 1) request 参数树（拍平 struct 子字段）
+  const walkRequest = (fields) => {
+    if (!Array.isArray(fields)) return
+    for (const f of fields) {
+      if (f.children?.length) walkRequest(f.children)
+      else out.push({
+        id: f.id, name: f.name,
+        desc: f.desc || '', remark: f.remark || '',
+        dataType: f.dataType || f.type || f.encoding || '',
+        constraint: f.constraint || null,
+      })
+    }
+  }
+  walkRequest(iface?.request)
+  // 2) protocolRefs 引用字段（拍平 byte/bit/repeat/struct；byte 容器取其位段子字段）
+  const walkProto = (fields) => {
+    if (!Array.isArray(fields)) return
+    for (const f of fields) {
+      if (f.kind === 'byte') {
+        if (f.children?.length) walkProto(f.children)
+        else out.push({ id: f.id, name: f.name, desc: f.desc || '', remark: f.remark || '', dataType: f.dataType || '', constraint: f.constraint || null })
+      } else if (f.kind === 'bit') {
+        out.push({ id: f.id, name: f.name, desc: f.desc || '', remark: f.remark || '', dataType: f.dataType || 'uint', constraint: f.constraint || null, startBit: f.bitStart, endBit: f.bitEnd })
+      } else if (f.kind === 'repeat') {
+        if (f.children?.length) walkProto(f.children)
+      } else if (f.children?.length) {
+        walkProto(f.children)
+      } else {
+        out.push({ id: f.id, name: f.name, desc: f.desc || '', remark: f.remark || '', dataType: f.dataType || f.encoding || '', constraint: f.constraint || null })
+      }
+    }
+  }
+  for (const ref of iface?.protocolRefs || []) {
+    const pid = typeof ref === 'object' ? ref.protocolId : ref
+    const proto = protocols.find(p => p.id === pid)
+    if (proto) walkProto(proto.fields)
+  }
+  // 按字段名去重（保留首个）
+  const seen = new Set()
+  return out.filter(f => { if (!f.name || seen.has(f.name)) return false; seen.add(f.name); return true })
+}
+
 // ─── 传输类型（报文使用） ───
 // OSE:   基于 UDP 的报文传输（消息头 + 消息体）
 // 4908A: 基于 TCP/IP 的实时 / 可靠传输（UDP + TCP）

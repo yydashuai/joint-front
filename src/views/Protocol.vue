@@ -117,6 +117,11 @@ onMounted(() => store.migrateAllFromV1())
 const selectedKind = ref('protocol')
 if (!store.selectedProtocolId) store.selectedProtocolId = store.protocols[0]?.id ?? null
 if (!store.selectedInterfaceId) store.selectedInterfaceId = store.interfaces[0]?.id ?? null
+// 从数据集管理「报文」按钮跳转过来时，按 query 切换到报文视图并选中对应报文
+if (route.query.kind === 'interface') {
+  selectedKind.value = 'interface'
+  if (route.query.iface) store.selectedInterfaceId = Number(route.query.iface)
+}
 
 const curProto = computed(() => store.selectedProtocol)
 const curIf = computed(() => store.selectedInterface)

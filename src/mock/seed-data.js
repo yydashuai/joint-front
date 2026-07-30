@@ -520,13 +520,13 @@ export const interfaces = [
     transportConfig: { method: 'GET', contentType: 'application/json', headers: [{ key: 'Accept', value: 'application/json' }], auth: { type: 'basic', username: 'admin', password: '' } },
     protocolRefs: [protoByName('sys-weapon', '武器遥测广播字段')],
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    datasetIds: [2, 1], // 模拟关联：设备状态查询-正常与异常 + 帧控制字节-全场景
+    datasetIds: [2], // 模拟关联：设备状态查询-正常与异常
     desc: '发送设备状态，返回遥测帧',
     request: [
-      param({ name: 'deviceId', type: '常量', dataType: 'uint8', desc: '目标设备' }),
+      param({ name: 'deviceId', type: '常量', dataType: 'uint8', desc: '目标设备', constraint: { mode: 'range', min: 0, max: 255 } }),
       param({ name: 'options', type: '共识体', desc: '查询选项', children: [
-        param({ name: 'verbose', type: '常量', dataType: 'uint8' }),
-        param({ name: 'timeoutMs', type: '常量', dataType: 'uint16' }),
+        param({ name: 'verbose', type: '常量', dataType: 'uint8', constraint: { mode: 'enum', entries: [{ value: 0, label: '简报' }, { value: 1, label: '详报' }] } }),
+        param({ name: 'timeoutMs', type: '常量', dataType: 'uint16', constraint: { mode: 'range', min: 0, max: 65535 } }),
       ]}),
     ],
     response: [
@@ -540,20 +540,33 @@ export const interfaces = [
     transportConfig: { port: 9001, timeout: 3000 },
     protocolRefs: [protoByName('sys-weapon', '装订参数字段'), protoByName('sys-weapon', '帧控制字节字段')],
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    datasetIds: [4, 1], // 模拟关联：武器装订-多参数组合 + 帧控制字节-全场景
+    datasetIds: [4], // 模拟关联：武器装订-多参数组合
     desc: '下发武器装订参数并确认',
     request: [
-      param({ name: 'weaponId', type: '常量', dataType: 'uint16', desc: '武器编号' }),
+      param({ name: 'weaponId', type: '常量', dataType: 'uint16', desc: '武器编号', constraint: { mode: 'range', min: 0, max: 65535 } }),
       param({ name: 'params', type: '共识体', desc: '装订参数', children: [
-        param({ name: 'fuseMode', type: '常量', dataType: 'uint8', desc: '引信模式' }),
-        param({ name: 'range', type: '常量', dataType: 'uint16', desc: '射程设定 m' }),
-        param({ name: 'angle', type: '常量', dataType: 'float', desc: '装订角度' }),
+        param({ name: 'fuseMode', type: '常量', dataType: 'uint8', desc: '引信模式', constraint: { mode: 'enum', entries: [{ value: 0, label: '触发' }, { value: 1, label: '近炸' }, { value: 2, label: '延时' }] } }),
+        param({ name: 'range', type: '常量', dataType: 'uint16', desc: '射程设定 m', constraint: { mode: 'range', min: 0, max: 65535 } }),
+        param({ name: 'angle', type: '常量', dataType: 'float', desc: '装订角度', constraint: { mode: 'range', min: 0, max: 90 } }),
       ]}),
     ],
     response: [
       param({ name: 'code', type: '常量', dataType: 'int32', desc: '0=成功' }),
       param({ name: 'confirmId', type: '常量', dataType: 'uint32', desc: '装订确认流水号' }),
     ]
+  }),
+  // 报文示例：引用「帧控制字节字段」（字段被报文引用），数据集关联此报文
+  // 报文字段由所引用的字段定义提供（位标志、约束、说明），无需在 request 中重复定义
+  _i({
+    name: '帧控制指令', path: '/frame/ctrl',
+    transportType: 'OSE',
+    transportConfig: { method: 'GET', contentType: 'application/json', headers: [], auth: { type: 'none' } },
+    protocolRefs: [protoByName('sys-weapon', '帧控制字节字段')],
+    systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
+    datasetIds: [1], // 模拟关联：帧控制字节-全场景
+    desc: '帧控制字节（按位标志）',
+    request: [],
+    response: []
   }),
   _i({
     name: '上报弹药余量', path: '/ammo/report',
@@ -602,7 +615,7 @@ export const interfaces = [
     transportConfig: { port: 8080, timeout: 300 },
     protocolRefs: [protoByName('sys-fire', '遥测帧字段')],
     systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
-    datasetIds: [3], // 模拟关联：遥测帧-温度范围测试
+    datasetIds: [], // 遥测帧-温度范围测试已关联至「遥测帧上报」报文
     desc: '提交目标列表，返回火力分配方案',
     request: [
       param({ name: 'targets', type: '共识体', desc: '目标列表', children: [
@@ -616,6 +629,18 @@ export const interfaces = [
       param({ name: 'plan', type: '流文件', desc: '分配方案文件' }),
       param({ name: 'raw', type: '位组序流', desc: '原始解算帧' }),
     ]
+  }),
+  // 报文示例：遥测帧上报，引用「遥测帧字段」（帧头 / 设备ID / 温度由字段定义提供）
+  _i({
+    name: '遥测帧上报', path: '/telemetry/report',
+    transportType: 'OSE',
+    transportConfig: { method: 'GET', contentType: 'application/json', headers: [], auth: { type: 'none' } },
+    protocolRefs: [protoByName('sys-fire', '遥测帧字段')],
+    systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
+    datasetIds: [3], // 模拟关联：遥测帧-温度范围测试
+    desc: '遥测下行帧上报（帧头 + 设备ID + 温度）',
+    request: [],
+    response: []
   }),
   _i({
     name: '航迹订阅', path: '/track/subscribe',

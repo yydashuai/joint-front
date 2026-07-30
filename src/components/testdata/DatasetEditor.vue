@@ -21,13 +21,20 @@
         <el-tag v-if="ds.linkedProtocol" type="success" effect="plain" size="small">
           字段：{{ ds.linkedProtocol }}
         </el-tag>
-        <el-tag v-if="ds.linkedInterface" type="warning" effect="plain" size="small">
-          报文：{{ ds.linkedInterface }}
-        </el-tag>
+        <el-button
+          v-if="ds.linkedInterface"
+          type="warning"
+          effect="plain"
+          size="small"
+          class="iface-jump"
+          @click="goInterfaceDef(ds.linkedInterface)"
+        >
+          <el-icon><Link /></el-icon>
+          <span>报文：{{ ds.linkedInterface }}</span>
+        </el-button>
         <el-tooltip content="基于现有数据模式智能生成新的测试行"><el-button size="small" :icon="MagicStick" @click="showGenDialog = true">智能生成</el-button></el-tooltip>
-        <el-tooltip content="将数据集导出为 CSV 文件"><el-button size="small" :icon="Download" @click="onExportCsv">导出 CSV</el-button></el-tooltip>
-        <el-tooltip content="将数据集导出为 JSON 文件"><el-button size="small" :icon="DocumentCopy" @click="onExportJson">导出 JSON</el-button></el-tooltip>
-        <el-tooltip content="复制整个数据集及其所有数据行"><el-button size="small" :icon="CopyDocument" @click="onDuplicate">复制数据集</el-button></el-tooltip>
+        <el-tooltip content="跳转到编排计划，快速配置与发送"><el-button v-if="ds.linkedInterface" size="small" type="primary" plain :icon="Promotion" @click="jumpToPlan">跳转到计划</el-button></el-tooltip>
+        <el-tooltip content="进入发送测试（实时监控）"><el-button v-if="ds.linkedInterface" size="small" type="success" plain :icon="VideoPlay" @click="sendTest">发送测试</el-button></el-tooltip>
         <el-popconfirm title="确认删除此数据集？" @confirm="onDelete">
           <template #reference>
             <el-button size="small" type="danger" :icon="Delete">删除</el-button>
@@ -171,7 +178,7 @@
 
         <!-- 动态字段列 -->
         <el-table-column
-          v-for="field in dynamicFields"
+          v-for="field in matrixFields"
           :key="field.name"
           :min-width="fieldColWidth(field)"
           :class-name="isFieldFixed(field) ? 'fixed-col' : ''"
@@ -194,14 +201,6 @@
             <!-- 固定值 (优化点 4: 更紧凑) -->
             <template v-if="isFieldFixed(field)">
               <span class="fixed-value">{{ field.constraint.value }}</span>
-            </template>
-            <!-- 位字段 → Switch -->
-            <template v-else-if="isFieldBit(field)">
-              <el-switch
-                :model-value="!!row.values[field.name]"
-                @change="(v) => onValueChange(row, field.name, v ? 1 : 0)"
-                size="small"
-              />
             </template>
             <!-- 枚举字段 → Select (优化点 5) -->
             <template v-else-if="isFieldEnum(field)">
@@ -301,7 +300,7 @@
             </template>
           </el-table-column>
           <el-table-column
-            v-for="field in dynamicFields"
+            v-for="field in matrixFields"
             :key="`history-${field.name}`"
             :min-width="fieldColWidth(field)"
             :class-name="isFieldFixed(field) ? 'fixed-col' : ''"
@@ -394,11 +393,11 @@
             <span>生成预览</span>
             <el-tag size="small" type="success" effect="plain">{{ genPreview.length }} 条</el-tag>
           </div>
-          <el-table :data="genPreview" size="small" border max-height="220" style="width: 100%;">
+          <el-table :data="genPreview" size="small" border max-height="220" style="width: 100%;" :row-class-name="genPreviewRowClass">
             <el-table-column prop="label" label="标签" width="120" />
-            <el-table-column label="数据内容" min-width="300">
+            <el-table-column label="数据内容" min-width="380">
               <template #default="{ row }">
-                <span class="mono text-secondary">{{ formatGenValues(row.values) }}</span>
+                <div class="gen-values-scroll"><span class="mono text-secondary">{{ formatGenValues(row.values) }}</span></div>
               </template>
             </el-table-column>
           </el-table>
@@ -431,13 +430,14 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import {
-  Download, Delete, Plus, Lock, DocumentCopy, CopyDocument, Search, Top, Bottom, MagicStick
+  Download, Delete, Plus, Lock, DocumentCopy, CopyDocument, Search, Top, Bottom, MagicStick, Link, Promotion, VideoPlay
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import Sortable from 'sortablejs'
 import { useTestDataStore } from '@/stores/testData'
-import { useProtocolStore } from '@/stores/protocol'
+import { useProtocolStore, collectInterfaceDatasetFields } from '@/stores/protocol'
 import { exportCsvFile, exportJsonFile } from '@/services/testDataService'
 
 const props = defineProps({
@@ -448,8 +448,34 @@ const emit = defineEmits(['delete', 'duplicate'])
 
 const tdStore = useTestDataStore()
 const protoStore = useProtocolStore()
+const router = useRouter()
 
 const ds = computed(() => props.dataset)
+
+/* ========== 报文定义跳转（数据集针对报文，而非字段） ========== */
+const goInterfaceDef = (ifaceName) => {
+  const iface = protoStore.interfaces.find(i => i.name === ifaceName)
+  if (!iface) {
+    ElMessage.warning('未找到对应的报文定义')
+    return
+  }
+  protoStore.selectedInterfaceId = iface.id
+  // 带 query 跳转，Protocol.vue 据此切换到报文视图并选中
+  router.push({ path: '/protocol', query: { kind: 'interface', iface: String(iface.id) } })
+}
+
+/* ========== 跳转到计划 / 发送测试（操作于数据集关联的报文） ========== */
+const jumpToPlan = () => {
+  const iface = protoStore.interfaces.find(i => i.name === ds.value.linkedInterface)
+  if (!iface) { ElMessage.warning('未找到关联的报文定义'); return }
+  router.push({ path: '/execution', query: { interfaceId: String(iface.id) } })
+  ElMessage.success('已跳转到编排计划，可快速配置与发送')
+}
+const sendTest = () => {
+  const iface = protoStore.interfaces.find(i => i.name === ds.value.linkedInterface)
+  if (!iface) { ElMessage.warning('未找到关联的报文定义'); return }
+  router.push({ path: '/execution', query: { interfaceId: String(iface.id), test: '1' } })
+}
 
 /* ========== 字段解析 ========== */
 // 展平字段字段树（byte/bit/repeat 嵌套 → 平面列表）
@@ -476,23 +502,26 @@ const flattenProtoFields = (fields) => {
 const linkedFields = computed(() => {
   const d = ds.value
   if (!d) return []
-  if (d.linkedProtocol) {
-    const proto = protoStore.protocols.find(p => p.name === d.linkedProtocol)
-    if (!proto?.config?.fields?.length) return []
-    return flattenProtoFields(proto.config.fields)
-  }
   if (d.linkedInterface) {
+    // 数据集针对报文（interface）：收集 request 参数 + protocolRefs 引用字段，
+    // 兼容 migrateAllFromV1 前后（迁移后 request 被清空，字段由 protocolRefs 内联协议提供）。
     const iface = protoStore.interfaces.find(i => i.name === d.linkedInterface)
     if (!iface) return []
-    const flat = []
-    const walk = (params) => {
-      params.forEach(p => {
-        if (p.type === '常量') flat.push(p)
-        else if (p.children?.length) walk(p.children)
-      })
-    }
-    walk(iface.request)
-    return flat
+    const fields = collectInterfaceDatasetFields(iface, protoStore.protocols)
+    // 过滤到数据集行键，避免 protocolRefs 中不相关字段产生多余列
+    const keys = d.rows?.length ? Object.keys(d.rows[0].values)
+      : d.historyRows?.length ? Object.keys(d.historyRows[0].values) : null
+    if (!keys) return fields
+    const keySet = new Set(keys)
+    return fields.filter(f => keySet.has(f.name))
+  }
+  if (d.linkedProtocol) {
+    // 退化：直接关联字段协议
+    const proto = protoStore.protocols.find(p => p.name === d.linkedProtocol)
+    if (!proto) return []
+    const fields = proto.fields?.length ? proto.fields : proto.config?.fields
+    if (!fields?.length) return []
+    return flattenProtoFields(fields)
   }
   return []
 })
@@ -508,14 +537,16 @@ const dynamicFields = computed(() => {
   }
   return []
 })
+// 数据矩阵仅展示可编辑字段：固定值（constraint.mode === 'fixed'）由系统锁定，不在矩阵中显示
+const matrixFields = computed(() => dynamicFields.value.filter(f => !isFieldFixed(f)))
 /* ========== 数据集统计 ========== */
-const fieldColumnCount = computed(() => dynamicFields.value.length)
+const fieldColumnCount = computed(() => matrixFields.value.length)
 const editedCellCount = computed(() => {
   const d = ds.value
   if (!d.rows.length) return 0
   let count = 0
   for (const row of d.rows) {
-    for (const f of dynamicFields.value) {
+    for (const f of matrixFields.value) {
       const v = row.values?.[f.name]
       if (v !== undefined && v !== null && v !== '' && v !== 0) count++
     }
@@ -526,7 +557,7 @@ const outOfRangeCount = computed(() => {
   const d = ds.value
   let count = 0
   for (const row of d.rows) {
-    for (const f of dynamicFields.value) {
+    for (const f of matrixFields.value) {
       const c = f.constraint
       if (!c) continue
       const v = Number(row.values?.[f.name])
@@ -540,13 +571,11 @@ const outOfRangeCount = computed(() => {
 
 /* ========== 字段类型判断 ========== */
 const isFieldFixed = (f) => f.constraint?.mode === 'fixed'
-const isFieldBit = (f) => f.constraint?.mode === 'range' && f.constraint.min === 0 && f.constraint.max === 1 && f.startBit === f.endBit
 const isFieldEnum = (f) => f.constraint?.mode === 'enum' && f.constraint.entries?.length
-const isFieldNumeric = (f) => f.constraint?.mode === 'range' && !isFieldBit(f)
+const isFieldNumeric = (f) => f.constraint?.mode === 'range'
 
 const fieldColWidth = (f) => {
   if (isFieldFixed(f)) return 80
-  if (isFieldBit(f)) return 90
   if (isFieldEnum(f)) return 140
   return isFieldNumeric(f) ? 150 : 130
 }
@@ -709,6 +738,9 @@ const formatGenValues = (values) => {
   if (!values) return ''
   return Object.entries(values).map(([k, v]) => `${k}: ${v}`).join(', ')
 }
+
+// 生成预览中异常行标红（按字段定义实时判定）
+const genPreviewRowClass = ({ row }) => tdStore.computeAbnormal(row.values, ds.value.id) ? 'gen-abnormal-row' : ''
 
 /* ========== 行剪贴板 + 右键菜单 ========== */
 const rowClipboard = ref([])  // Array of deep-cloned row objects
@@ -943,7 +975,7 @@ const onExportJson = () => {
 }
 
 /* ========== JSON 预览 ========== */
-const fieldsRefOpen = ref(['ref'])
+const fieldsRefOpen = ref([]) // 默认折叠，不展开
 const previewOpen = ref([])
 
 const previewJson = computed(() => {
@@ -1036,6 +1068,14 @@ const onKeydown = (e) => {
     flex-wrap: wrap;
     justify-content: flex-end;
   }
+}
+
+/* 报文名跳转按钮 */
+.iface-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
 }
 
 .ds-name-input {
@@ -1415,5 +1455,20 @@ const onKeydown = (e) => {
 .gen-preview .text-secondary {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+
+/* 生成预览：数据内容不换行、可左右滚动，行高固定 */
+.gen-values-scroll {
+  overflow-x: auto;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+:deep(.gen-abnormal-row) > td {
+  background-color: rgba(245, 108, 108, 0.14) !important;
+}
+
+:deep(.gen-abnormal-row:hover) > td {
+  background-color: rgba(245, 108, 108, 0.22) !important;
 }
 </style>

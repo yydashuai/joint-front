@@ -25,8 +25,8 @@ export const datasets = [
     name: '帧控制字节-全场景',
     systemId: 'sys-weapon',
     moduleName: '武器管理模块',
-    linkedProtocol: '帧控制字节字段',
-    linkedInterface: null,
+    linkedProtocol: null,
+    linkedInterface: '帧控制指令',
     desc: '覆盖帧控制字节字段的所有字段组合场景',
     createdAt: '2026-06-18',
     rows: [
@@ -65,8 +65,8 @@ export const datasets = [
     name: '遥测帧-温度范围测试',
     systemId: 'sys-fire',
     moduleName: '火控解算模块',
-    linkedProtocol: '遥测帧字段',
-    linkedInterface: null,
+    linkedProtocol: null,
+    linkedInterface: '遥测帧上报',
     desc: '验证遥测帧在不同温度区间的解析正确性',
     createdAt: '2026-06-22',
     rows: [

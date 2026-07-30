@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { datasets as seedDatasets, files as seedFiles } from '@/mock/testData'
-import { useProtocolStore, collectInterfaceFields } from '@/stores/protocol'
+import { useProtocolStore, collectInterfaceDatasetFields } from '@/stores/protocol'
 import { checkFieldConstraints } from '@/utils/receiveValidator'
 
 let _dsSeq = 100
@@ -20,18 +20,32 @@ const flattenProtocolFields = (fields = [], out = []) => {
   for (const f of fields || []) {
     if (f.kind === 'byte') {
       if (f.children?.length) flattenProtocolFields(f.children, out)
-      else out.push({ name: f.name, constraint: f.constraint || null })
+      else out.push({ name: f.name, constraint: f.constraint || null, desc: f.desc || f.remark || '' })
     } else if (f.kind === 'bit') {
-      out.push({ name: f.name, constraint: f.constraint || null })
+      out.push({ name: f.name, constraint: f.constraint || null, desc: f.desc || f.remark || '' })
     } else if (f.kind === 'repeat') {
       if (f.children?.length) flattenProtocolFields(f.children, out)
     } else if (f.children?.length) {
       flattenProtocolFields(f.children, out)
     } else {
-      out.push({ name: f.name, constraint: f.constraint || null })
+      out.push({ name: f.name, constraint: f.constraint || null, desc: f.desc || f.remark || '' })
     }
   }
   return out
+}
+
+/**
+ * 按数据集行键过滤字段：protocolRefs 可能含报文引用的「接收帧」等不相关字段，
+ * 不在数据集行内 → 过滤掉，避免产生多余列 / 误判「字段值缺失」异常。
+ * 无行数据（新建数据集）时返回全部。
+ */
+const filterByDatasetKeys = (fields, dataset) => {
+  const keys = dataset.rows?.length ? Object.keys(dataset.rows[0].values)
+    : dataset.historyRows?.length ? Object.keys(dataset.historyRows[0].values)
+    : null
+  if (!keys) return fields
+  const keySet = new Set(keys)
+  return fields.filter(f => keySet.has(f.name))
 }
 
 const historyRowsFromDataset = (dataset) => {
@@ -129,7 +143,7 @@ export const useTestDataStore = defineStore('testData', {
         const iface = protocolStore.interfaces.find(
           (i) => i.name === ds.linkedInterface || String(i.id) === String(ds.linkedInterface)
         )
-        if (iface) fields = collectInterfaceFields(iface, protocolStore.protocols)
+        if (iface) fields = collectInterfaceDatasetFields(iface, protocolStore.protocols)
       }
       if (!fields.length && ds.linkedProtocol) {
         const proto = protocolStore.protocols.find(
@@ -138,6 +152,7 @@ export const useTestDataStore = defineStore('testData', {
         if (proto) fields = flattenProtocolFields(proto.fields?.length ? proto.fields : proto.config?.fields)
       }
       if (!fields.length) return []
+      fields = filterByDatasetKeys(fields, ds)
       const seen = new Set()
       return fields.filter((f) => {
         if (seen.has(f.name)) return false
@@ -388,7 +403,7 @@ export const useTestDataStore = defineStore('testData', {
         const iface = protocolStore.interfaces.find(
           (i) => i.name === ds.linkedInterface || String(i.id) === String(ds.linkedInterface)
         )
-        if (iface) fields = collectInterfaceFields(iface, protocolStore.protocols)
+        if (iface) fields = collectInterfaceDatasetFields(iface, protocolStore.protocols)
       }
       // 2) 退化：按协议（字段）解析
       if (!fields.length && ds.linkedProtocol) {
@@ -398,6 +413,8 @@ export const useTestDataStore = defineStore('testData', {
         if (proto) fields = flattenProtocolFields(proto.fields?.length ? proto.fields : proto.config?.fields)
       }
       if (!fields.length) return false
+      // 按数据集行键过滤，避免 protocolRefs 中不相关字段误判「字段值缺失」
+      fields = filterByDatasetKeys(fields, ds)
       // 按字段名去重
       const seen = new Set()
       fields = fields.filter(f => {
@@ -449,7 +466,7 @@ export const useTestDataStore = defineStore('testData', {
         const iface = protocolStore.interfaces.find(
           (i) => i.name === ds.linkedInterface || String(i.id) === String(ds.linkedInterface)
         )
-        if (iface) defs = collectInterfaceFields(iface, protocolStore.protocols)
+        if (iface) defs = collectInterfaceDatasetFields(iface, protocolStore.protocols)
       }
       if (!defs.length && ds.linkedProtocol) {
         const proto = protocolStore.protocols.find(
@@ -457,6 +474,7 @@ export const useTestDataStore = defineStore('testData', {
         )
         if (proto) defs = flattenProtocolFields(proto.fields?.length ? proto.fields : proto.config?.fields)
       }
+      defs = filterByDatasetKeys(defs, ds)
       const seen = new Set()
       defs = defs.filter((f) => {
         if (seen.has(f.name)) return false

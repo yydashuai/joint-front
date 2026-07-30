@@ -386,8 +386,17 @@ const onDownloadFile = (file) => {
 const showUploadDialog = ref(false)
 
 const onUploadFile = (data) => {
-  tdStore.addFile(data)
+  const file = tdStore.addFile(data)
   ElMessage.success('文件导入成功')
+  // 文本类文件导入后默认弹出解析窗口，便于直接生成字段 / 报文 / 数据集
+  if (data?.content) {
+    openDataChainDialog({
+      name: file.name,
+      content: data.content,
+      systemId: data.systemId || '',
+      moduleName: data.moduleName || ''
+    })
+  }
 }
 
 /* ========== 数据链文件导入 ========== */
