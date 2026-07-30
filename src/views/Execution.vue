@@ -84,10 +84,6 @@
             </div>
 
             <div class="wizard-footer">
-              <div class="wizard-footer__meta">
-                <strong>{{ currentStep.title }}</strong>
-                <span>{{ currentStep.helper }}</span>
-              </div>
               <div class="wizard-actions">
                 <el-button :icon="ArrowLeft" :disabled="prevDisabled" @click="prevStep">上一步</el-button>
                 <template v-if="activeTab === 'monitor'">
@@ -496,21 +492,19 @@ const addScheme = (schemeId) => {
   scheme.interfaceIds.forEach((interfaceId) => {
     const iface = protocolStore.interfaces.find((i) => String(i.id) === String(interfaceId))
     if (!iface) { missing += 1; return }
-    // B 方案：未配置完全的接口拒绝加入
-    if (!interfaceReadiness(iface).ok) { unready += 1; return }
+    // 方案拖入：全部接口均加入计划（未配置完全的仅计入提示，不拒绝），确保方案内接口完整可见
+    if (!interfaceReadiness(iface).ok) unready += 1
     const task = ensureTaskForInterface(iface)
     if (execution.addToPlan(task.id)) added += 1
     else skipped += 1
   })
   const extra = [
     skipped ? `${skipped} 个已在计划中` : '',
-    unready ? `${unready} 个未配置完全已拒绝` : '',
+    unready ? `${unready} 个未配置完全（需补全字段/数据集）` : '',
     missing ? `${missing} 个接口已不存在` : '',
   ].filter(Boolean).join('，')
   if (added) {
     ElMessage.success(`方案「${scheme.name}」已加入 ${added} 个接口${extra ? `（${extra}）` : ''}`)
-  } else if (unready) {
-    ElMessage.error(`方案「${scheme.name}」的接口均未配置完全，已拒绝加入；请先配置字段与数据集`)
   } else if (skipped) {
     ElMessage.info(`方案「${scheme.name}」的接口均已在编排计划中`)
   } else {
@@ -588,7 +582,7 @@ const rerun = () => {
   activeTab.value = 'plan'
 }
 
-// 从报文管理页「跳转到计划 / 发送测试」：统一走 addInterfaceToPlan（含 B 方案完整性校验）
+// 从报文字段管理页「跳转到计划 / 发送测试」：统一走 addInterfaceToPlan（含 B 方案完整性校验）
 const handleInterfaceJump = (interfaceId, isTest = false) => {
   addInterfaceToPlan(interfaceId, { test: isTest })
 }
@@ -600,6 +594,13 @@ watch(() => execution.status, (status) => {
 })
 
 onMounted(() => {
+  // 演示接口方案：首次进入时填充 3 个武器管理接口（ID 在种子加载后确定）
+  const demoScheme = schemeStore.schemes.find(s => s.id === 'scheme-5002')
+  if (demoScheme && !demoScheme.interfaceIds.length) {
+    const ifaces = protocolStore.interfaces.filter(i => i.systemId === 'sys-weapon').slice(0, 3)
+    if (ifaces.length) schemeStore.update(demoScheme.id, { interfaceIds: ifaces.map(i => i.id) })
+  }
+
   // 从接口配置「跳转到计划 / 发送测试」
   const jumpInterfaceId = firstQueryValue(route.query.interfaceId)
   if (jumpInterfaceId) {

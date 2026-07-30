@@ -6,7 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 export const navRoutes = [
   { path: '/', name: 'dashboard', short: '首', title: '联试系统首页', icon: 'Odometer', component: () => import('@/views/Dashboard.vue') },
   { path: '/connection', name: 'connection', short: '连', title: '链路连接管理', icon: 'Connection', component: () => import('@/views/Connection.vue') },
-  { path: '/protocol', name: 'protocol', short: '文', title: '报文管理', icon: 'Document', component: () => import('@/views/Protocol.vue') },
+  { path: '/protocol', name: 'protocol', short: '文', title: '报文字段管理', icon: 'Document', component: () => import('@/views/Protocol.vue') },
   { path: '/test-data', name: 'test-data', short: '数', title: '测试数据管理', icon: 'Coin', component: () => import('@/views/TestData.vue') },
   { path: '/execution', name: 'execution', short: '编', title: '测试接口编排', icon: 'VideoPlay', component: () => import('@/views/Execution.vue') },
   { path: '/reception', name: 'reception', short: '收', title: '接收接口编排', icon: 'Download', component: () => import('@/views/Reception.vue') },

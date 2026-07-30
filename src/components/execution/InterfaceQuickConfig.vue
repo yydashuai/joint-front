@@ -17,7 +17,7 @@
       <template #title>
         该接口尚未引用任何协议字段，报文为空帧，无法加入计划或发送测试。
         <el-button link type="primary" size="small" @click="goProtocolEditor">
-          {{ isCreate ? '保存后去报文管理配置字段' : '去报文管理配置字段' }}
+          {{ isCreate ? '保存后去报文字段管理配置字段' : '去报文字段管理配置字段' }}
         </el-button>
       </template>
     </el-alert>
@@ -134,7 +134,7 @@
  * - 新建模式：从系统树模块层「+接口」进入，context 提供 systemId/moduleId；
  * - 编辑模式：传入 interfaceId，读写 protocol store 中的接口对象。
  * B 方案约束：接口未引用协议字段（protocolRefs 为空）时，「保存并加入计划 / 保存并发送测试」禁用，
- * 需先到报文管理配置字段。
+ * 需先到报文字段管理配置字段。
  */
 import { computed, reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -208,7 +208,7 @@ const datasetMissing = computed(() => !form.datasetIds.length)
 const blockPlan = computed(() => fieldsMissing.value || datasetMissing.value)
 const blockTip = datasetMissing.value
   ? '请先在接口配置中关联至少一个测试数据集'
-  : '接口未引用协议字段，请先到报文管理配置字段'
+  : '接口未引用协议字段，请先到报文字段管理配置字段'
 
 /* ---- 保存 ---- */
 const save = (silent = false) => {
@@ -245,7 +245,7 @@ const saveAnd = (action) => {
 
 /* ---- 跳转 ---- */
 const goProtocolEditor = () => {
-  // 新建模式先落库再跳，保证报文管理里能找到该接口
+  // 新建模式先落库再跳，保证报文字段管理里能找到该接口
   const iface = editingIface.value || save(true)
   protocolStore.selectedInterfaceId = iface.id
   visible.value = false

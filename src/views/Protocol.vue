@@ -2,7 +2,7 @@
   <div class="page proto">
     <div class="page__header">
       <div>
-        <h2>报文管理</h2>
+        <h2>报文字段管理</h2>
         <div class="page__desc">系统 → 模块 → 字段 / 报文</div>
       </div>
     </div>

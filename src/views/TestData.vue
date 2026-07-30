@@ -51,7 +51,7 @@
         <DatasetSchemeDetail
           v-if="currentScheme"
           :scheme="currentScheme"
-          @edit="openSchemeDialog"
+          @edit="(scheme) => openSchemeDialog(scheme.systemId, scheme)"
           @remove="onRemoveScheme"
           @open-dataset="openDatasetFromScheme"
           @remove-dataset="onRemoveDatasetFromScheme"
@@ -108,7 +108,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { Upload, Search, FolderChecked } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
@@ -490,6 +490,15 @@ const autoSelectFirst = () => {
   }
 }
 autoSelectFirst()
+
+// 演示数据集方案：首次进入时填充 3 个武器管理数据集
+onMounted(() => {
+  const demoScheme = schemeStore.schemes.find(s => s.id === 'dsScheme-6002')
+  if (demoScheme && !demoScheme.datasetIds.length) {
+    const ds = tdStore.datasets.filter(d => d.systemId === 'sys-weapon').slice(0, 3)
+    if (ds.length) schemeStore.update(demoScheme.id, { datasetIds: ds.map(d => d.id) })
+  }
+})
 
 // 数据集列表变化时（删除后），保持选中有效
 watch(() => tdStore.datasets.length, () => {
