@@ -68,6 +68,9 @@
 
             <div class="wizard-body">
               <div v-show="activeTab === 'plan'" class="step-panel plan-layout">
+                <div class="plan-strategy-bar">
+                  <StrategyBar />
+                </div>
                 <PlanTable
                   :selected-iface="selectedIface"
                   :selected-in-plan="!!isSelectedInPlan"
@@ -182,6 +185,7 @@ import {
 } from '@element-plus/icons-vue'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import PlanTable from '@/components/execution/PlanTable.vue'
+import StrategyBar from '@/components/execution/StrategyBar.vue'
 import LiveConsole from '@/components/execution/LiveConsole.vue'
 import InterfaceQuickConfig from '@/components/execution/InterfaceQuickConfig.vue'
 import { useConnectionStore } from '@/stores/connection'
@@ -839,6 +843,12 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+.plan-strategy-bar {
+  padding: 10px 14px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
+  border: 1px solid var(--el-border-color-lighter);
 }
 @media (max-width: 1180px) {
   .execution-page { overflow: auto; }
