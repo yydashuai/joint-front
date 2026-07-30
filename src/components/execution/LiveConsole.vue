@@ -25,11 +25,16 @@
       </div>
     </el-card>
 
+    <el-card shadow="never" class="exec-card strategy-card">
+      <div class="strategy-card__inner">
+        <Strategy-bar :disabled="store.status === 'running'" />
+      </div>
+    </el-card>
+
     <el-card shadow="never" class="exec-card console-card">
       <template #header>
         <div class="console-tools">
           <span class="card-title">发送数据流</span>
-          <Strategy-bar class="console-strategy" :disabled="store.status === 'running'" />
           <div class="console-tools__right">
             <el-tag size="small" type="success" effect="plain">已发送 {{ store.sentCount }}</el-tag>
             <el-tag size="small" type="info" effect="plain">待发送 {{ store.pendingCount }}</el-tag>
@@ -354,8 +359,9 @@ watch(() => store.sentCount, () => {
 }
 .card-head, .console-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .console-tools__right { display: flex; align-items: center; gap: 12px; }
-.console-strategy { flex: 1 1 auto; min-width: 0; }
 .card-title { font-weight: 650; font-size: 14px; margin-right: 8px; }
+.strategy-card :deep(.el-card__body) { padding: 10px 14px; }
+.strategy-card__inner { display: flex; align-items: center; }
 .card-sub, .muted { color: var(--el-text-color-secondary); font-size: 12px; }
 .lock-hint { font-size: 12px; color: var(--el-color-warning); cursor: help; }
 .edit-hint { font-size: 12px; color: var(--el-color-primary); }
