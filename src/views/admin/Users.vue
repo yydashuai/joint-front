@@ -4,7 +4,6 @@
     <div class="page__header">
       <div>
         <h2>用户管理</h2>
-        <div class="page__desc">创建和管理联试工具用户账号，分配测试权限</div>
       </div>
       <el-tooltip content="创建一个新的用户账号"><el-button type="primary" :icon="Plus" @click="openDialog()">新建用户</el-button></el-tooltip>
     </div>

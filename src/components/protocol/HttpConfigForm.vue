@@ -32,9 +32,6 @@
 
     <!-- ====== 区块1: 基础传输配置 ====== -->
     <el-divider content-position="left">HTTP 传输配置</el-divider>
-    <div class="section-hint">
-      字段只定义传输层规范（方法、编码、认证）。具体的发送路径、参数、接收由引用此字段的报文定义。
-    </div>
     <div class="form-grid">
       <div class="form-row">
         <span class="form-label req">请求方法</span>
@@ -195,8 +192,6 @@ const addCommonHeader = (name) => {
 .form-row { display: flex; align-items: center; gap: 12px; }
 .form-label { font-size: 13px; color: var(--el-text-color-regular); min-width: 100px; flex-shrink: 0; }
 .form-label.req::before { content: '*'; color: var(--el-color-danger); margin-right: 2px; }
-
-.section-hint { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 12px; line-height: 1.6; padding-left: 4px; border-left: 3px solid var(--el-color-primary-light-5); }
 
 .kv-table { margin-bottom: 8px; }
 .header-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }

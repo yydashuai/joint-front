@@ -22,12 +22,12 @@ const hr = (label, values, abnormal = false, source = '文件导入', remark = '
 export const datasets = [
   {
     id: dsId(),
-    name: '帧控制字节-全场景',
+    name: '帧控制字节全场景数据集',
     systemId: 'sys-weapon',
     moduleName: '武器管理模块',
     linkedProtocol: null,
-    linkedInterface: '帧控制指令',
-    desc: '覆盖帧控制字节字段的所有字段组合场景',
+    linkedInterface: '帧控制指令报文',
+    desc: '',
     createdAt: '2026-06-18',
     rows: [
       row('明文+未压缩', { '加密标志': 0, '压缩标志': 0, '分片标志': 0, '应答标志': 0, '保留位': 0, '数据类型': 0 }),
@@ -47,11 +47,11 @@ export const datasets = [
   },
   {
     id: dsId(),
-    name: '设备状态查询-正常与异常',
+    name: '设备状态查询正常与异常数据集',
     systemId: 'sys-weapon',
     moduleName: '武器管理模块',
     linkedProtocol: null,
-    linkedInterface: '查询设备状态',
+    linkedInterface: '查询设备状态报文',
     desc: '模拟设备在线/离线/超时等场景的查询发送',
     createdAt: '2026-06-20',
     rows: [
@@ -62,11 +62,11 @@ export const datasets = [
   },
   {
     id: dsId(),
-    name: '遥测帧-温度范围测试',
+    name: '遥测帧温度范围数据集',
     systemId: 'sys-fire',
     moduleName: '火控解算模块',
     linkedProtocol: null,
-    linkedInterface: '遥测帧上报',
+    linkedInterface: '遥测帧上报报文',
     desc: '验证遥测帧在不同温度区间的解析正确性',
     createdAt: '2026-06-22',
     rows: [
@@ -89,11 +89,11 @@ export const datasets = [
   },
   {
     id: dsId(),
-    name: '武器装订-多参数组合',
+    name: '武器装订多参数组合数据集',
     systemId: 'sys-weapon',
     moduleName: '武器管理模块',
     linkedProtocol: null,
-    linkedInterface: '武器装订指令',
+    linkedInterface: '武器装订指令报文',
     desc: '覆盖不同武器编号、引信模式和射程的装订场景',
     createdAt: '2026-06-23',
     rows: [
@@ -137,9 +137,6 @@ const DATA_CHAIN_DEMO_CONTENT = `一、SpaceMissions
 11，1005，2，20.3，29.0，1.02，0.04，0.03，0.09，41246，1
 12，1006，1，24.7，28.0，1.31，-0.25，0.37，1.88，44573，1`
 
-const randTaskName = () =>
-  '任务_' + Math.random().toString(16).slice(2, 10).toUpperCase() + '.bin'
-
 export const files = [
   {
     id: fileId(),
@@ -153,17 +150,5 @@ export const files = [
     uploadedAt: '2026-07-30 09:00',
     rowCount: 23,
     content: DATA_CHAIN_DEMO_CONTENT
-  },
-  {
-    id: fileId(),
-    name: randTaskName(),
-    format: 'bin',
-    size: Math.floor(Math.random() * 900000) + 100000,
-    systemId: 'sys-radar',
-    moduleId: null,
-    moduleName: '信号处理模块',
-    desc: '任务下发二进制指令文件（示例：可下载 / 删除，无文本内容不支持解析）',
-    uploadedAt: '2026-07-30 10:00',
-    rowCount: 0
   }
 ]

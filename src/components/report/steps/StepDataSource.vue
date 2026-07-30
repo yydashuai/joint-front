@@ -5,7 +5,6 @@
         <div class="step-head">
           <div>
             <div class="blk__title"><el-icon><Coin /></el-icon> 选择执行批次（报告数据来源）</div>
-            <div class="blk__desc">报告会从所选执行批次读取硬数据，包含任务结果、接口指标和异常记录。</div>
           </div>
           <div class="step-actions">
             <el-button type="primary" :icon="ArrowRight" :disabled="!form.runId" @click="$emit('next')">下一步</el-button>
@@ -47,7 +46,7 @@
           </div>
           <div class="stat-grid">
             <div class="stat-card stat-card--blue">
-              <span class="stat-card__label">请求总量</span>
+              <span class="stat-card__label">发送总量</span>
               <strong>{{ run.summary.totalRequests }}</strong>
               <span>成功 {{ run.summary.successRequests }} / 异常 {{ abnormalRequests }}</span>
             </div>
@@ -57,7 +56,7 @@
               <span>覆盖 {{ run.stepResults.length }} 个任务</span>
             </div>
             <div class="stat-card stat-card--orange">
-              <span class="stat-card__label">响应延迟</span>
+              <span class="stat-card__label">接收延迟</span>
               <strong>{{ run.summary.avgResponseTime }} ms</strong>
               <span>P95 {{ run.summary.p95 }} ms</span>
             </div>
@@ -67,7 +66,6 @@
             <div class="ov__row"><span class="ov__k">接口覆盖</span><span class="ov__v">{{ ifaceCount }} 个接口 · {{ run.stepResults.map(r => r.iface).join('、') }}</span></div>
           </div>
         </el-card>
-        <div class="foot-hint">关键指标 / 接口结果表等硬数据将由系统从此批次自动组织</div>
       </div>
     </el-scrollbar>
   </div>
@@ -111,7 +109,7 @@ const moduleCount = (batch) => new Set((batch?.tasks || batch?.stepResults || []
 const taskCount = (batch) => batch?.tasks?.length || batch?.stepResults?.length || 0
 const batchScope = (batch) => `${moduleCount(batch)}模块/${taskCount(batch)}任务`
 const batchAbnormal = (batch) => batch?.summary?.abnormalRequests ?? ((batch?.summary?.failedRequests || 0) + (batch?.summary?.errorRequests || 0))
-const batchMetrics = (batch) => `${batch?.summary?.totalRequests || 0}请求 / ${batchAbnormal(batch)}异常`
+const batchMetrics = (batch) => `${batch?.summary?.totalRequests || 0}次发送 / ${batchAbnormal(batch)}异常`
 const batchSelectLabel = (batch) => `${batchTime(batch)} · ${batch?.result || '未完成'} · ${batchScope(batch)}`
 
 const onRunChange = () => {
@@ -184,7 +182,6 @@ watch(() => systemStore.currentId, ensureRun)
   font-size: 14px; font-weight: 600; color: var(--el-text-color-primary);
   .el-icon { color: var(--el-color-primary); }
 }
-.blk__desc { font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.5; }
 
 .ov-card { margin-top: 14px; }
 .ov-card__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -216,7 +213,6 @@ watch(() => systemStore.currentId, ensureRun)
 .ov__k { color: var(--el-text-color-secondary); width: 72px; flex-shrink: 0; }
 .ov__v { color: var(--el-text-color-primary); }
 
-.foot-hint { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 12px; }
 @media (max-width: 980px) {
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

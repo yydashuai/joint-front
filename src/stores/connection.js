@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { useSystemStore } from '@/stores/system'
 import { nodes as seedNodes } from '@/mock/seed-data'
+import { makeUniqueName } from '@/utils/entityName'
 
 let seq = 200
 const rnd = (a, b) => Math.round(a + Math.random() * (b - a))
@@ -43,7 +44,10 @@ export const useConnectionStore = defineStore('connection', {
       this.selectedId = id
     },
     add(node) {
-      const n = makeNode(node)
+      const n = makeNode({
+        ...node,
+        name: makeUniqueName(this.nodes, node.name || '新建模块'),
+      })
       this.nodes.unshift(n)
       this.selectedId = n.id
       return n

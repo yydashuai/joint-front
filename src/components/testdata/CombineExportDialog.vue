@@ -67,6 +67,7 @@ import { useTestDataStore } from '@/stores/testData'
 import { useDatasetSchemeStore } from '@/stores/datasetScheme'
 import { useSystemStore } from '@/stores/system'
 import { exportJsonFile, serializeCsv, downloadBlob } from '@/services/testDataService'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const props = defineProps({ modelValue: Boolean, systemId: { type: [String, Number], default: '' } })
 const emit = defineEmits(['update:modelValue', 'saved'])
@@ -74,6 +75,7 @@ const emit = defineEmits(['update:modelValue', 'saved'])
 const tdStore = useTestDataStore()
 const schemeStore = useDatasetSchemeStore()
 const systemStore = useSystemStore()
+const { validateName } = useEntityNameGuard()
 
 const visible = computed({
   get: () => props.modelValue,
@@ -139,12 +141,10 @@ const onExportFile = () => {
 
 const onSaveScheme = () => {
   if (!selectedIds.value.length) return
-  if (!form.name.trim()) {
-    ElMessage.warning('请输入方案名称')
-    return
-  }
+  const validName = validateName(form.name, null, '方案')
+  if (!validName) return
   const scheme = schemeStore.add({
-    name: form.name.trim(),
+    name: validName,
     systemId: props.systemId || null,
     datasetIds: [...selectedIds.value],
     remark: form.remark,

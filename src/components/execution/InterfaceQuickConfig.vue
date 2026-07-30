@@ -15,23 +15,23 @@
       class="iqc-alert"
     >
       <template #title>
-        该接口尚未引用任何协议字段，报文为空帧，无法加入计划或发送测试。
-        <el-button link type="primary" size="small" @click="goProtocolEditor">
-          {{ isCreate ? '保存后去报文字段管理配置字段' : '去报文字段管理配置字段' }}
+        当前接口并未关联数据集，请在下面关联数据集，或
+        <el-button link type="primary" size="small" @click="goTestData">
+          去创建测试数据集
         </el-button>
       </template>
     </el-alert>
 
     <!-- 未关联数据集警告（必须显式绑定数据集后才能加入计划） -->
       <el-alert
-        v-else-if="datasetMissing && !hidePlanActions"
+        v-else-if="datasetMissing"
         type="warning"
         :closable="false"
         show-icon
         class="iqc-alert"
       >
         <template #title>
-          该接口尚未关联任何测试数据集，无法加入计划。
+          该接口尚未关联任何测试数据集，无法开始测试。
           <el-button link type="primary" size="small" @click="goTestData">去测试数据管理创建/关联数据集</el-button>
         </template>
       </el-alert>
@@ -42,7 +42,18 @@
       <el-form-item label="接口名称">
         <el-input v-model="form.name" placeholder="留空默认「新建接口」" clearable />
       </el-form-item>
-      <el-form-item label="所属">
+      <el-form-item v-if="ownerEditable" label="所属">
+        <div class="iqc-owner-selects">
+          <el-select v-model="form.systemId" placeholder="选择系统" @change="onOwnerSystemChange">
+            <el-option v-for="system in systemStore.visibleSystems" :key="system.id" :label="system.name" :value="system.id" />
+          </el-select>
+          <span>/</span>
+          <el-select v-model="form.moduleId" placeholder="选择模块" :disabled="!form.systemId" @change="form.datasetIds = []">
+            <el-option v-for="module in ownerModuleOptions" :key="module.id" :label="module.name" :value="module.id" />
+          </el-select>
+        </div>
+      </el-form-item>
+      <el-form-item v-else label="所属">
         <span class="iqc-owner">{{ systemName }} / {{ moduleName }}</span>
       </el-form-item>
       <el-form-item label="备注">
@@ -112,15 +123,15 @@
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
       <el-button @click="save()">仅保存</el-button>
+      <el-tooltip :content="testBlockTip" :disabled="!blockTest" placement="top">
+        <span class="iqc-btn-wrap">
+          <el-button type="primary" :disabled="blockTest" @click="saveAnd('test')">保存并测试</el-button>
+        </span>
+      </el-tooltip>
       <template v-if="!hidePlanActions">
         <el-tooltip :content="blockTip" :disabled="!blockPlan" placement="top">
           <span class="iqc-btn-wrap">
             <el-button type="primary" plain :disabled="blockPlan" @click="saveAnd('plan')">保存并加入计划</el-button>
-          </span>
-        </el-tooltip>
-        <el-tooltip :content="blockTip" :disabled="!blockPlan" placement="top">
-          <span class="iqc-btn-wrap">
-            <el-button type="primary" :disabled="blockPlan" @click="saveAnd('test')">保存并发送测试</el-button>
           </span>
         </el-tooltip>
       </template>
@@ -132,17 +143,21 @@
 /**
  * 接口快捷配置弹窗（编排页）：
  * - 新建模式：从系统树模块层「+接口」进入，context 提供 systemId/moduleId；
- * - 编辑模式：传入 interfaceId，读写 protocol store 中的接口对象。
- * B 方案约束：接口未引用协议字段（protocolRefs 为空）时，「保存并加入计划 / 保存并发送测试」禁用，
- * 需先到报文字段管理配置字段。
+ * - 编辑模式：传入 interfaceId，读写独立的测试接口对象。
+ * 接口按“接口 → 数据集 → 报文 → 字段”链路获取测试内容，不直接引用字段或报文。
  */
 import { computed, reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { useProtocolStore, defaultIfaceStrategy } from '@/stores/protocol'
+import {
+  useProtocolStore,
+  defaultIfaceStrategy,
+  collectTestInterfaceFields,
+} from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
 import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -157,6 +172,7 @@ const protocolStore = useProtocolStore()
 const testDataStore = useTestDataStore()
 const connStore = useConnectionStore()
 const systemStore = useSystemStore()
+const { nextUniqueName, validateName } = useEntityNameGuard()
 
 const visible = computed({
   get: () => props.modelValue,
@@ -166,13 +182,15 @@ const visible = computed({
 const isCreate = computed(() => !props.interfaceId)
 const editingIface = computed(() =>
   props.interfaceId
-    ? protocolStore.interfaces.find((i) => String(i.id) === String(props.interfaceId)) || null
+    ? protocolStore.testInterfaces.find((i) => String(i.id) === String(props.interfaceId)) || null
     : null
 )
 
 const form = reactive({
   name: '',
   desc: '',
+  systemId: null,
+  moduleId: null,
   datasetIds: [],
   strategy: defaultIfaceStrategy(),
   sendInterval: 500,
@@ -183,45 +201,71 @@ watch(visible, (open) => {
   const src = editingIface.value
   form.name = src?.name || ''
   form.desc = src?.desc || ''
+  form.systemId = src?.systemId ?? props.context?.systemId ?? null
+  form.moduleId = src?.moduleId ?? props.context?.moduleId ?? null
   form.datasetIds = [...(src?.datasetIds || [])]
   form.strategy = { ...defaultIfaceStrategy(), ...(src?.strategy || {}) }
   form.sendInterval = src?.sendInterval || 500
 }, { immediate: true })
 
 /* ---- 归属信息 ---- */
-const ownerSystemId = computed(() => editingIface.value?.systemId ?? props.context?.systemId ?? null)
-const ownerModuleId = computed(() => editingIface.value?.moduleId ?? props.context?.moduleId ?? null)
+const ownerEditable = computed(() => isCreate.value && !props.context)
+const ownerSystemId = computed(() => editingIface.value?.systemId ?? props.context?.systemId ?? form.systemId ?? null)
+const ownerModuleId = computed(() => editingIface.value?.moduleId ?? props.context?.moduleId ?? form.moduleId ?? null)
 const systemName = computed(() => systemStore.systems.find((s) => s.id === ownerSystemId.value)?.name || '—')
 const moduleName = computed(() => connStore.nodes.find((n) => n.id === ownerModuleId.value)?.name || '—')
+const ownerModuleOptions = computed(() => connStore.nodes.filter((module) => module.systemId === form.systemId))
+
+const onOwnerSystemChange = () => {
+  form.moduleId = null
+  form.datasetIds = []
+}
 
 /* ---- 数据集选项：按系统 + 模块过滤 ---- */
 const datasetOptions = computed(() =>
   testDataStore.datasets.filter((d) => d.systemId === ownerSystemId.value && d.moduleName === moduleName.value)
 )
 
-/* ---- B 方案：字段未配置 / 未关联数据集 → 禁止加入计划/发送测试 ---- */
-const fieldsMissing = computed(() => {
-  if (isCreate.value) return true // 新建接口必然无字段引用
-  return !(editingIface.value?.protocolRefs || []).length
-})
+/* ---- 接口 → 数据集 → 报文 → 字段链路不完整时禁止测试 ---- */
+const linkedFields = computed(() => collectTestInterfaceFields(
+  { datasetIds: form.datasetIds },
+  testDataStore.datasets,
+  protocolStore.interfaces,
+  protocolStore.protocols,
+  props.hidePlanActions ? 'receive' : 'send',
+))
+const fieldsMissing = computed(() => !linkedFields.value.length)
 const datasetMissing = computed(() => !form.datasetIds.length)
 const blockPlan = computed(() => fieldsMissing.value || datasetMissing.value)
-const blockTip = datasetMissing.value
+const blockTest = computed(() => fieldsMissing.value || datasetMissing.value)
+const blockTip = computed(() => datasetMissing.value
   ? '请先在接口配置中关联至少一个测试数据集'
-  : '接口未引用协议字段，请先到报文字段管理配置字段'
+  : '所选数据集没有关联可用的报文和字段')
+const testBlockTip = computed(() => {
+  if (datasetMissing.value) return '请先关联至少一个测试数据集'
+  if (fieldsMissing.value) return '所选数据集没有关联可用的报文和字段'
+  return ''
+})
 
 /* ---- 保存 ---- */
 const save = (silent = false) => {
+  if (!ownerSystemId.value || !ownerModuleId.value) {
+    ElMessage.warning('请选择所属系统和模块')
+    return null
+  }
   let iface = editingIface.value
+  const candidateName = form.name.trim() || iface?.name || nextUniqueName('新建接口')
+  const validName = validateName(candidateName, iface, '接口')
+  if (!validName) return null
   if (iface) {
-    iface.name = form.name.trim() || iface.name || '新建接口'
+    iface.name = validName
     iface.desc = form.desc
     iface.datasetIds = [...form.datasetIds]
     iface.strategy = { ...form.strategy }
     iface.sendInterval = form.sendInterval || 500
   } else {
-    iface = protocolStore.addInterface({
-      name: form.name.trim() || '新建接口',
+    iface = protocolStore.addTestInterface({
+      name: validName,
       desc: form.desc,
       systemId: ownerSystemId.value,
       moduleId: ownerModuleId.value,
@@ -243,14 +287,6 @@ const saveAnd = (action) => {
   else if (action === 'test') emit('test', iface.id)
 }
 
-/* ---- 跳转 ---- */
-const goProtocolEditor = () => {
-  // 新建模式先落库再跳，保证报文字段管理里能找到该接口
-  const iface = editingIface.value || save(true)
-  protocolStore.selectedInterfaceId = iface.id
-  visible.value = false
-  router.push('/protocol')
-}
 const goTestData = () => {
   visible.value = false
   router.push('/test-data')
@@ -268,6 +304,13 @@ const goTestData = () => {
   color: var(--el-text-color-primary);
 }
 .iqc-owner { color: var(--el-text-color-secondary); font-size: 13px; }
+.iqc-owner-selects {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
 .iqc-empty-hint { color: var(--el-text-color-secondary); font-size: 13px; }
 .iqc-periodic {
   display: flex;

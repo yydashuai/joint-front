@@ -124,6 +124,7 @@ import { ElMessageBox } from 'element-plus'
 import { Plus, Back, Expand, Fold } from '@element-plus/icons-vue'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const props = defineProps({
   modelValue: { type: String, default: '' }, // 当前选中节点 key
@@ -144,6 +145,7 @@ const emit = defineEmits(['update:modelValue', 'select', 'clear', 'add-leaf', 'd
 
 const systemStore = useSystemStore()
 const connStore = useConnectionStore()
+const { nextUniqueName, validateName } = useEntityNameGuard()
 const router = useRouter()
 
 const modulesAreLeaves = computed(() => !props.leafGroups)
@@ -330,20 +332,33 @@ const DEFAULT_NAME = { system: '新建系统', module: '新建模块' }
 const fallbackName = (kind) => DEFAULT_NAME[kind] || '未命名'
 const promptName = (obj, kind, title) => {
   const fb = fallbackName(kind)
+  const originalName = obj.name
   ElMessageBox.prompt(title, '命名', {
     inputValue: obj.name || '',
     inputPlaceholder: `留空默认「${fb}」`,
     confirmButtonText: '确定',
     cancelButtonText: '取消'
   })
-    .then(({ value }) => { obj.name = (value || '').trim() || fb })
-    .catch(() => { if (!obj.name) obj.name = fb })
+    .then(({ value }) => {
+      const type = kind === 'system' ? '系统' : '模块'
+      const candidate = (value || '').trim() || nextUniqueName(fb, obj)
+      const validName = validateName(candidate, obj, type)
+      obj.name = validName || originalName
+    })
+    .catch(() => { if (!obj.name) obj.name = nextUniqueName(fb, obj) })
 }
 const startRename = (data) => { if (data?.ref) promptName(data.ref, data.kind, '重命名') }
 
 /* ---- 新建（默认名创建，随后可重命名） ---- */
-const newSystem = () => { systemStore.add({ name: DEFAULT_NAME.system }) }
-const newModule = (sysNode) => { connStore.add({ name: DEFAULT_NAME.module, systemId: sysNode.ref.id, ip: '192.168.1.1', port: 8080 }) }
+const newSystem = () => { systemStore.add({ name: nextUniqueName(DEFAULT_NAME.system) }) }
+const newModule = (sysNode) => {
+  connStore.add({
+    name: nextUniqueName(DEFAULT_NAME.module),
+    systemId: sysNode.ref.id,
+    ip: '192.168.1.1',
+    port: 8080,
+  })
+}
 const addLeaf = (groupKind, modNode) => { emit('add-leaf', { groupKind, module: modNode.ref }) }
 const emitLeafAction = (action) => { emit('leaf-action', { action, data: ctx.data }); closeCtx() }
 const emitModuleAction = (action) => { emit('module-action', { action, data: ctx.data }); closeCtx() }
@@ -420,8 +435,12 @@ const ctxEdit = () => {
     background: var(--el-fill-color-light); border-radius: 4px; padding: 0 4px;
     font-family: 'Consolas', 'Monaco', monospace;
   }
-  &__ops { display: none; gap: 2px; }
-  &:hover &__ops { display: inline-flex; }
+  &__ops {
+    display: inline-flex;
+    flex-shrink: 0;
+    gap: 2px;
+    white-space: nowrap;
+  }
 
   &--system { font-weight: 600; }
   &--system .tnode__icon { color: var(--el-color-primary); }

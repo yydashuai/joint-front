@@ -75,7 +75,10 @@ const meta = computed(() => {
   // 五类标准类型渲染
   if (isV2Type.value) {
     switch (n.type) {
-      case 'scalar': return n.encoding || 'uint8'
+      case 'scalar':
+        return n.encoding === 'field-ref'
+          ? (n.protocolRef ? `引用：${store.protocolName(n.protocolRef)}` : '未选择引用字段')
+          : (n.encoding || 'uint8')
       case 'bitstream': return n.protocolRef ? `字段：${store.protocolName(n.protocolRef)}` : '未绑定字段'
       case 'struct': return `${n.children.length} 个字段`
       case 'matrix': return `${n.children.length} 列 × 结构矩阵`

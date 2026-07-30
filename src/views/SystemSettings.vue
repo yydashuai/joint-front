@@ -4,7 +4,6 @@
     <div class="page__header">
       <div>
         <h2>系统配置</h2>
-        <div class="page__desc">系统参数、模型服务与知识向量化等管理员配置</div>
       </div>
     </div>
 

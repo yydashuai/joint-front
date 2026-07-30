@@ -1,32 +1,46 @@
 <template>
   <div class="app-shell">
-    <!-- 左侧图标导航条（草图：首 连 协 数 务 执 则 异 计 报） -->
-    <aside class="rail">
-      <div class="rail__logo">联试</div>
+    <!-- 左侧主导航：默认展开，支持收起为图标栏 -->
+    <aside class="rail" :class="{ 'is-collapsed': railCollapsed }">
+      <div class="rail__header">
+        <span v-show="!railCollapsed" class="rail__heading">功能导航</span>
+        <button
+          type="button"
+          class="rail__toggle"
+          :aria-label="railCollapsed ? '展开菜单栏' : '收起菜单栏'"
+          :title="railCollapsed ? '展开菜单栏' : '收起菜单栏'"
+          @click="railCollapsed = !railCollapsed"
+        >
+          <el-icon><Expand v-if="railCollapsed" /><Fold v-else /></el-icon>
+        </button>
+      </div>
       <nav class="rail__nav">
         <el-tooltip
           v-for="item in navRoutes"
           :key="item.name"
           :content="item.title"
           placement="right"
+          :disabled="!railCollapsed"
         >
           <router-link
             :to="item.path"
             class="rail__item"
             :class="{ 'is-active': isActive(item) }"
           >
-            <span class="rail__label">{{ item.short }}</span>
+            <el-icon class="rail__icon"><component :is="item.icon" /></el-icon>
+            <span v-show="!railCollapsed" class="rail__label">{{ item.title }}</span>
           </router-link>
         </el-tooltip>
       </nav>
       <div v-if="isAdmin" class="rail__admin">
-        <el-tooltip content="系统配置" placement="right">
+        <el-tooltip content="系统配置" placement="right" :disabled="!railCollapsed">
           <router-link
             to="/admin/system-settings"
-            class="rail__item rail__item--icon rail__item--admin"
+            class="rail__item rail__item--admin"
             :class="{ 'is-active': route.path === '/admin/system-settings' }"
           >
-            <el-icon><Setting /></el-icon>
+            <el-icon class="rail__icon"><Setting /></el-icon>
+            <span v-show="!railCollapsed" class="rail__label">系统配置</span>
           </router-link>
         </el-tooltip>
       </div>
@@ -51,17 +65,6 @@
           </el-select>
           <el-button v-if="isAdmin" :icon="Setting" size="small" @click="systemManagerVisible = true">管理</el-button>
         </div>
-        <el-menu
-          class="topbar__menu"
-          mode="horizontal"
-          :ellipsis="true"
-          :default-active="$route.path"
-          router
-        >
-          <el-menu-item v-for="item in navRoutes" :key="item.name" :index="item.path">
-            {{ item.title }}
-          </el-menu-item>
-        </el-menu>
         <div class="topbar__user">
           <el-tooltip content="通知中心">
             <el-badge :value="notificationCount" :hidden="!notificationCount" :max="99" class="topbar__notify">
@@ -142,7 +145,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bell, Setting, User, Lock, SwitchButton } from '@element-plus/icons-vue'
+import { Bell, Setting, User, Lock, SwitchButton, Fold, Expand } from '@element-plus/icons-vue'
 import SystemManager from '@/components/SystemManager.vue'
 import { navRoutes } from '@/router'
 import { useSystemStore } from '@/stores/system'
@@ -161,6 +164,7 @@ const configStore = useConfigStore()
 const systemManagerVisible = ref(false)
 const notifyDrawerVisible = ref(false)
 const activeNotifyTab = ref('alert')
+const railCollapsed = ref(false)
 const ALL_SYSTEM_KEY = '__all__'
 
 const isActive = (item) => route.path === item.path
@@ -263,70 +267,162 @@ const onUserCommand = (cmd) => {
   overflow: hidden;
 }
 
-/* 左侧图标条 */
+/* 左侧主导航 */
 .rail {
-  width: 64px;
+  width: 161px;
   flex-shrink: 0;
   background: var(--jt-rail-bg);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding-top: 12px;
+  color: var(--jt-rail-fg);
+  transition: width 0.2s ease;
 
-  &__logo {
-    color: #fff;
-    font-weight: 700;
-    font-size: 14px;
-    letter-spacing: 1px;
-    margin-bottom: 16px;
-    writing-mode: vertical-rl;
+  &.is-collapsed {
+    width: 68px;
+  }
+
+  &__header {
+    height: 56px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 12px 0 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  &.is-collapsed &__header {
+    justify-content: center;
+    padding: 0;
+  }
+
+  &__heading {
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.74);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    white-space: nowrap;
+  }
+
+  &__toggle {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--jt-rail-fg);
+    cursor: pointer;
+    font-size: 18px;
+    transition: background 0.16s, color 0.16s;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.09);
+      color: #fff;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--el-color-primary-light-3);
+      outline-offset: 2px;
+    }
   }
 
   &__nav {
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
     width: 100%;
-    align-items: center;
+    padding: 12px 10px;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   &__admin {
-    margin-top: auto;
     width: 100%;
-    padding: 8px 0 12px;
-    display: flex;
-    justify-content: center;
+    padding: 10px;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
 
   &__item {
-    width: 48px;
-    height: 48px;
-    border-radius: 8px;
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    height: 42px;
+    padding: 0 12px;
+    border-radius: 7px;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 2px;
+    gap: 12px;
     color: var(--jt-rail-fg);
     text-decoration: none;
-    transition: all 0.18s;
+    transition: background 0.16s, color 0.16s;
 
-    &:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
-    &.is-active { background: var(--el-color-primary); color: #fff; }
-  }
+    &::before {
+      position: absolute;
+      left: 0;
+      width: 3px;
+      height: 20px;
+      border-radius: 0 3px 3px 0;
+      background: #7bb3ff;
+      content: '';
+      opacity: 0;
+      transform: scaleY(0.4);
+      transition: opacity 0.16s, transform 0.16s;
+    }
 
-  &__label { font-size: 16px; font-weight: 600; line-height: 1; }
-  &__item--icon {
-    font-size: 20px;
-  }
-
-  &__item--admin {
-    &:hover,
-    &.is-active {
-      background: rgba(255, 255, 255, 0.08);
+    &:hover {
+      background: rgba(255, 255, 255, 0.07);
       color: #fff;
     }
+
+    &:focus-visible {
+      outline: 2px solid var(--el-color-primary-light-3);
+      outline-offset: -2px;
+    }
+
+    &.is-active {
+      background: rgba(47, 111, 235, 0.24);
+      color: #fff;
+
+      &::before {
+        opacity: 1;
+        transform: scaleY(1);
+      }
+    }
+  }
+
+  &.is-collapsed &__nav,
+  &.is-collapsed &__admin {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  &.is-collapsed &__item {
+    justify-content: center;
+    padding: 0;
+  }
+
+  &__icon {
+    width: 20px;
+    flex-shrink: 0;
+    font-size: 19px;
+  }
+
+  &__label {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -368,12 +464,6 @@ const onUserCommand = (cmd) => {
     font-size: 13px;
   }
   &__system-select { width: 190px; }
-  &__menu {
-    flex: 1;
-    min-width: 0;
-    border-bottom: none !important;
-    overflow: hidden;
-  }
   &__notify {
     :deep(.el-badge__content) {
       font-size: 10px;
@@ -382,7 +472,7 @@ const onUserCommand = (cmd) => {
       line-height: 16px;
     }
   }
-  &__user { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+  &__user { display: flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: auto; }
   &__avatar {
     display: inline-flex;
     align-items: center;
@@ -415,6 +505,15 @@ const onUserCommand = (cmd) => {
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.15s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rail,
+  .rail__item,
+  .rail__item::before,
+  .rail__toggle {
+    transition: none;
+  }
+}
 
 .notify-panel {
   display: flex;

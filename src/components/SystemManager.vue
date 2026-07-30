@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="modelValue"
     title="被测系统管理"
-    width="860px"
+    width="960px"
     class="system-manager"
     @update:model-value="emit('update:modelValue', $event)"
     @closed="resetForm"
@@ -11,7 +11,6 @@
       <div class="system-manager__list">
         <div class="system-manager__toolbar">
           <span>系统列表</span>
-          <el-tooltip content="创建一个新的被测系统"><el-button type="primary" :icon="Plus" size="small" @click="startCreate">新增系统</el-button></el-tooltip>
         </div>
 
         <el-table :data="systemStore.systems" height="360" stripe>
@@ -38,9 +37,9 @@
         </el-table>
       </div>
 
-      <el-form ref="formRef" :model="draft" :rules="rules" label-width="76px" class="system-manager__form">
+      <el-form ref="formRef" :model="draft" :rules="rules" label-position="left" label-width="76px" hide-required-asterisk class="system-manager__form">
         <div class="system-manager__form-title">{{ editingId ? '编辑系统' : '新增系统' }}</div>
-        <el-form-item label="名称" prop="name">
+        <el-form-item label="名称" prop="name" class="system-manager__required">
           <el-input v-model="draft.name" placeholder="如 综合武器管理系统" />
         </el-form-item>
         <el-form-item label="负责人" prop="owner">
@@ -66,9 +65,10 @@
 import { nextTick, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Connection as ConnectionIcon, Delete, Edit, Plus } from '@element-plus/icons-vue'
+import { Connection as ConnectionIcon, Delete, Edit } from '@element-plus/icons-vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 defineProps({
   modelValue: { type: Boolean, default: false }
@@ -78,6 +78,7 @@ const emit = defineEmits(['update:modelValue'])
 
 const systemStore = useSystemStore()
 const connectionStore = useConnectionStore()
+const { validateName } = useEntityNameGuard()
 const router = useRouter()
 const formRef = ref()
 const editingId = ref(null)
@@ -114,7 +115,12 @@ const saveSystem = async () => {
   if (!formRef.value) return
   await formRef.value.validate((valid) => {
     if (!valid) return
-    const payload = { ...draft }
+    const current = editingId.value
+      ? systemStore.systems.find((system) => system.id === editingId.value)
+      : null
+    const validName = validateName(draft.name, current, '系统')
+    if (!validName) return
+    const payload = { ...draft, name: validName }
     if (editingId.value) {
       systemStore.update(editingId.value, payload)
       ElMessage.success('系统信息已更新')
@@ -146,8 +152,8 @@ const removeSystem = (system) => {
 .system-manager {
   &__body {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
-    gap: 18px;
+    grid-template-columns: minmax(0, 1fr) 290px;
+    gap: 24px;
   }
 
   &__list,
@@ -158,19 +164,49 @@ const removeSystem = (system) => {
   &__toolbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    height: 32px;
     margin-bottom: 10px;
     font-weight: 600;
   }
 
   &__form {
     border-left: 1px solid var(--el-border-color-lighter);
-    padding-left: 18px;
+    padding-left: 24px;
+
+    :deep(.el-form-item__label) {
+      justify-content: flex-start;
+      text-align: left;
+    }
+
+    :deep(.el-input__inner),
+    :deep(.el-textarea__inner) {
+      text-align: left;
+    }
+  }
+
+  &__required {
+    :deep(.el-form-item__content) {
+      position: relative;
+
+      &::before {
+        position: absolute;
+        left: -11px;
+        top: 50%;
+        color: var(--el-color-danger);
+        content: '*';
+        font-size: 14px;
+        line-height: 1;
+        transform: translateY(-50%);
+      }
+    }
   }
 
   &__form-title {
+    display: flex;
+    align-items: center;
+    height: 32px;
     font-weight: 600;
-    margin-bottom: 14px;
+    margin-bottom: 10px;
   }
 
   &__form-actions {

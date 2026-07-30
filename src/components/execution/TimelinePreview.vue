@@ -4,7 +4,7 @@
       <div class="card-head">
         <div>
           <span class="card-title">执行时序预览</span>
-          <span class="card-sub">按计划顺序展开，宽度反映本轮请求压力</span>
+          <span class="card-sub">按计划顺序展开，宽度反映本轮发送压力</span>
         </div>
         <el-tag effect="plain">{{ modeLabel }}</el-tag>
       </div>
@@ -27,7 +27,7 @@
         >
           <span class="timeline__idx">{{ idx + 1 }}</span>
           <strong>{{ item.task.name }}</strong>
-          <small>{{ item.estimatedRequests }} 请求 · 约 {{ estimateSeconds(item) }}s</small>
+          <small>{{ item.estimatedRequests }} 次发送 · 约 {{ estimateSeconds(item) }}s</small>
         </div>
       </div>
     </div>

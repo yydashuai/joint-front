@@ -1,6 +1,6 @@
 ﻿/**
  * 模拟数据种子文件 —— 便携式智能联试工具 Demo
- * 8 个系统 · 每系统 2-4 模块 · 每模块 1-3 字段/报文
+ * 2 个系统 · 每系统 2 个模块 · 每模块 1-3 字段/报文
  *
  * 数据结构与 stores 保持一致，各 store 直接 import 使用。
  */
@@ -90,35 +90,9 @@ const sysModules = [
   // ── 1. 综合武器管理系统 ──
   ['sys-weapon', '武器管理模块',   '192.168.10.21', 9001, '武器装订与发射控制主链路',        true,  'online',  12],
   ['sys-weapon', '弹药状态模块',   '192.168.10.32', 9100, '弹药余量与装填状态上报链路',       true,  'online',  23],
-  ['sys-weapon', '挂载检测模块',   '192.168.10.33', 9200, '挂点状态与载荷识别检测链路',       true,  'online',  8],
   // ── 2. 火控指挥联试系统 ──
-  ['sys-fire',   '火控解算模块',   '192.168.20.45', 8080, '火控解算与目标分配数据链路',       true,  'offline', 0],
+  ['sys-fire',   '火控解算模块',   '192.168.20.45', 8080, '火控解算与目标分配数据链路',       true,  'online',  18],
   ['sys-fire',   '指挥链路模块',   '192.168.20.46', 7070, '指挥所指令下行链路（当前不通）',    false, 'offline', 0],
-  ['sys-fire',   '目标跟踪模块',   '192.168.20.47', 8090, '多目标跟踪与航迹融合链路',         true,  'online',  15],
-  // ── 3. 雷达探测系统 ──
-  ['sys-radar',  '信号处理模块',   '192.168.30.10', 6001, '雷达回波信号采集与预处理链路',      true,  'online',  5],
-  ['sys-radar',  '天线控制模块',   '192.168.30.11', 6002, '天线方位/俯仰伺服控制链路',        true,  'online',  18],
-  ['sys-radar',  '目标识别模块',   '192.168.30.12', 6003, '目标特征提取与分类识别链路',        true,  'offline', 0],
-  // ── 4. 通信保障系统 ──
-  ['sys-comm',   '数据链模块',     '192.168.40.20', 5001, '战术数据链收发与组网链路',         true,  'online',  7],
-  ['sys-comm',   '卫星通信模块',   '192.168.40.21', 5002, '卫星中继通信与链路管理',           true,  'online',  35],
-  // ── 5. 导航定位系统 ──
-  ['sys-nav',    '惯性导航模块',   '192.168.50.30', 4001, '惯性测量单元与姿态解算链路',       true,  'online',  3],
-  ['sys-nav',    '卫星定位模块',   '192.168.50.31', 4002, '北斗/GPS 双模定位数据链路',       true,  'online',  28],
-  ['sys-nav',    '组合导航模块',   '192.168.50.32', 4003, 'INS/GNSS 紧组合滤波输出链路',     true,  'online',  11],
-  // ── 6. 电子对抗系统 ──
-  ['sys-ew',     '侦察分析模块',   '192.168.60.40', 3001, '电磁信号侦察与威胁分析链路',       true,  'online',  9],
-  ['sys-ew',     '干扰执行模块',   '192.168.60.41', 3002, '有源/无源干扰指令下发链路',       true,  'online',  14],
-  ['sys-ew',     '频谱监测模块',   '192.168.60.42', 3003, '战场电磁频谱实时监测链路',         true,  'offline', 0],
-  // ── 7. 无人机管控系统 ──
-  ['sys-uav',    '飞行控制模块',   '192.168.70.50', 2001, '无人机飞控指令与遥测数据链路',      true,  'online',  6],
-  ['sys-uav',    '任务载荷模块',   '192.168.70.51', 2002, '光电/红外载荷控制链路',           true,  'online',  20],
-  ['sys-uav',    '图像接收模块',   '192.168.70.52', 2003, '实时图像下传与存储链路',           true,  'online',  42],
-  // ── 8. 指挥控制系统 ──
-  ['sys-cmd',    '态势感知模块',   '192.168.80.60', 1001, '多源态势融合与显示链路',          true,  'online',  10],
-  ['sys-cmd',    '作战筹划模块',   '192.168.80.61', 1002, '作战方案生成与评估链路',           true,  'online',  25],
-  ['sys-cmd',    '指令下发模块',   '192.168.80.62', 1003, '作战指令编码与分发链路',           true,  'online',  4],
-  ['sys-cmd',    '日志审计模块',   '192.168.80.63', 1004, '操作日志记录与合规审计链路',        true,  'online',  16],
 ]
 
 /* ────────────────────────────────────────────
@@ -127,12 +101,6 @@ const sysModules = [
 export const systems = [
   { id: 'sys-weapon', name: '综合武器管理系统', desc: '覆盖武器挂载、状态监测与装控指令报文的被测系统', owner: '装备联试组' },
   { id: 'sys-fire',   name: '火控指挥联试系统', desc: '覆盖目标分配、火控解算与指挥链路报文的被测系统', owner: '火控联试组' },
-  { id: 'sys-radar',  name: '雷达探测系统',     desc: '覆盖雷达信号处理、天线伺服与目标识别的联试系统', owner: '雷达联试组' },
-  { id: 'sys-comm',   name: '通信保障系统',     desc: '覆盖战术数据链与卫星通信的联试保障系统',       owner: '通信联试组' },
-  { id: 'sys-nav',    name: '导航定位系统',     desc: '覆盖惯导、卫导及组合导航的联试定位系统',       owner: '导航联试组' },
-  { id: 'sys-ew',     name: '电子对抗系统',     desc: '覆盖电磁侦察、干扰执行与频谱监测的对抗系统',    owner: '电抗联试组' },
-  { id: 'sys-uav',    name: '无人机管控系统',   desc: '覆盖飞控、载荷与图像接收的无人机管控联试系统',  owner: '无人机联试组' },
-  { id: 'sys-cmd',    name: '指挥控制系统',     desc: '覆盖态势感知、作战筹划与指令分发的指控系统',    owner: '指控联试组' },
 ]
 
 /* ────────────────────────────────────────────
@@ -147,6 +115,9 @@ export const nodes = sysModules.map(
 nodes.forEach((n, i) => { M[i] = n.id })
 // 便捷索引：按 [系统, 模块名] 查找
 const byName = (sys, name) => nodes.find(n => n.systemId === sys && n.name === name)?.id
+const inSeedScope = (item) =>
+  systems.some((system) => system.id === item.systemId) &&
+  nodes.some((module) => module.id === item.moduleId)
 
 /* ────────────────────────────────────────────
  *  三、字段 (Protocols) —— 字节/位层级结构
@@ -177,11 +148,12 @@ const calcOffsets = (fields) => {
   return fields
 }
 
-export const protocols = [
+const allProtocols = [
   // ── 武器管理 ──
   _p({
     name: '帧控制字节字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
     desc: '1 字节帧控制位标志（bit7 → bit0），适用于压缩/加密等按位场景',
+    category: 'bitstream',
     endian: 'big',
     fields: calcOffsets([
       byteField({ name: '帧控制位标志', byteLength: 1, bitMode: true, desc: '帧控制字节，拆分为7段位', children: [
@@ -214,18 +186,16 @@ export const protocols = [
   }),
   _p({
     name: '弹药编目字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '弹药状态模块'),
-    desc: '弹药类型与批次编目帧',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 1, constraint: fixed(0xCC), desc: '固定 0xCC' }),
-      byteField({ name: '弹药类型', byteLength: 1, constraint: range(0, 10), desc: '弹药型号编码' }),
-      byteField({ name: '批次号', byteLength: 2, constraint: range(0, 65535), desc: '生产批次' }),
-      byteField({ name: '有效期', byteLength: 2, constraint: range(0, 9999), desc: '剩余有效天数' }),
-    ])
+    desc: '标量示例：定义一个 uint16 弹药数量变量',
+    category: 'scalar',
+    fields: [
+      param({ name: 'ammoCount', type: '常量', dataType: 'uint16', desc: '当前弹药数量', constraint: range(0, 65535) }),
+    ]
   }),
   _p({
     name: '武器遥测广播字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
     desc: '武器状态广播帧，周期性上报各挂点实时状态',
+    category: 'bitstream',
     endian: 'big',
     framing: { mode: 'fixed', fixedLength: 0, lengthFieldId: null, lengthIncludesHeader: true, lengthIncludesSelf: true, headerBytes: '', footerBytes: '' },
     checksum: { type: 'sum8', fieldId: null, rangeStart: 0, rangeEnd: 6, polynomial: '0x1021', initValue: '0xFFFF', reflectIn: false, reflectOut: false, xorOut: '0x0000' },
@@ -233,6 +203,7 @@ export const protocols = [
       byteField({ name: '帧头', byteLength: 2, dataType: 'raw', constraint: fixed(0xDD55), desc: '固定 0xDD55' }),
       byteField({ name: '设备编号', byteLength: 1, dataType: 'uint8', constraint: range(1, 32), desc: '武器管理设备编号' }),
       byteField({ name: '遥测计数', byteLength: 1, dataType: 'uint8', constraint: range(0, 255), desc: '本轮广播序号' }),
+      byteField({ name: '数据长度', byteLength: 2, dataType: 'uint16', constraint: range(0, 4096), desc: '后续遥测载荷字节数' }),
       byteField({ name: '各挂点状态', byteLength: 2, dataType: 'uint16', constraint: range(0, 65535), desc: 'bit0~bit11 对应 12 挂点，1=已装填 0=空' }),
       byteField({ name: '校验和', byteLength: 1, dataType: 'uint8', constraint: range(0, 255), desc: 'Sum8 校验' }),
     ])
@@ -240,14 +211,12 @@ export const protocols = [
 
   // ── 火控指挥 ──
   _p({
-    name: '遥测帧字段', systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
-    desc: '遥测下行帧（按位定义，可跨字节）',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 2, constraint: fixed(0xEB90), desc: '固定 0xEB90' }),
-      byteField({ name: '设备ID', byteLength: 1, constraint: range(0, 255), desc: '分系统编号' }),
-      byteField({ name: '温度', byteLength: 4, constraint: range(-5000, 15000), desc: '摄氏度 ×100' }),
-    ])
+    name: '解算结果字段', systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
+    desc: '标量示例：定义一个 int32 解算结果变量',
+    category: 'scalar',
+    fields: [
+      param({ name: 'solutionCode', type: '常量', dataType: 'int32', desc: '解算结果码', constraint: range(0, 255) }),
+    ]
   }),
   _p({
     name: '目标航迹帧字段', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'),
@@ -456,6 +425,7 @@ export const protocols = [
   _p({
     name: '装订参数字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
     desc: '武器装订参数共识体，定义引信模式、射程与装订角度',
+    category: 'struct',
     fields: [
       param({ name: 'fuseMode', type: '常量', dataType: 'uint8', desc: '引信模式' }),
       param({ name: 'range', type: '常量', dataType: 'uint16', desc: '射程设定 m' }),
@@ -474,15 +444,29 @@ export const protocols = [
   }),
   _p({
     name: '武器状态字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    desc: '武器状态共识体，定义设备编号、在线状态与挂点列表',
+    desc: '共识体示例：使用二维字段矩阵定义状态变量，并引用装订参数共识体',
+    category: 'struct',
     fields: [
       param({ name: 'deviceId', type: '常量', dataType: 'uint8', desc: '设备编号' }),
       param({ name: 'online', type: '常量', dataType: 'uint8', desc: '1=在线 0=离线' }),
-      param({ name: 'pylons', type: '结构矩阵', desc: '挂点状态列表', children: [
-        param({ name: 'pylonNo', type: '常量', dataType: 'uint8', desc: '挂点号' }),
-        param({ name: 'loaded', type: '常量', dataType: 'uint8', desc: '1=已装填 0=空' }),
-      ]}),
+      param({ name: 'pylonNo', type: '常量', dataType: 'uint8', desc: '挂点号' }),
+      param({ name: 'loaded', type: '常量', dataType: 'uint8', desc: '1=已装填 0=空' }),
+      param({ name: 'bindingParams', type: '共识体', desc: '引用装订参数共识体' }),
     ]
+  }),
+  _p({
+    name: '查询设备状态字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
+    desc: '流文件示例：作为报文尾部二进制数据体使用',
+    category: 'file',
+    fields: [param({ name: 'statusPayloadFile', type: '流文件', desc: '设备状态二进制数据体' })],
+    fileConfig: { mediaType: 'application/octet-stream', extension: '.bin', maxSizeMb: 32, checksum: 'sha256', chunkSizeKb: 64 }
+  }),
+  _p({
+    name: '武器装订指令字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
+    desc: '结构矩阵示例：二维装订参数数据文件',
+    category: 'matrix',
+    fields: [param({ name: 'bindingMatrix', type: '结构矩阵', desc: '装订参数二维矩阵' })],
+    matrixConfig: { fileType: 'binary-matrix', scalarType: 'float32', rows: 16, columns: 4, rowMajor: true, headerBytes: 16 }
   }),
   _p({
     name: '航迹位置字段', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'),
@@ -494,6 +478,12 @@ export const protocols = [
     ]
   }),
 ]
+const bindingStruct = allProtocols.find((protocol) => protocol.name === '装订参数字段')
+const weaponStatusStruct = allProtocols.find((protocol) => protocol.name === '武器状态字段')
+const bindingReference = weaponStatusStruct?.fields?.find((field) => field.name === 'bindingParams')
+if (bindingReference && bindingStruct) bindingReference.protocolRef = bindingStruct.id
+
+export const protocols = allProtocols.filter(inSeedScope)
 
 /* ────────────────────────────────────────────
  *  四、报文 (Interfaces) 参数树
@@ -512,48 +502,34 @@ const _i = (o) => ({
 
 const protoByName = (sys, name) => protocols.find(p => p.systemId === sys && p.name === name)?.id
 
-export const interfaces = [
+const allInterfaces = [
   // ── 武器管理 ──
   _i({
     name: '查询设备状态', path: '/device/status',
     transportType: 'OSE',
     transportConfig: { method: 'GET', contentType: 'application/json', headers: [{ key: 'Accept', value: 'application/json' }], auth: { type: 'basic', username: 'admin', password: '' } },
-    protocolRefs: [protoByName('sys-weapon', '武器遥测广播字段')],
+    protocolRefs: [
+      protoByName('sys-weapon', '武器遥测广播字段'),
+      { protocolId: protoByName('sys-weapon', '查询设备状态字段'), role: 'send' },
+      { protocolId: protoByName('sys-weapon', '查询设备状态字段'), role: 'receive' },
+    ],
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
     datasetIds: [2], // 模拟关联：设备状态查询-正常与异常
     desc: '发送设备状态，返回遥测帧',
-    request: [
-      param({ name: 'deviceId', type: '常量', dataType: 'uint8', desc: '目标设备', constraint: { mode: 'range', min: 0, max: 255 } }),
-      param({ name: 'options', type: '共识体', desc: '查询选项', children: [
-        param({ name: 'verbose', type: '常量', dataType: 'uint8', constraint: { mode: 'enum', entries: [{ value: 0, label: '简报' }, { value: 1, label: '详报' }] } }),
-        param({ name: 'timeoutMs', type: '常量', dataType: 'uint16', constraint: { mode: 'range', min: 0, max: 65535 } }),
-      ]}),
-    ],
-    response: [
-      param({ name: 'code', type: '常量', dataType: 'int32', desc: '状态码' }),
-      param({ name: 'payload', type: '位组序流', desc: '遥测帧载荷' }),
-    ]
   }),
   _i({
     name: '武器装订指令', path: '/weapon/bind',
     transportType: '4908A',
     transportConfig: { port: 9001, timeout: 3000 },
-    protocolRefs: [protoByName('sys-weapon', '装订参数字段'), protoByName('sys-weapon', '帧控制字节字段')],
+    protocolRefs: [
+      protoByName('sys-weapon', '装订参数字段'),
+      protoByName('sys-weapon', '帧控制字节字段'),
+      { protocolId: protoByName('sys-weapon', '武器装订指令字段'), role: 'send' },
+      { protocolId: protoByName('sys-weapon', '武器装订指令字段'), role: 'receive' },
+    ],
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
     datasetIds: [4], // 模拟关联：武器装订-多参数组合
     desc: '下发武器装订参数并确认',
-    request: [
-      param({ name: 'weaponId', type: '常量', dataType: 'uint16', desc: '武器编号', constraint: { mode: 'range', min: 0, max: 65535 } }),
-      param({ name: 'params', type: '共识体', desc: '装订参数', children: [
-        param({ name: 'fuseMode', type: '常量', dataType: 'uint8', desc: '引信模式', constraint: { mode: 'enum', entries: [{ value: 0, label: '触发' }, { value: 1, label: '近炸' }, { value: 2, label: '延时' }] } }),
-        param({ name: 'range', type: '常量', dataType: 'uint16', desc: '射程设定 m', constraint: { mode: 'range', min: 0, max: 65535 } }),
-        param({ name: 'angle', type: '常量', dataType: 'float', desc: '装订角度', constraint: { mode: 'range', min: 0, max: 90 } }),
-      ]}),
-    ],
-    response: [
-      param({ name: 'code', type: '常量', dataType: 'int32', desc: '0=成功' }),
-      param({ name: 'confirmId', type: '常量', dataType: 'uint32', desc: '装订确认流水号' }),
-    ]
   }),
   // 报文示例：引用「帧控制字节字段」（字段被报文引用），数据集关联此报文
   // 报文字段由所引用的字段定义提供（位标志、约束、说明），无需在 request 中重复定义
@@ -613,7 +589,7 @@ export const interfaces = [
     name: '目标分配解算', path: '/fire/solve',
     transportType: '4908A',
     transportConfig: { port: 8080, timeout: 300 },
-    protocolRefs: [protoByName('sys-fire', '遥测帧字段')],
+    protocolRefs: [protoByName('sys-fire', '解算结果字段')],
     systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
     datasetIds: [], // 遥测帧-温度范围测试已关联至「遥测帧上报」报文
     desc: '提交目标列表，返回火力分配方案',
@@ -630,12 +606,12 @@ export const interfaces = [
       param({ name: 'raw', type: '位组序流', desc: '原始解算帧' }),
     ]
   }),
-  // 报文示例：遥测帧上报，引用「遥测帧字段」（帧头 / 设备ID / 温度由字段定义提供）
+  // 报文示例：遥测数据上报，引用标量解算结果字段
   _i({
     name: '遥测帧上报', path: '/telemetry/report',
     transportType: 'OSE',
     transportConfig: { method: 'GET', contentType: 'application/json', headers: [], auth: { type: 'none' } },
-    protocolRefs: [protoByName('sys-fire', '遥测帧字段')],
+    protocolRefs: [protoByName('sys-fire', '解算结果字段')],
     systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
     datasetIds: [3], // 模拟关联：遥测帧-温度范围测试
     desc: '遥测下行帧上报（帧头 + 设备ID + 温度）',
@@ -664,7 +640,7 @@ export const interfaces = [
     name: '指挥指令下发', path: '/cmd/dispatch',
     transportType: '4908A',
     transportConfig: { port: 7070, timeout: 1000 },
-    protocolRefs: [protoByName('sys-cmd', '作战指令编码字段')],
+    protocolRefs: [protoByName('sys-fire', '解算结果字段')],
     systemId: 'sys-fire', moduleId: byName('sys-fire', '指挥链路模块'),
     desc: '从指挥所向下游下发作战指令',
     request: [
@@ -1055,11 +1031,37 @@ export const interfaces = [
   }),
 
 ]
+const scopedMessages = allInterfaces.filter(inSeedScope)
+const withSuffix = (name, suffix) => name.endsWith(suffix) ? name : `${name}${suffix}`
+
+// 报文与接口是两个独立层级：
+// 字段 → 报文 → 数据集 → 接口 → 发送/接收。
+export const interfaces = scopedMessages.map((message) => ({
+  ...message,
+  name: withSuffix(message.name, '报文'),
+}))
+
+export const testInterfaces = scopedMessages.map((message) => ({
+  id: `endpoint-${message.id}`,
+  name: withSuffix(message.name, '接口'),
+  systemId: message.systemId,
+  moduleId: message.moduleId,
+  datasetIds: [...(message.datasetIds || [])],
+  desc: `${message.name}联试接口`,
+  strategy: {
+    trigger: 'manual',
+    scheduleAt: null,
+    periodicInterval: 60,
+    periodicUnit: 's',
+    periodicCount: null,
+  },
+  sendInterval: 500,
+}))
 
 /* ────────────────────────────────────────────
  *  五、联试任务 (Tasks)
  * ──────────────────────────────────────────── */
-export const tasks = [
+const allTasks = [
   // 武器管理
   { id: 't01', name: '武器状态报文连通性测试', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'), ruleSetId: 'rs-weapon-status', status: '执行中', time: '2026-06-24 10:31:00', remark: '验证 WM-001 报文在标准帧格式下的握手与应答流程' },
   { id: 't02', name: '弹药余量边界值检测', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '弹药状态模块'), status: '已完成', time: '2026-06-24 09:45:00', remark: '覆盖 0%/100% 边界值，已生成测试报告' },
@@ -1095,11 +1097,12 @@ export const tasks = [
   { id: 't25', name: '指令下发全链路测试', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '指令下发模块'), status: '已完成', time: '2026-06-24 09:55:00', remark: '指令从生成到接收确认全链路 < 2s' },
   { id: 't26', name: '操作日志合规审计', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), status: '已完成', time: '2026-06-24 08:45:00', remark: '本周操作日志全量审计完成' },
 ]
+export const tasks = allTasks.filter(inSeedScope)
 
 /* ────────────────────────────────────────────
  *  六、规则集 (Rule Sets)
  * ──────────────────────────────────────────── */
-export const ruleSets = [
+const allRuleSets = [
   // ── 1. 武器管理 · 查询设备状态 ──
   {
     id: 'rs-weapon-status',
@@ -1107,16 +1110,13 @@ export const ruleSets = [
     systemId: 'sys-weapon',
     moduleId: byName('sys-weapon', '武器管理模块'),
     status: 'enabled',
-    desc: '由查询设备状态报文自动生成，覆盖类型、范围、边界、越界、超时与格式判定。',
+    desc: '校验字段取值范围，以及长度声明与后续载荷解析结果的语义一致性。',
     createdAt: '2026-06-24',
     updatedAt: '2026-06-24 10:30',
     rules: [
-      { id: 'r-type-code', type: 'type', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32' }, desc: '状态码必须为 int32' },
       { id: 'r-range-code', type: 'range', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32', min: -2147483648, max: 2147483647 }, desc: '状态码取值不得超出 int32 范围' },
-      { id: 'r-boundary-code', type: 'boundary', enabled: true, level: 'warning', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.code', fieldName: 'code' }, params: { dataType: 'int32', min: -2147483648, max: 2147483647, boundaryMode: 'inclusive' }, desc: '命中上下边界时给出提醒' },
-      { id: 'r-overflow-payload', type: 'overflow', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.payload', fieldName: 'payload' }, params: { required: true, maxLength: 256 }, desc: '接收载荷字段必须存在且长度受控' },
-      { id: 'r-timeout-status', type: 'timeout', enabled: true, level: 'error', source: 'manual', target: { interfaceName: '查询设备状态', fieldPath: '', fieldName: '' }, params: { timeoutMs: 500 }, desc: '报文接收时延不得超过 500ms' },
-      { id: 'r-format-status', type: 'format', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: '', fieldName: '' }, params: { sampleType: 'json' }, desc: '接收结构必须是合法 JSON / 结构体对象' },
+      { id: 'r-range-data-length', type: 'range', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.dataLength', fieldName: 'dataLength' }, params: { dataType: 'uint16', min: 0, max: 4096 }, desc: '载荷声明长度必须位于 0~4096 字节' },
+      { id: 'r-semantic-payload-length', type: 'semantic', enabled: true, level: 'error', source: 'auto', target: { interfaceName: '查询设备状态', fieldPath: 'response.payload', fieldName: 'payload' }, params: { declaredPath: 'response.dataLength', actualPath: 'response.payload', measure: 'byteLength' }, desc: '声明长度必须与后续载荷实际解析字节数一致' },
     ]
   },
 
@@ -1315,11 +1315,12 @@ export const ruleSets = [
   },
 
 ]
+export const ruleSets = allRuleSets.filter(inSeedScope)
 
 /* ────────────────────────────────────────────
  *  七、异常告警 (Alerts)
  * ──────────────────────────────────────────── */
-export const alerts = [
+const allAlerts = [
   // 武器管理
   { id: 'a01', type: '字段越界', iface: 'WM-003', level: '高', state: '已修复', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'), resolvedTime: '2026-06-24 10:05:00', remark: '温度字段值 256 超出 uint8 范围，已修正传感器标定参数' },
   { id: 'a02', type: '格式错误', iface: 'WM-006', level: '高', state: '已转派', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '弹药状态模块'), resolvedTime: '2026-06-24 09:58:00', remark: '帧头校验码不匹配，已转派固件组排查版本一致性' },
@@ -1353,6 +1354,7 @@ export const alerts = [
   { id: 'a23', type: '格式错误', iface: 'ORD-005', level: '高', state: '待处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '指令下发模块'), resolvedTime: '', remark: '指令帧 CRC 校验失败率 5%，排查链路质量' },
   { id: 'a24', type: '字段越界', iface: 'LOG-012', level: '中', state: '已处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '2026-06-24 11:00:00', remark: '日志写入高并发时偶发丢失，增加缓冲队列后恢复' },
 ]
+export const alerts = allAlerts.filter(inSeedScope)
 
 /* ────────────────────────────────────────────
  *  六、执行历史 (Run History) —— 统计与可视化数据底座
@@ -1372,8 +1374,8 @@ const _stDays = ['2026-06-19', '2026-06-20', '2026-06-21', '2026-06-22', '2026-0
 
 export const runHistory = []
 let _runSeq = 0
-interfaces.forEach((iface) => {
-  // 留出部分报文"未测"，让报文覆盖率有意义（非 100%）
+testInterfaces.forEach((iface) => {
+  // 留出部分接口“未测”，让接口覆盖率有意义（非 100%）
   if (_stRng() < 0.22) return
   const mod = nodes.find((n) => n.id === iface.moduleId)
   const runCount = 2 + (iface.systemId === 'sys-weapon' ? 2 : (_stRng() < 0.4 ? 1 : 0))

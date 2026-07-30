@@ -5,7 +5,6 @@
         <div class="step-head">
           <div>
             <div class="blk__title"><el-icon><FolderOpened /></el-icon> 生成确认</div>
-            <div class="blk__desc">确认数据批次、模板和素材后生成静态预览报告。</div>
           </div>
           <div class="step-actions">
             <el-button :icon="ArrowLeft" @click="$emit('back')">上一步</el-button>
@@ -33,7 +32,6 @@
         </el-card>
 
         <div class="gen-zone">
-          <div class="gen-zone__hint"><el-icon><MagicStick /></el-icon> 系统将组织硬数据（指标 / 结果表）并生成描述段落，汇编为结构化联试报告</div>
           <el-button type="success" size="large" :icon="MagicStick" :loading="store.generating" :disabled="!run" @click="onGenerate">
             {{ store.generating ? stageText : generateLabel }}
           </el-button>
@@ -118,7 +116,6 @@ watch(() => props.autoGenerateTick, (tick, oldTick) => {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px;
 }
 .step-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.blk__desc { font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.5; margin-top: 4px; }
 .card-title { font-size: 14px; font-weight: 600; color: var(--el-text-color-primary); }
 .prev__row { display: flex; gap: 12px; font-size: 13px; line-height: 2; align-items: baseline; }
 .prev__k { color: var(--el-text-color-secondary); width: 76px; flex-shrink: 0; }
@@ -130,7 +127,6 @@ watch(() => props.autoGenerateTick, (tick, oldTick) => {
   border: 2px dashed var(--el-color-success-light-5); border-radius: 14px;
   background: var(--el-color-success-light-9);
 }
-.gen-zone__hint { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; color: var(--el-text-color-secondary); margin-bottom: 18px; .el-icon { color: var(--el-color-success); } }
 .gen-zone__bar { margin-top: 16px; }
 
 @media (max-width: 720px) {

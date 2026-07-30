@@ -1,37 +1,23 @@
 import { defineStore } from 'pinia'
+import { makeUniqueName } from '@/utils/entityName'
+import { testInterfaces as seedTestInterfaces } from '@/mock/seed-data'
 
-let seq = 5000
+let seq = 5003
 const uid = () => `scheme-${++seq}`
+const demoInterfaceIds = ['查询设备状态接口', '武器装订指令接口']
+  .map((name) => seedTestInterfaces.find((iface) => iface.name === name)?.id)
+  .filter(Boolean)
 
 export const usePlanSchemeStore = defineStore('planScheme', {
   state: () => ({
     schemes: [
       {
-        id: 'scheme-5001',
-        name: '默认接口方案',
-        systemId: null,
-        interfaceIds: [],
-        type: 'exec',
-        remark: '系统预置接口方案',
-        createdAt: '2026-07-01 09:00:00',
-      },
-      {
         id: 'scheme-5002',
         name: '武器联试综合方案',
         systemId: 'sys-weapon',
-        interfaceIds: [],
-        type: 'exec',
-        remark: '演示用接口方案（含 3 个武器管理接口）',
+        interfaceIds: demoInterfaceIds,
+        remark: '演示用接口方案（含 2 个武器管理接口）',
         createdAt: '2026-07-30 09:00:00',
-      },
-      {
-        id: 'scheme-5003',
-        name: '默认监听方案',
-        systemId: null,
-        interfaceIds: [],
-        type: 'recv',
-        remark: '接收编排预置方案',
-        createdAt: '2026-07-01 09:00:00',
       },
     ],
     selectedId: null,
@@ -51,13 +37,31 @@ export const usePlanSchemeStore = defineStore('planScheme', {
       this.selectedId = id
     },
 
-    add({ name, systemId, interfaceIds, remark, type }) {
+    removeLegacyDefaults() {
+      const legacyIds = new Set(['scheme-5001', 'scheme-5003'])
+      const legacyNames = new Set(['默认接口方案', '默认监听方案'])
+      const removedSelected = this.schemes.some((scheme) =>
+        scheme.id === this.selectedId &&
+        (legacyIds.has(String(scheme.id)) || legacyNames.has(String(scheme.name).trim()))
+      )
+      this.schemes = this.schemes.filter((scheme) =>
+        !legacyIds.has(String(scheme.id)) &&
+        !legacyNames.has(String(scheme.name).trim())
+      )
+      const demoScheme = this.schemes.find((scheme) => scheme.id === 'scheme-5002')
+      if (demoScheme && demoInterfaceIds.length === 2) {
+        demoScheme.interfaceIds = [...demoInterfaceIds]
+        demoScheme.remark = '演示用接口方案（含 2 个武器管理接口）'
+      }
+      if (removedSelected) this.selectedId = null
+    },
+
+    add({ name, systemId, interfaceIds, remark }) {
       const scheme = {
         id: uid(),
-        name: name || '新建接口方案',
+        name: makeUniqueName(this.schemes, name || '新建接口方案'),
         systemId: systemId || null,
         interfaceIds: interfaceIds || [],
-        type: type || 'exec',
         remark: remark || '',
         createdAt: new Date().toLocaleString('zh-CN', { hour12: false }),
       }
@@ -74,7 +78,13 @@ export const usePlanSchemeStore = defineStore('planScheme', {
 
     update(id, patch) {
       const scheme = this.schemes.find((s) => s.id === id)
-      if (scheme) Object.assign(scheme, patch)
+      if (scheme) {
+        const next = { ...patch }
+        if (Object.prototype.hasOwnProperty.call(next, 'name')) {
+          next.name = makeUniqueName(this.schemes, next.name, scheme)
+        }
+        Object.assign(scheme, next)
+      }
     },
 
     addInterfaces(schemeId, interfaceIds) {

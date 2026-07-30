@@ -124,7 +124,7 @@
                   <div class="batch-summary__grid">
                     <span>开始时间</span><b>{{ batch.startedAt || batch.time }}</b>
                     <span>任务数</span><b>{{ batch.tasks?.length || 0 }}</b>
-                    <span>总请求</span><b>{{ batch.summary?.totalRequests || 0 }}</b>
+                    <span>总发送</span><b>{{ batch.summary?.totalRequests || 0 }}</b>
                     <span>通过率</span><b>{{ batch.summary?.passRate || 0 }}%</b>
                     <span>平均时延</span><b>{{ batch.summary?.avgResponseTime || 0 }}ms</b>
                   </div>
@@ -147,11 +147,11 @@
             <p>{{ exception.detail?.ruleMessage || exception.remark || '暂无说明' }}</p>
             <label>字段路径</label>
             <p class="mono">{{ exception.detail?.fieldPath || 'interface' }}</p>
-            <label>响应时延</label>
+            <label>接收时延</label>
             <p>{{ exception.detail?.recvMs == null ? '未记录' : `${exception.detail.recvMs}ms` }}</p>
-            <label>请求帧</label>
+            <label>发送帧</label>
             <pre>{{ exception.detail?.reqHex || '未记录' }}</pre>
-            <label>响应帧</label>
+            <label>接收帧</label>
             <pre>{{ exception.detail?.respHex || '未记录' }}</pre>
           </div>
         </section>

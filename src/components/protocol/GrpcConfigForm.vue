@@ -32,9 +32,6 @@
 
     <!-- ====== 区块1: 流式模式 ====== -->
     <el-divider content-position="left">gRPC 传输配置</el-divider>
-    <div class="section-hint">
-      字段只定义传输层规范（流模式、地址、超时）。具体的服务名、方法名、消息结构由引用此字段的报文定义。
-    </div>
 
     <el-radio-group v-model="cfg.streamingMode" class="stream-modes">
       <el-radio-button value="unary">Unary（一元）</el-radio-button>
@@ -138,5 +135,4 @@ const streamHint = computed(() => {
 .stream-modes { margin-bottom: 8px; }
 .mode-hint { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 8px; padding-left: 4px; }
 
-.section-hint { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 12px; line-height: 1.6; padding-left: 4px; border-left: 3px solid var(--el-color-primary-light-5); }
 </style>

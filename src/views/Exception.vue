@@ -3,7 +3,6 @@
     <div class="page__header">
       <div>
         <h2>故障异常管理</h2>
-        <div class="page__desc">集中接收执行判定与链路事件异常，完成归类、处置和记录</div>
       </div>
       <div class="header-actions">
         <el-select v-model="systemSelectValue" class="system-select">

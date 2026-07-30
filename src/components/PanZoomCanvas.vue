@@ -35,7 +35,6 @@
         <el-button size="small" :icon="Aim" @click="fitView">适应</el-button>
       </div>
 
-      <div class="pzc__hint">滚轮缩放 · 拖拽平移</div>
     </div>
   </teleport>
 </template>
@@ -235,13 +234,4 @@ defineExpose({ fitView, resetView })
 .pzc__title { font-size: 13px; font-weight: 600; margin-right: 4px; }
 .pzc__pct { width: 56px; font-variant-numeric: tabular-nums; }
 
-.pzc__hint {
-  position: absolute;
-  left: 10px;
-  bottom: 8px;
-  z-index: 2;
-  font-size: 11px;
-  color: var(--el-text-color-placeholder);
-  pointer-events: none;
-}
 </style>

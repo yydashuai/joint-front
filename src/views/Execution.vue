@@ -2,18 +2,11 @@
   <div class="page execution-page">
     <div class="page__header">
       <div>
-        <h2>测试接口编排</h2>
-        <div class="page__desc">编排测试接口、调度收发数据流、实时监控联试过程</div>
+        <h2>接口收发监测</h2>
       </div>
       <div class="header-actions">
-        <el-select v-model="systemSelectValue" class="system-select" placeholder="系统上下文">
-          <el-option
-            v-for="item in systemOptions"
-            :key="item.selectValue"
-            :label="item.label"
-            :value="item.selectValue"
-          />
-        </el-select>
+        <el-button type="success" :icon="Plus" @click="openHeaderIfaceDialog">新增接口</el-button>
+        <el-button type="primary" :icon="Plus" @click="openHeaderSchemeDialog">新建方案</el-button>
       </div>
     </div>
 
@@ -61,7 +54,6 @@
                 <span class="wizard-step__index">{{ index + 1 }}</span>
                 <span class="wizard-step__copy">
                   <strong>{{ step.title }}</strong>
-                  <small>{{ step.desc }}</small>
                 </span>
               </button>
             </div>
@@ -181,7 +173,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  ArrowLeft, ArrowRight, RefreshRight, Search, SwitchButton, VideoPause, VideoPlay
+  ArrowLeft, ArrowRight, Plus, RefreshRight, Search, SwitchButton, VideoPause, VideoPlay
 } from '@element-plus/icons-vue'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import PlanTable from '@/components/execution/PlanTable.vue'
@@ -194,7 +186,9 @@ import { useRunBatchStore } from '@/stores/runBatch'
 import { useSystemStore } from '@/stores/system'
 import { useTestTaskStore } from '@/stores/testTask'
 import { usePlanSchemeStore } from '@/stores/planScheme'
-import { useProtocolStore } from '@/stores/protocol'
+import { useProtocolStore, collectTestInterfaceFields } from '@/stores/protocol'
+import { useTestDataStore } from '@/stores/testData'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const route = useRoute()
 const router = useRouter()
@@ -205,29 +199,23 @@ const execution = useExecutionStore()
 const batchStore = useRunBatchStore()
 const schemeStore = usePlanSchemeStore()
 const protocolStore = useProtocolStore()
+const testDataStore = useTestDataStore()
+const { nextUniqueName, validateName } = useEntityNameGuard()
+protocolStore.migrateAllFromV1()
+schemeStore.removeLegacyDefaults()
 
 const selectedKey = ref('')
 const taskSearch = ref('')
 const activeTab = ref('plan')
 const wizardSteps = [
-  { name: 'plan', title: '编排计划', desc: '选择接口并确认顺序', helper: '先把要测试的接口按顺序加入编排计划，并检查模块、数据是否就绪。' },
-  { name: 'monitor', title: '实时监控', desc: '启动联试并观察收发', helper: '执行过程中关注发送、接收、规则判定与异常捕捉。' },
+  { name: 'plan', title: '编排计划' },
+  { name: 'monitor', title: '实时监控' },
 ]
-
-const ALL_SYSTEM_VALUE = '__all__'
-const systemOptions = computed(() => systemStore.options.map((item) => ({
-  ...item,
-  selectValue: item.value == null ? ALL_SYSTEM_VALUE : item.value,
-})))
-const systemSelectValue = computed({
-  get: () => systemStore.currentId ?? ALL_SYSTEM_VALUE,
-  set: (value) => systemStore.setCurrent(value === ALL_SYSTEM_VALUE ? null : value),
-})
 
 const selectedIface = computed(() => {
   const m = selectedKey.value.match(/^iface-(.+)$/)
   if (!m) return null
-  return protocolStore.interfaces.find((i) => String(i.id) === String(m[1])) || null
+  return protocolStore.testInterfaces.find((i) => String(i.id) === String(m[1])) || null
 })
 const isSelectedInPlan = computed(() => {
   if (!selectedIface.value) return false
@@ -236,7 +224,6 @@ const isSelectedInPlan = computed(() => {
 })
 const totalEstimatedRequests = computed(() => execution.planItems.reduce((sum, item) => sum + item.estimatedRequests, 0))
 const activeStepIndex = computed(() => Math.max(0, wizardSteps.findIndex((step) => step.name === activeTab.value)))
-const currentStep = computed(() => wizardSteps[activeStepIndex.value] || wizardSteps[0])
 const maxReachableStepIndex = computed(() => {
   if (['done', 'stopped', 'running', 'paused'].includes(execution.status)) return 1
   if (execution.planItems.length) return 1
@@ -291,7 +278,7 @@ const schemeForm = ref({ name: '', interfaceIds: [], remark: '' })
 const editingSchemeId = ref(null)
 const currentSchemeSystemId = ref(null)
 
-const availableInterfaces = computed(() => protocolStore.interfaces.filter((i) => {
+const availableInterfaces = computed(() => protocolStore.testInterfaces.filter((i) => {
   if (!currentSchemeSystemId.value) return true
   return i.systemId === currentSchemeSystemId.value
 }))
@@ -308,7 +295,26 @@ const openSchemeDialog = (systemId, scheme) => {
   schemeDialogVisible.value = true
 }
 
+const openHeaderSchemeDialog = () => {
+  const selectedSchemeSystemId = selectedKey.value.startsWith('scheme-')
+    ? schemeStore.selected?.systemId
+    : null
+  const systemId = selectedIface.value?.systemId
+    || selectedSchemeSystemId
+    || systemStore.currentId
+    || systemStore.visibleSystems[0]?.id
+    || null
+  openSchemeDialog(systemId, null)
+}
+
 const confirmScheme = () => {
+  const currentScheme = editingSchemeId.value
+    ? schemeStore.schemes.find((scheme) => scheme.id === editingSchemeId.value)
+    : null
+  const candidateName = schemeForm.value.name.trim() || currentScheme?.name || nextUniqueName('新建接口方案')
+  const validName = validateName(candidateName, currentScheme, '方案')
+  if (!validName) return
+  schemeForm.value.name = validName
   if (editingSchemeId.value) {
     schemeStore.update(editingSchemeId.value, { ...schemeForm.value })
     ElMessage.success('接口方案已更新')
@@ -325,10 +331,9 @@ const onSchemeAddLeaf = ({ groupKind, module }) => {
   }
 }
 
-/* 接口配置状态徽标：未配置字段 → 「未配置字段」；未关联数据集 → 「未关联数据」；已配置 → N数据集·触发方式 */
+/* 接口配置状态徽标：接口只展示数据集关联与触发方式。 */
 const TRIGGER_LABEL = { manual: '手动', scheduled: '定时', periodic: '周期' }
 const ifaceBadge = (iface) => {
-  if (!(iface.protocolRefs || []).length) return '未配置字段'
   const dsCount = (iface.datasetIds || []).length
   if (!dsCount) return '未关联数据'
   const trigger = TRIGGER_LABEL[iface.strategy?.trigger] || '手动'
@@ -337,7 +342,7 @@ const ifaceBadge = (iface) => {
 
 const leafGroups = (module) => {
   const kw = taskSearch.value.toLowerCase()
-  let ifaces = protocolStore.interfaces.filter((i) => i.moduleId === module.id)
+  let ifaces = protocolStore.testInterfaces.filter((i) => i.moduleId === module.id)
   if (kw) {
     ifaces = ifaces.filter((i) =>
       i.name.toLowerCase().includes(kw) ||
@@ -404,13 +409,23 @@ const openIfaceConfig = (interfaceId = null, module = null) => {
   ifaceConfigVisible.value = true
 }
 
-/* ---- 接口完整性校验（B 方案）：未配置完全禁止进入计划 ---- */
-/* 必须显式关联数据集：不再以「模块下存在数据集」作为兜底，避免未绑定数据集的接口被误判可用。 */
+const openHeaderIfaceDialog = () => {
+  openIfaceConfig(null, null)
+}
+
+/* ---- 接口完整性校验：接口只需显式关联数据集；报文与字段由数据集向下解析。 ---- */
 const interfaceReadiness = (iface) => {
   const reasons = []
-  if (!(iface.protocolRefs || []).length) reasons.push('未引用任何协议字段（报文为空帧）')
   if (!(iface.datasetIds || []).length) {
     reasons.push('未关联测试数据集（请在接口配置中绑定至少一个数据集）')
+  } else if (!collectTestInterfaceFields(
+    iface,
+    testDataStore.datasets,
+    protocolStore.interfaces,
+    protocolStore.protocols,
+    'send',
+  ).length) {
+    reasons.push('关联的数据集没有可用报文或字段')
   }
   return { ok: !reasons.length, reasons }
 }
@@ -421,7 +436,7 @@ const interfaceReadiness = (iface) => {
  * @returns {boolean} 是否成功加入
  */
 const addInterfaceToPlan = (interfaceId, { test = false, silent = false } = {}) => {
-  const iface = protocolStore.interfaces.find((i) => String(i.id) === String(interfaceId))
+  const iface = protocolStore.testInterfaces.find((i) => String(i.id) === String(interfaceId))
   if (!iface) {
     ElMessage.warning('未找到对应接口')
     return false
@@ -443,6 +458,7 @@ const addInterfaceToPlan = (interfaceId, { test = false, silent = false } = {}) 
     periodicCount: iface.strategy?.periodicCount ?? null,
   })
   const added = execution.addToPlan(task.id)
+  if (added) execution.appendTaskToActiveQueue(task.id)
   selectedKey.value = `iface-${iface.id}`
   if (test) {
     if (execution.start()) {
@@ -494,13 +510,15 @@ const addScheme = (schemeId) => {
   let missing = 0
   let unready = 0
   scheme.interfaceIds.forEach((interfaceId) => {
-    const iface = protocolStore.interfaces.find((i) => String(i.id) === String(interfaceId))
+    const iface = protocolStore.testInterfaces.find((i) => String(i.id) === String(interfaceId))
     if (!iface) { missing += 1; return }
     // 方案拖入：全部接口均加入计划（未配置完全的仅计入提示，不拒绝），确保方案内接口完整可见
     if (!interfaceReadiness(iface).ok) unready += 1
     const task = ensureTaskForInterface(iface)
-    if (execution.addToPlan(task.id)) added += 1
-    else skipped += 1
+    if (execution.addToPlan(task.id)) {
+      execution.appendTaskToActiveQueue(task.id)
+      added += 1
+    } else skipped += 1
   })
   const extra = [
     skipped ? `${skipped} 个已在计划中` : '',
@@ -542,7 +560,7 @@ const onDeleteLeaf = (node) => {
     ElMessage.success('接口方案已删除')
   }
   if (node.kind === 'iface' && node.ref) {
-    protocolStore.removeInterface(node.ref.id)
+    protocolStore.removeTestInterface(node.ref.id)
     ElMessage.success('接口已删除')
   }
 }
@@ -601,7 +619,7 @@ onMounted(() => {
   // 演示接口方案：首次进入时填充 3 个武器管理接口（ID 在种子加载后确定）
   const demoScheme = schemeStore.schemes.find(s => s.id === 'scheme-5002')
   if (demoScheme && !demoScheme.interfaceIds.length) {
-    const ifaces = protocolStore.interfaces.filter(i => i.systemId === 'sys-weapon').slice(0, 3)
+    const ifaces = protocolStore.testInterfaces.filter(i => i.systemId === 'sys-weapon').slice(0, 3)
     if (ifaces.length) schemeStore.update(demoScheme.id, { interfaceIds: ifaces.map(i => i.id) })
   }
 
@@ -652,10 +670,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
   justify-content: flex-end;
 }
-.system-select { width: 220px; }
 .split {
   display: flex;
   gap: 16px;
@@ -792,13 +808,6 @@ onBeforeUnmount(() => {
 .wizard-step__copy strong {
   font-size: 14px;
   font-weight: 650;
-}
-.wizard-step__copy small {
-  overflow: hidden;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .wizard-body {
   flex: 1;

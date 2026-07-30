@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { datasets as seedDatasets, files as seedFiles } from '@/mock/testData'
 import { useProtocolStore, collectInterfaceDatasetFields } from '@/stores/protocol'
 import { checkFieldConstraints } from '@/utils/receiveValidator'
+import { makeUniqueName } from '@/utils/entityName'
 
 let _dsSeq = 100
 let _rowSeq = 1000
@@ -175,7 +176,7 @@ export const useTestDataStore = defineStore('testData', {
     addDataset(data) {
       const ds = {
         id: ++_dsSeq,
-        name: data.name || '新建数据集',
+        name: makeUniqueName(this.datasets, data.name || '新建数据集'),
         systemId: data.systemId,
         moduleName: data.moduleName,
         linkedProtocol: data.linkedProtocol || null,
@@ -201,7 +202,13 @@ export const useTestDataStore = defineStore('testData', {
 
     updateDataset(id, patch) {
       const ds = this.datasets.find(d => d.id === id)
-      if (ds) Object.assign(ds, patch)
+      if (ds) {
+        const next = { ...patch }
+        if (Object.prototype.hasOwnProperty.call(next, 'name')) {
+          next.name = makeUniqueName(this.datasets, next.name, ds)
+        }
+        Object.assign(ds, next)
+      }
     },
 
     /** 复制数据集（深拷贝行数据） */
@@ -211,7 +218,7 @@ export const useTestDataStore = defineStore('testData', {
       const dup = {
         ...JSON.parse(JSON.stringify(src)),
         id: ++_dsSeq,
-        name: `${src.name} (副本)`,
+        name: makeUniqueName(this.datasets, `${src.name} (副本)`),
         createdAt: new Date().toISOString().slice(0, 10)
       }
       // 重新分配行 ID
@@ -607,7 +614,7 @@ export const useTestDataStore = defineStore('testData', {
     addFile(data) {
       const file = {
         id: ++_fileSeq,
-        name: data.name,
+        name: makeUniqueName(this.files, data.name || '新建数据文件'),
         format: data.format || 'csv',
         size: data.size || 0,
         systemId: data.systemId,

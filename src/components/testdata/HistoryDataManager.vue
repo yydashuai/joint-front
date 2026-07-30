@@ -269,9 +269,11 @@ import { useProtocolStore, collectInterfaceFields } from '@/stores/protocol'
 import { useReceptionStore } from '@/stores/reception'
 import { buildFrame, valuesToBytes } from '@/utils/receiveValidator'
 import PacketEditor from '@/components/reception/PacketEditor.vue'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const tdStore = useTestDataStore()
 const protocolStore = useProtocolStore()
+const { validateName } = useEntityNameGuard()
 const recvStore = useReceptionStore()
 const pedVisible = ref(false)
 
@@ -618,7 +620,8 @@ const onBatchSaveAsDataset = () => {
     inputPattern: /\S+/,
     inputErrorMessage: '名称不能为空',
   }).then(({ value }) => {
-    const name = value.trim()
+    const name = validateName(value, null, '数据集')
+    if (!name) return
     const sample = selectedRows.value[0]
     const sampleDs = tdStore.datasets.find((d) => d.id === sample._datasetId)
     const ds = tdStore.addDataset({
@@ -664,7 +667,7 @@ const confirmSend = () => {
   if (!sendInterfaceId.value) { ElMessage.warning('请选择绑定接口'); return }
   const iface = protocolStore.interfaces.find((i) => String(i.id) === String(sendInterfaceId.value))
   if (!iface) { ElMessage.warning('接口不存在'); return }
-  const fields = collectInterfaceFields(iface, protocolStore.protocols)
+  const fields = collectInterfaceFields(iface, protocolStore.protocols, 'send')
   if (!fields.length) { ElMessage.warning('该接口无字段定义，无法校验发送'); return }
   const transport = iface.transportType || 'OSE'
   let sent = 0

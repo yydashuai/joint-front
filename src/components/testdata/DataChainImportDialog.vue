@@ -343,7 +343,7 @@ const onConfirm = () => {
       })
 
       proto = protoStore.addProtocol({
-        name: `${para.name} 字段`,
+        name: `${para.name}字段`,
         systemId,
         moduleId,
         desc: `数据链导入自动生成（${para.fieldNames.length} 字段，${para.rows.length} 行）`,
@@ -353,11 +353,11 @@ const onConfirm = () => {
       proto.config = { fields: byteFields }
 
       iface = protoStore.addInterface({
-        name: para.name,
+        name: `${para.name}报文`,
         transportType: 'OSE',
         systemId,
         moduleId,
-        protocolRefs: [{ protocolId: proto.id, role: 'request' }],
+        protocolRefs: [{ protocolId: proto.id, role: 'send' }],
         desc: '数据链文件导入自动生成报文'
       })
     }
@@ -365,7 +365,7 @@ const onConfirm = () => {
     // 2) 可选：测试数据管理（数据集 + 历史数据）
     if (saveDatasets.value) {
       const ds = tdStore.addDataset({
-        name: para.name,
+        name: `${para.name}数据集`,
         systemId,
         moduleName,
         linkedProtocol: proto?.name || '',

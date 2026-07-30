@@ -11,7 +11,7 @@
           <el-option v-for="iface in moduleInterfaces" :key="iface.id" :label="iface.name" :value="iface.id" />
         </el-select>
       </el-form-item>
-      <el-form-item v-if="!isInterfaceRule" label="目标字段">
+      <el-form-item v-if="form.type !== 'semantic'" label="目标字段">
         <el-select v-model="form.target.fieldPath" filterable style="width: 100%;" @change="onFieldChange">
           <el-option v-for="field in fields" :key="field.fieldPath" :label="field.fieldPath" :value="field.fieldPath" />
         </el-select>
@@ -93,6 +93,24 @@
           <el-input-number v-model="form.params.max" :min="protoRange?.min" :max="protoRange?.max" style="width: 180px;" />
         </el-form-item>
       </template>
+      <template v-if="form.type === 'semantic'">
+        <el-form-item label="源字段">
+          <el-select v-model="form.params.declaredPath" filterable style="width: 100%;">
+            <el-option v-for="field in fields" :key="`declared-${field.fieldPath}`" :label="field.fieldPath" :value="field.fieldPath" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="目标字段">
+          <el-select v-model="form.params.actualPath" filterable style="width: 100%;" @change="onSemanticActualChange">
+            <el-option v-for="field in fields" :key="`actual-${field.fieldPath}`" :label="field.fieldPath" :value="field.fieldPath" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="比较方式">
+          <el-radio-group v-model="form.params.measure">
+            <el-radio-button value="byteLength">字节长度</el-radio-button>
+            <el-radio-button value="length">元素数量</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+      </template>
       <template v-if="form.type === 'overflow'">
         <el-form-item label="最大长度"><el-input-number v-model="form.params.maxLength" :min="1" style="width: 180px;" /></el-form-item>
       </template>
@@ -143,10 +161,9 @@ const visible = computed({
 })
 const moduleInterfaces = computed(() => protoStore.interfaces.filter((iface) => iface.moduleId === props.ruleSet?.moduleId))
 const currentInterface = computed(() => protoStore.interfaces.find((iface) => iface.id === form.target.interfaceId))
-const fields = computed(() => flattenInterfaceFields(currentInterface.value).filter((field) => field.fieldPath.startsWith('response.')))
-const isInterfaceRule = computed(() => form.type === 'timeout' || form.type === 'format')
+const fields = computed(() => flattenInterfaceFields(currentInterface.value, protoStore.protocols).filter((field) => field.fieldPath.startsWith('response.')))
 const currentField = computed(() => {
-  if (isInterfaceRule.value || !form.target.fieldPath) return null
+  if (!form.target.fieldPath) return null
   return fields.value.find((f) => f.fieldPath === form.target.fieldPath) || null
 })
 const protoRange = computed(() => {
@@ -266,16 +283,13 @@ watch(() => props.modelValue, (open) => {
   // 仅对新建规则应用默认值；编辑时保留已有 params
   if (!form.id) {
     applyTypeDefaults()
-  } else if (isInterfaceRule.value) {
-    form.target.fieldPath = ''
-    form.target.fieldName = ''
   }
 })
 
 function blank() {
   return {
     id: null,
-    type: 'type',
+    type: 'range',
     enabled: true,
     level: 'error',
     source: 'manual',
@@ -289,17 +303,15 @@ const onInterfaceChange = (id) => {
   const iface = protoStore.interfaces.find((item) => item.id === id)
   form.target.interfaceId = id || null
   form.target.interfaceName = iface?.name || ''
-  if (!isInterfaceRule.value) {
-    const field = flattenInterfaceFields(iface).find((item) => item.fieldPath.startsWith('response.'))
-    if (field) {
-      form.target.fieldPath = field.fieldPath
-      form.target.fieldName = field.fieldName
-      fillParamsFromField(field)
-    }
-  } else {
-    form.target.fieldPath = ''
-    form.target.fieldName = ''
+  const responseFields = flattenInterfaceFields(iface, protoStore.protocols)
+    .filter((item) => item.fieldPath.startsWith('response.'))
+  const field = responseFields[0]
+  if (field) {
+    form.target.fieldPath = field.fieldPath
+    form.target.fieldName = field.fieldName
+    fillParamsFromField(field)
   }
+  if (form.type === 'semantic') fillSemanticDefaults(responseFields)
 }
 
 const onFieldChange = (path) => {
@@ -307,6 +319,26 @@ const onFieldChange = (path) => {
   if (!field) return
   form.target.fieldName = field.fieldName
   fillParamsFromField(field)
+}
+
+const onSemanticActualChange = (path) => {
+  const field = fields.value.find((item) => item.fieldPath === path)
+  form.target.fieldPath = path || ''
+  form.target.fieldName = field?.fieldName || ''
+}
+
+const fillSemanticDefaults = (responseFields = fields.value) => {
+  const declared = responseFields.find((field) => /(data)?length|len|长度/i.test(field.fieldName || ''))
+  const declaredIndex = declared ? responseFields.indexOf(declared) : -1
+  const actual = responseFields.slice(declaredIndex + 1).find((field) =>
+    ['bitstream', '位组序流', 'file', '流文件', 'matrix', '结构矩阵'].includes(field.type)
+  )
+  form.params = {
+    declaredPath: declared?.fieldPath || '',
+    actualPath: actual?.fieldPath || '',
+    measure: 'byteLength',
+  }
+  onSemanticActualChange(form.params.actualPath)
 }
 
 const fillParamsFromField = (field) => {
@@ -325,16 +357,14 @@ const fillParamsFromField = (field) => {
     const isBitstream = field.type === 'bitstream' || field.type === '位组序流'
     form.params = { required: true, maxLength: isBitstream ? 256 : 64 }
   }
+  if (form.type === 'semantic') fillSemanticDefaults()
 }
 
 const applyTypeDefaults = () => {
   form.level = form.type === 'boundary' ? 'warning' : 'error'
-  if (isInterfaceRule.value) {
-    form.target.fieldPath = ''
-    form.target.fieldName = ''
-  }
   if (form.type === 'timeout') form.params = { timeoutMs: form.params.timeoutMs || 500 }
   else if (form.type === 'format') form.params = { sampleType: form.params.sampleType || 'json' }
+  else if (form.type === 'semantic') fillSemanticDefaults()
   else if (form.target.fieldPath) onFieldChange(form.target.fieldPath)
 }
 
@@ -349,6 +379,10 @@ const cleanStructFields = (fields) => {
 }
 
 const save = () => {
+  if (form.type === 'semantic' && (!form.params.declaredPath || !form.params.actualPath)) {
+    ElMessage.warning('请选择长度声明字段和对应解析字段')
+    return
+  }
   // Validate range/boundary rules are within protocol-defined range
   if ((form.type === 'range' || form.type === 'boundary') && protoRange.value) {
     const { min: ruleMin, max: ruleMax } = form.params

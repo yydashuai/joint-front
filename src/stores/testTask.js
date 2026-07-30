@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { tasks as seedTasks } from '@/mock/seed-data'
+import { makeUniqueName } from '@/utils/entityName'
 
 let _taskSeq = 100
 
@@ -101,7 +102,7 @@ export const useTestTaskStore = defineStore('testTask', {
     addTask(data) {
       const task = {
         id: `t${++_taskSeq}`,
-        name: data.name || '新建测试任务',
+        name: makeUniqueName(this.tasks, data.name || '新建测试任务'),
         systemId: data.systemId,
         moduleId: data.moduleId,
         status: 'draft',
@@ -131,7 +132,11 @@ export const useTestTaskStore = defineStore('testTask', {
     updateTask(id, patch) {
       const t = this.tasks.find(t => t.id === id)
       if (t) {
-        Object.assign(t, patch)
+        const next = { ...patch }
+        if (Object.prototype.hasOwnProperty.call(next, 'name')) {
+          next.name = makeUniqueName(this.tasks, next.name, t)
+        }
+        Object.assign(t, next)
         t.updatedAt = new Date().toISOString().slice(0, 16).replace('T', ' ')
       }
     },
@@ -143,7 +148,7 @@ export const useTestTaskStore = defineStore('testTask', {
       const dup = {
         ...JSON.parse(JSON.stringify(src)),
         id: `t${++_taskSeq}`,
-        name: `${src.name} (副本)`,
+        name: makeUniqueName(this.tasks, `${src.name} (副本)`),
         status: 'draft',
         runs: [],
         createdAt: new Date().toISOString().slice(0, 10),

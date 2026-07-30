@@ -3,54 +3,12 @@
     <div class="page__header">
       <div>
         <h2>链路连接管理</h2>
-        <div class="page__desc">
-          内网链路探测 · 先选择被测系统，再检测其下各模块链路是否通畅
-        </div>
       </div>
       <div class="header-actions">
         <el-tooltip content="打开被测系统管理对话框"><el-button :icon="Setting" @click="systemManagerVisible = true">管理系统</el-button></el-tooltip>
         <el-tooltip content="创建一个新的链路模块"><el-button type="primary" :icon="Plus" @click="openCreate">新建模块</el-button></el-tooltip>
       </div>
     </div>
-
-    <!-- 系统选择条（摘要信息 + 快捷切换 chip，顶栏已提供全功能下拉） -->
-    <el-card class="sys-strip" shadow="never" :body-style="{ padding: '12px 16px' }">
-      <div class="sys-bar">
-        <div class="sys-bar__pick">
-          <span class="sys-bar__label">被测系统</span>
-          <div class="sys-bar__chips">
-            <el-tag
-              v-for="opt in systemStore.options"
-              :key="opt.value ?? 'all'"
-              :type="isCurrentSystem(opt.value) ? 'primary' : 'info'"
-              :effect="isCurrentSystem(opt.value) ? 'dark' : 'plain'"
-              class="sys-bar__chip-btn"
-              :title="`切换到 ${opt.label}`"
-              @click="pageSystemKey = opt.value ?? ALL_KEY"
-            >
-              {{ opt.label }}
-            </el-tag>
-          </div>
-        </div>
-        <div class="sys-bar__info">
-          <template v-if="systemStore.current">
-            <span class="sys-bar__chip"><b>负责人</b>{{ systemStore.current.owner || '—' }}</span>
-            <span class="sys-bar__chip"><b>模块</b>{{ visibleModules.length }}</span>
-            <span class="sys-bar__chip"><b>在线</b>{{ store.onlineCount }} / {{ visibleModules.length }}</span>
-            <span class="sys-bar__desc">{{ systemStore.current.desc }}</span>
-          </template>
-          <template v-else>
-            <span class="sys-bar__chip"><b>全部系统</b>跨系统总览</span>
-            <span class="sys-bar__chip"><b>模块</b>{{ visibleModules.length }}</span>
-            <span class="sys-bar__chip"><b>在线</b>{{ store.onlineCount }} / {{ visibleModules.length }}</span>
-          </template>
-          <span class="sys-bar__auto is-on">
-            <span class="sys-bar__auto-dot" />
-            自动检测连通性（每 5 秒）
-          </span>
-        </div>
-      </div>
-    </el-card>
 
     <!-- 左：IDE 层级树 ｜ 右：拓扑图 + 参数配置 -->
     <div class="conn-layout">
@@ -68,7 +26,6 @@
           <template #header>
             <div class="card-head">
               <span>链路拓扑</span>
-              <span class="muted">本机联试工具 → 各模块（绿灯=通 / 灰灯=不通）· 可拖拽 / 缩放 / 全屏</span>
             </div>
           </template>
           <PanZoomCanvas :height="360" title="链路拓扑">
@@ -98,7 +55,12 @@
           <el-row :gutter="20">
             <el-col :span="12">
               <el-form-item label="模块名称" prop="name">
-                <el-input v-model="sel.name" placeholder="如 主控服务" />
+                <el-input
+                  v-model="sel.name"
+                  placeholder="如 主控服务"
+                  @focus="moduleNameBeforeEdit = sel.name"
+                  @change="commitSelectedModuleName"
+                />
               </el-form-item>
             </el-col>
             <el-col :span="12">
@@ -128,7 +90,6 @@
 
         <!-- 连通性检测 -->
         <div class="ping-bar">
-          <span class="ping-bar__note">系统每 5 秒自动检测一次链路；手动检测将发送 4 个探测包确认链路是否通畅</span>
           <div class="ping-bar__btns">
             <el-tooltip content="发送探测包检测该模块的链路是否通畅"><el-button type="primary" :icon="Pointer" :loading="sel.status === 'pinging'" @click="handlePing">检测连通性</el-button></el-tooltip>
             <el-tooltip content="保存当前模块的链路参数"><el-button @click="saveParams">保存参数</el-button></el-tooltip>
@@ -205,11 +166,12 @@ import ConnectionTopology from '@/components/ConnectionTopology.vue'
 import PanZoomCanvas from '@/components/PanZoomCanvas.vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const store = useConnectionStore()
 const systemStore = useSystemStore()
+const { nextUniqueName, validateName } = useEntityNameGuard()
 const UNASSIGNED_KEY = '__unassigned__'
-const ALL_KEY = '__all__'
 
 // 内网链路只有“通 / 不通”两态（绿灯 / 灰灯），pinging 为探测中的过渡态
 const statusMeta = {
@@ -218,12 +180,6 @@ const statusMeta = {
   pinging: { text: '检测中', tag: 'warning' }
 }
 
-// 页面内被测系统选择（与顶部栏同源，冗余便于操作）
-const pageSystemKey = computed({
-  get: () => systemStore.currentId ?? ALL_KEY,
-  set: (v) => systemStore.setCurrent(v === ALL_KEY ? null : v)
-})
-const isCurrentSystem = (id) => (id ?? null) === (systemStore.currentId ?? null)
 const hubLabel = computed(() => systemStore.current?.name ?? '全部系统')
 
 const moduleSystemOptions = computed(() => [
@@ -247,6 +203,18 @@ const onSelectSystem = (id) => {
   if (systemStore.systems.some((s) => s.id === id)) systemStore.setCurrent(id)
 }
 const sel = computed(() => visibleModules.value.find((module) => module.id === store.selectedId) || null)
+const moduleNameBeforeEdit = ref('')
+const commitSelectedModuleName = () => {
+  if (!sel.value) return false
+  const validName = validateName(sel.value.name, sel.value, '模块')
+  if (!validName) {
+    sel.value.name = moduleNameBeforeEdit.value || nextUniqueName('新建模块', sel.value)
+    return false
+  }
+  sel.value.name = validName
+  moduleNameBeforeEdit.value = validName
+  return true
+}
 
 // 层级树选中模块 → 同步到当前选中
 const onTreeSelect = (node) => {
@@ -300,7 +268,7 @@ const formRef = ref()
 const saveParams = async () => {
   if (!formRef.value) return
   await formRef.value.validate((valid) => {
-    if (valid) ElMessage.success('参数已保存')
+    if (valid && commitSelectedModuleName()) ElMessage.success('参数已保存')
   })
 }
 const handleRemove = () => {
@@ -336,7 +304,9 @@ const openCreate = () => {
 const confirmCreate = async () => {
   await createRef.value.validate((valid) => {
     if (!valid) return
-    const created = store.add({ ...draft })
+    const validName = validateName(draft.name, null, '模块')
+    if (!validName) return
+    const created = store.add({ ...draft, name: validName })
     store.select(created.id)
     dialogVisible.value = false
     ElMessage.success(`已新建模块 ${draft.name}`)
@@ -354,47 +324,6 @@ const confirmCreate = async () => {
 }
 
 .header-actions { display: flex; align-items: center; gap: 12px; }
-
-/* 系统选择条 */
-.sys-strip { flex-shrink: 0; }
-.sys-bar {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  flex-wrap: wrap;
-  &__pick { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-  &__label { font-size: 14px; font-weight: 600; }
-  &__select { width: 240px; }
-  &__chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  &__chip-btn {
-    cursor: pointer;
-    transition: transform 0.15s;
-    &:hover { transform: translateY(-1px); }
-  }
-  &__info { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; min-width: 0; }
-  &__chip {
-    font-size: 13px; color: var(--el-text-color-regular);
-    b { color: var(--el-text-color-secondary); font-weight: 400; margin-right: 6px; }
-  }
-  &__desc {
-    font-size: 12px; color: var(--el-text-color-secondary);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px;
-  }
-  &__auto {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-size: 12px; color: var(--el-text-color-secondary);
-    .sys-bar__auto-dot {
-      width: 7px; height: 7px; border-radius: 50%;
-      background: var(--el-text-color-placeholder);
-    }
-    &.is-on .sys-bar__auto-dot {
-      background: var(--el-color-success);
-      box-shadow: 0 0 0 3px var(--el-color-success-light-7);
-      animation: pulse 1.4s infinite;
-    }
-  }
-}
-@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 /* 左树 ｜ 右（拓扑 + 配置） */
 .conn-layout {
@@ -422,8 +351,6 @@ const confirmCreate = async () => {
   justify-content: space-between;
   gap: 12px;
 }
-.muted { font-size: 12px; color: var(--el-text-color-secondary); }
-
 /* 拓扑图封顶 + 内部滚动：拓扑再大也不会把下方配置挤掉 */
 .topo-card { flex-shrink: 0; }
 
@@ -441,11 +368,10 @@ const confirmCreate = async () => {
 
 /* 连通性检测操作条 */
 .ping-bar {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: flex-end;
   gap: 12px; flex-wrap: wrap;
   padding: 10px 12px; margin-bottom: 12px;
   background: var(--el-fill-color-lighter); border-radius: 8px;
-  &__note { font-size: 12px; color: var(--el-text-color-secondary); flex: 1; min-width: 200px; }
   &__btns { display: flex; gap: 10px; flex-shrink: 0; }
 }
 

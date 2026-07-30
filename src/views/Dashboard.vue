@@ -4,9 +4,6 @@
     <div class="page__header">
       <div>
         <h2>{{ isAll ? '联试系统首页 / 工作台' : `${current.name} / 工作台` }}</h2>
-        <div class="page__desc">
-          {{ isAll ? '便携式智能联试工具 · 联试全流程概览' : (current.desc || `负责人：${current.owner}`) }}
-        </div>
       </div>
       <div class="header-middle">
         <el-button
@@ -39,11 +36,6 @@
     <div v-if="isAll" class="health-section">
       <div class="section-head">
         <h3 class="section-title">系统健康概览</h3>
-        <span class="section-hint">点击系统卡片可快速切换查看 · 异常数多的优先</span>
-        <span v-if="lastSyncedAt" class="section-sync">
-          <el-icon><Refresh /></el-icon>
-          {{ lastSyncedAt }} 已同步
-        </span>
       </div>
       <el-scrollbar ref="healthScrollRef" class="health-scroll" @wheel.prevent="onHealthWheel">
         <div class="health-track">
@@ -178,7 +170,6 @@
             <div class="panel-head">
               <div>
                 <span class="panel-title">异常告警</span>
-                <span class="panel-subtitle">{{ scopeTitle }}</span>
               </div>
               <el-button size="small" text type="primary" @click="$router.push('/exception')">全部异常 →</el-button>
             </div>
@@ -228,7 +219,6 @@
             <div class="panel-head">
               <div>
                 <span class="panel-title">最近联试任务</span>
-                <span class="panel-subtitle">{{ scopeTitle }}</span>
               </div>
               <el-button size="small" text type="primary" @click="$router.push('/task')">全部任务 →</el-button>
             </div>
@@ -269,14 +259,13 @@
 </template>
 
 <script setup>
-import { computed, markRaw, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, markRaw, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Upload, WarningFilled, Tickets, Back, Cpu, Connection, Document, Warning, FolderOpened, Refresh } from '@element-plus/icons-vue'
+import { Plus, Upload, WarningFilled, Tickets, Back, Cpu, Connection, Document, Warning, FolderOpened } from '@element-plus/icons-vue'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
 import { useExceptionStore } from '@/stores/exception'
 import { useTestTaskStore } from '@/stores/testTask'
-import { bus, EVENTS } from '@/utils/bus'
 import RemarkCell from '@/components/RemarkCell.vue'
 
 const router = useRouter()
@@ -408,34 +397,7 @@ const clearScope = () => {
 
 watch(currentId, clearScope)
 
-/* ========== 实时联动：执行/异常状态变化自动刷新 ========== */
-const lastSyncedAt = ref('')
-const formatNow = () => {
-  const d = new Date()
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
-}
-const markSynced = (source) => {
-  lastSyncedAt.value = `${formatNow()} (${source})`
-}
-const unsubs = []
-onMounted(() => {
-  markSynced('初始化')
-  unsubs.push(bus.on(EVENTS.TASK_RUN_FINISHED, () => markSynced('执行完成')))
-  unsubs.push(bus.on(EVENTS.TASK_RUN_STARTED,  () => markSynced('执行开始')))
-  unsubs.push(bus.on(EVENTS.EXCEPTION_CREATED,  () => markSynced('新异常')))
-  unsubs.push(bus.on(EVENTS.EXCEPTION_UPDATED,  () => markSynced('异常已处理')))
-})
-onBeforeUnmount(() => { unsubs.forEach((u) => u && u()) })
-
 const activeDomain = computed(() => selectedScope.value.domain || 'all')
-const scopeTitle = computed(() => {
-  const scope = selectedScope.value
-  if (!scope || scope.kind === 'all') return isAll.value ? '全部范围' : `系统：${current.value?.name || ''}`
-  if (scope.moduleId) return `模块：${moduleName(scope.moduleId)}`
-  if (scope.systemId) return `系统：${scope.label}`
-  return scope.label
-})
-
 const scopedTasks = computed(() => {
   const scope = selectedScope.value
   let list = visibleTasks.value
@@ -548,28 +510,6 @@ const stateTag = s => ({ '待处理': 'danger', '已处理': 'success', '已修�
   margin-bottom: 10px;
 }
 .section-title { margin: 0; font-size: 15px; font-weight: 600; }
-.section-hint { font-size: 12px; color: var(--el-text-color-placeholder); }
-.section-sync {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--el-color-success);
-  background: var(--el-color-success-light-9);
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-variant-numeric: tabular-nums;
-
-  .el-icon {
-    font-size: 12px;
-    animation: rotate 1s linear;
-  }
-}
-@keyframes rotate {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
 
 .health-scroll {
   :deep(.el-scrollbar__wrap) { overflow-y: hidden; }
@@ -680,13 +620,6 @@ const stateTag = s => ({ '待处理': 'danger', '已处理': 'success', '已修�
   justify-content: space-between;
 }
 .panel-title { font-weight: 600; font-size: 14px; }
-.panel-subtitle {
-  margin-left: 8px;
-  color: var(--el-text-color-placeholder);
-  font-size: 12px;
-  font-weight: 400;
-}
-
 /* ============ 任务 / 异常联动工作区 ============ */
 .dashboard-workspace {
   flex: 1;

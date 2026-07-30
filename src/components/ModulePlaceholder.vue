@@ -3,7 +3,6 @@
     <div class="page__header">
       <div>
         <h2>{{ title }}</h2>
-        <div class="page__desc">{{ desc }}</div>
       </div>
       <el-tag type="warning" effect="plain">待设计</el-tag>
     </div>

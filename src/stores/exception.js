@@ -17,7 +17,7 @@ export const EXC_STATES = [
   { value: '已处理', label: '已处理', tag: 'success' },
 ]
 
-// 异常只产生于接收侧（发送数据不产异常）：reception = 接收接口编排的实时校验捕获
+// 异常只产生于接收侧（发送数据不产异常）：reception = 接收监控的实时校验捕获
 export const EXC_SOURCES = [
   { value: 'reception', label: '接收校验' },
   { value: 'rule', label: '规则判定' },

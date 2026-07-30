@@ -241,7 +241,7 @@ const boundInterface = computed(() =>
   protocolStore.interfaces.find((i) => String(i.id) === String(boundInterfaceId.value)) || null
 )
 const boundFields = computed(() =>
-  boundInterface.value ? collectInterfaceFields(boundInterface.value, protocolStore.protocols) : []
+  boundInterface.value ? collectInterfaceFields(boundInterface.value, protocolStore.protocols, 'receive') : []
 )
 const bodyFieldRows = computed(() => boundFields.value.map((f) => ({
   name: f.name,
@@ -431,7 +431,7 @@ const doSend = () => {
   })
   if (!entry) { ElMessage.error('发送失败'); return }
   ElMessage.success(
-    `已发送：校验结果「${entry.verdict.tag}」，可在「接收接口编排 → 实时监控」数据流查看` +
+    `已发送：校验结果「${entry.verdict.tag}」，可在「接口收发监测 → 接收监控」数据流查看` +
     (entry.verdict.status !== 'ok' ? '（该报文被判定为异常，已标红并同步异常台账）' : '')
   )
   emit('done', entry.id)

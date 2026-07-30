@@ -27,8 +27,8 @@
 
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
-import { ElMessage } from 'element-plus'
 import { useConnectionStore } from '@/stores/connection'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -37,6 +37,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'created'])
 
 const connStore = useConnectionStore()
+const { validateName } = useEntityNameGuard()
 
 const visible = computed({
   get: () => props.modelValue,
@@ -72,11 +73,9 @@ const onClose = () => {
 }
 
 const onSubmit = () => {
-  if (!form.name) {
-    ElMessage.warning('请输入任务名称')
-    return
-  }
-  emit('created', { ...form })
+  const validName = validateName(form.name, null, '任务')
+  if (!validName) return
+  emit('created', { ...form, name: validName })
   visible.value = false
 }
 </script>

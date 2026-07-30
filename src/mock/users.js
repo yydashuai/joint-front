@@ -62,8 +62,8 @@ export const users = [
 /* ========== 权限表（仅 tester 需要记录，admin 天然全权限） ========== */
 export const permissions = [
   { userId: 'u-tester1', systemIds: ['sys-weapon'] },
-  { userId: 'u-tester2', systemIds: ['sys-weapon', 'sys-fire-control'] },
-  { userId: 'u-tester3', systemIds: ['sys-weapon', 'sys-fire-control', 'sys-radar', 'sys-comm'] }
+  { userId: 'u-tester2', systemIds: ['sys-weapon', 'sys-fire'] },
+  { userId: 'u-tester3', systemIds: ['sys-weapon', 'sys-fire'] }
 ]
 
 /* ========== 系统配置默认值（管理员在设置页调整） ========== */

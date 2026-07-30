@@ -13,7 +13,7 @@
             <el-option v-for="iface in coveredInterfaces" :key="iface.id" :label="iface.name" :value="iface.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="响应时延">
+        <el-form-item label="接收时延">
           <el-input-number v-model="recvMs" :min="0" :max="10000" />
           <span class="unit">ms</span>
         </el-form-item>
@@ -83,7 +83,7 @@ watch(() => props.ruleSet.id, () => {
 }, { immediate: true })
 
 function fillSample(variant) {
-  const sample = makeSample(currentInterface.value, variant)
+  const sample = makeSample(currentInterface.value, variant, protoStore.protocols)
   sampleText.value = JSON.stringify(sample, null, 2)
 }
 function runCheck() {

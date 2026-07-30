@@ -33,15 +33,15 @@ const metricsTable = (run) => {
   const abnormal = s.abnormalRequests ?? ((s.failedRequests || 0) + (s.errorRequests || 0))
   return `| 指标 | 数值 | 指标 | 数值 |
 | --- | --- | --- | --- |
-| 请求总量 | ${s.totalRequests} | 成功率 | ${s.passRate}% |
+| 发送总量 | ${s.totalRequests} | 成功率 | ${s.passRate}% |
 | 平均延迟 | ${s.avgResponseTime} ms | P95 延迟 | ${s.p95} ms |
 | 覆盖任务 | ${run.stepResults.length} 个 | 覆盖接口 | ${ifaceCount} 个 |
-| 异常请求 | ${abnormal} 次 | 异常记录 | ${run.exceptions.length} 条 |
+| 发送异常 | ${abnormal} 次 | 异常记录 | ${run.exceptions.length} 条 |
 | 严重异常 | ${severe} 条 | 结果 | ${run.result} |`
 }
 
 const resultsTable = (run) => {
-  const head = `| 任务 | 接口 | 请求数 | 成功 | 异常 | 平均延迟 | 结果 |
+  const head = `| 任务 | 接口 | 发送数 | 成功 | 异常 | 平均延迟 | 结果 |
 | --- | --- | --- | --- | --- | --- | --- |`
   const rows = run.stepResults
     .map((r) => `| ${r.taskName} | ${r.iface} | ${r.total} | ${r.success} | ${r.abnormal ?? ((r.failed || 0) + (r.error || 0))} | ${r.avgMs} ms | ${r.result} |`)
@@ -51,19 +51,19 @@ const resultsTable = (run) => {
 
 /* —— 描述性章节变体（轮换） —— */
 const overviewVariants = (run, sysName) => [
-  `本次联试针对**${sysName}**开展全流程接口联试，共执行 ${run.stepResults.length} 个任务、${run.summary.totalRequests} 次请求，整体成功率 **${run.summary.passRate}%**，总体结论为 **${run.result}**。`,
-  `本轮联试围绕**${sysName}**的关键接口与链路稳定性展开，累计发送 ${run.summary.totalRequests} 次请求，平均延迟 ${run.summary.avgResponseTime} ms，成功率 ${run.summary.passRate}%，未出现阻断性故障，评定为 **${run.result}**。`,
-  `从执行覆盖看，**${sysName}**本轮共纳入 ${run.stepResults.length} 个任务，覆盖 ${new Set(run.stepResults.map((r) => r.iface)).size} 个接口。请求总量 ${run.summary.totalRequests} 次，P95 延迟 ${run.summary.p95} ms，结果判定为 **${run.result}**。`,
-  `本报告依据选定执行批次生成，重点呈现**${sysName}**在接口响应、规则命中和异常捕捉方面的客观数据。本轮成功率为 **${run.summary.passRate}%**，平均响应 ${run.summary.avgResponseTime} ms，结论为 **${run.result}**。`
+  `本次联试针对**${sysName}**开展全流程接口联试，共执行 ${run.stepResults.length} 个任务、发送 ${run.summary.totalRequests} 次，整体成功率 **${run.summary.passRate}%**，总体结论为 **${run.result}**。`,
+  `本轮联试围绕**${sysName}**的关键接口与链路稳定性展开，累计发送 ${run.summary.totalRequests} 次，平均接收时延 ${run.summary.avgResponseTime} ms，成功率 ${run.summary.passRate}%，未出现阻断性故障，评定为 **${run.result}**。`,
+  `从执行覆盖看，**${sysName}**本轮共纳入 ${run.stepResults.length} 个任务，覆盖 ${new Set(run.stepResults.map((r) => r.iface)).size} 个接口。发送总量 ${run.summary.totalRequests} 次，P95 延迟 ${run.summary.p95} ms，结果判定为 **${run.result}**。`,
+  `本报告依据选定执行批次生成，重点呈现**${sysName}**在接口收发、规则命中和异常捕捉方面的客观数据。本轮成功率为 **${run.summary.passRate}%**，平均接收时延 ${run.summary.avgResponseTime} ms，结论为 **${run.result}**。`
 ]
 
 const anomalyVariants = (run) => {
   const exs = run.exceptions
   if (!exs.length) {
     return [
-      '本次联试全程未捕获异常事件，各接口响应均通过类型、取值范围与超时校验。',
+      '本次联试全程未捕获异常事件，各接口接收数据均通过类型、取值范围与超时校验。',
       '本轮执行无异常记录，基础规则（类型 / 取值 / 边界 / 超时）判定全部通过。',
-      '当前批次未形成异常清单，说明返回数据在字段类型、边界值和响应时限方面均满足既定规则。',
+      '当前批次未形成异常清单，说明接收数据在字段类型、边界值和接收时限方面均满足既定规则。',
       '异常捕捉结果为空，本轮可直接进入归档或作为后续回归测试的对照基线。'
     ]
   }
@@ -71,7 +71,7 @@ const anomalyVariants = (run) => {
   return [
     `本次联试共捕获 **${exs.length} 处异常**，明细如下：\n\n${lines}`,
     `异常集中在少数接口，共 **${exs.length} 处**：\n\n${lines}\n\n建议结合接口超时与取值规则进一步定位。`,
-    `从异常分布看，本轮问题主要暴露在接口响应稳定性和字段规则判定两类场景。记录如下：\n\n${lines}\n\n后续应优先复核高等级异常。`,
+    `从异常分布看，本轮问题主要暴露在接口接收稳定性和字段规则判定两类场景。记录如下：\n\n${lines}\n\n后续应优先复核高等级异常。`,
     `本轮异常清单用于支撑处置闭环，共记录 **${exs.length} 条**可追溯事件：\n\n${lines}\n\n建议将上述接口纳入下一轮回归验证范围。`
   ]
 }
@@ -123,7 +123,7 @@ export const useReportStore = defineStore('report', {
         id: uid('kb'), title: '接口超时处置规范.md', moduleId: null, source: '本地导入', type: 'md',
         importedAt: '2026-06-20 10:12', vectorized: 'done',
         chunks: [
-          { idx: 1, text: '接口响应超过约定阈值（默认 2000ms）即判定为超时，应记录请求上下文、下游服务与连接池状态。' },
+          { idx: 1, text: '接口接收超过约定阈值（默认 2000ms）即判定为超时，应记录发送上下文、下游服务与连接池状态。' },
           { idx: 2, text: '连接池耗尽时优先排查 max_connections 配置与慢查询；网关层超时常由下游瓶颈引起。' },
           { idx: 3, text: '处置流程：定位下游服务 → 评估连接资源 → 调整阈值/扩容 → 回归验证。' }
         ]

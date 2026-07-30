@@ -7,14 +7,8 @@
           v-model="ds.name"
           class="ds-name-input"
           size="large"
-          @change="(v) => tdStore.updateDataset(ds.id, { name: v })"
-        />
-        <el-input
-          v-model="ds.desc"
-          placeholder="描述..."
-          class="ds-desc-input"
-          size="small"
-          @change="(v) => tdStore.updateDataset(ds.id, { desc: v })"
+          @focus="nameBeforeEdit = ds.name"
+          @change="onDatasetNameChange"
         />
       </div>
       <div class="ds-header__right">
@@ -81,14 +75,6 @@
     <div class="matrix-toolbar">
       <div class="matrix-toolbar__left">
         <span class="matrix-title">本次数据矩阵</span>
-        <el-tag size="small" type="info" effect="plain">{{ ds.rows.length }} 行</el-tag>
-        <el-tag v-if="fieldColumnCount" size="small" type="info" effect="plain">{{ fieldColumnCount }} 列</el-tag>
-        <el-tooltip content="总单元格数">
-          <el-tag size="small" type="info" effect="plain">{{ ds.rows.length * fieldColumnCount }} 格</el-tag>
-        </el-tooltip>
-        <el-tooltip v-if="editedCellCount > 0" content="相对默认值有变化的单元格数">
-          <el-tag size="small" type="warning" effect="plain">已编辑 {{ editedCellCount }}</el-tag>
-        </el-tooltip>
         <el-tooltip v-if="outOfRangeCount > 0" content="超出约束范围的单元格数">
           <el-tag size="small" type="danger" effect="dark">超限 {{ outOfRangeCount }}</el-tag>
         </el-tooltip>
@@ -97,20 +83,12 @@
         <!-- 批量操作 -->
         <template v-if="selectedRows.length > 0">
           <el-tag size="small" type="warning" effect="plain">已选 {{ selectedRows.length }} 行</el-tag>
-          <el-button size="small" text :icon="CopyDocument" @click="onCopyRows" title="Ctrl+C">复制</el-button>
-          <el-button size="small" text type="primary" @click="onDuplicateRows" title="Ctrl+D">复制行</el-button>
-          <el-button size="small" text :icon="Top" @click="onMoveUp" :disabled="!canMoveUp">上移</el-button>
-          <el-button size="small" text :icon="Bottom" @click="onMoveDown" :disabled="!canMoveDown">下移</el-button>
           <el-popconfirm :title="`确认删除 ${selectedRows.length} 行？`" @confirm="onBatchDelete">
             <template #reference>
               <el-button size="small" type="danger" text :icon="Delete">批量删除</el-button>
             </template>
           </el-popconfirm>
         </template>
-        <el-button
-          v-if="rowClipboard.length > 0"
-          size="small" text type="success" @click="onPasteRows" title="Ctrl+V"
-        >粘贴 {{ rowClipboard.length }} 行</el-button>
         <el-popconfirm v-if="ds.rows.length > 0" title="确认清空所有行？" @confirm="onClearRows">
           <template #reference>
             <el-button size="small" text type="warning">清空</el-button>
@@ -263,8 +241,6 @@
       <div class="history-toolbar">
         <div class="history-toolbar__left">
           <span class="matrix-title">历史数据</span>
-          <el-tag size="small" type="info" effect="plain">{{ historyRows.length }} 行</el-tag>
-          <el-tag size="small" type="success" effect="plain">第二种数据输入方式</el-tag>
         </div>
         <div class="history-toolbar__right">
           <template v-if="selectedHistoryRows.length > 0">
@@ -414,13 +390,6 @@
     <teleport to="body">
       <div v-if="rowCtx.visible" class="row-ctx-mask" @click="closeRowCtx" @contextmenu.prevent="closeRowCtx">
         <ul class="row-ctx-menu" :style="{ left: rowCtx.x + 'px', top: rowCtx.y + 'px' }" @click.stop>
-          <li @click="onCtxCopyRow">复制行</li>
-          <li @click="onCtxDuplicateRow">复制并插入下方</li>
-          <li v-if="rowClipboard.length > 0" @click="onCtxPasteRows">粘贴 {{ rowClipboard.length }} 行到下方</li>
-          <li class="ctx-sep"></li>
-          <li @click="onCtxMoveUp" :class="{ disabled: rowCtx.isFirst }">上移</li>
-          <li @click="onCtxMoveDown" :class="{ disabled: rowCtx.isLast }">下移</li>
-          <li class="ctx-sep"></li>
           <li class="danger" @click="confirmCtxDelete">删除此行</li>
         </ul>
       </div>
@@ -432,13 +401,14 @@
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Download, Delete, Plus, Lock, DocumentCopy, CopyDocument, Search, Top, Bottom, MagicStick, Link, Promotion, VideoPlay
+  Download, Delete, Plus, Lock, Search, MagicStick, Link, Promotion, VideoPlay
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import Sortable from 'sortablejs'
 import { useTestDataStore } from '@/stores/testData'
 import { useProtocolStore, collectInterfaceDatasetFields } from '@/stores/protocol'
 import { exportCsvFile, exportJsonFile } from '@/services/testDataService'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const props = defineProps({
   dataset: { type: Object, required: true }
@@ -448,9 +418,19 @@ const emit = defineEmits(['delete', 'duplicate'])
 
 const tdStore = useTestDataStore()
 const protoStore = useProtocolStore()
+const { nextUniqueName, validateName } = useEntityNameGuard()
 const router = useRouter()
 
 const ds = computed(() => props.dataset)
+const nameBeforeEdit = ref('')
+const onDatasetNameChange = () => {
+  const validName = validateName(ds.value.name, ds.value, '数据集')
+  if (!validName) {
+    ds.value.name = nameBeforeEdit.value || nextUniqueName('新建数据集', ds.value)
+    return
+  }
+  tdStore.updateDataset(ds.value.id, { name: validName })
+}
 
 /* ========== 报文定义跳转（数据集针对报文，而非字段） ========== */
 const goInterfaceDef = (ifaceName) => {
@@ -540,19 +520,6 @@ const dynamicFields = computed(() => {
 // 数据矩阵仅展示可编辑字段：固定值（constraint.mode === 'fixed'）由系统锁定，不在矩阵中显示
 const matrixFields = computed(() => dynamicFields.value.filter(f => !isFieldFixed(f)))
 /* ========== 数据集统计 ========== */
-const fieldColumnCount = computed(() => matrixFields.value.length)
-const editedCellCount = computed(() => {
-  const d = ds.value
-  if (!d.rows.length) return 0
-  let count = 0
-  for (const row of d.rows) {
-    for (const f of matrixFields.value) {
-      const v = row.values?.[f.name]
-      if (v !== undefined && v !== null && v !== '' && v !== 0) count++
-    }
-  }
-  return count
-})
 const outOfRangeCount = computed(() => {
   const d = ds.value
   let count = 0
@@ -742,62 +709,19 @@ const formatGenValues = (values) => {
 // 生成预览中异常行标红（按字段定义实时判定）
 const genPreviewRowClass = ({ row }) => tdStore.computeAbnormal(row.values, ds.value.id) ? 'gen-abnormal-row' : ''
 
-/* ========== 行剪贴板 + 右键菜单 ========== */
-const rowClipboard = ref([])  // Array of deep-cloned row objects
-
-const rowCtx = reactive({ visible: false, x: 0, y: 0, row: null, isFirst: false, isLast: false })
+/* ========== 行右键菜单 ========== */
+const rowCtx = reactive({ visible: false, x: 0, y: 0, row: null })
 
 const onRowContextMenu = (row, _column, event) => {
   event.preventDefault()
-  const rows = ds.value.rows
-  const idx = rows.findIndex(r => r.id === row.id)
   Object.assign(rowCtx, {
     visible: true,
     x: event.clientX,
     y: event.clientY,
-    row,
-    isFirst: idx <= 0,
-    isLast: idx >= rows.length - 1
+    row
   })
 }
 const closeRowCtx = () => { rowCtx.visible = false }
-
-const onCtxCopyRow = () => {
-  if (!rowCtx.row) return
-  rowClipboard.value = [JSON.parse(JSON.stringify(rowCtx.row))]
-  ElMessage.success('已复制 1 行')
-  closeRowCtx()
-}
-
-const onCtxDuplicateRow = () => {
-  if (!rowCtx.row) return
-  tdStore.duplicateRow(ds.value.id, rowCtx.row.id)
-  nextTick(() => takeSnapshot())
-  ElMessage.success('已复制并插入')
-  closeRowCtx()
-}
-
-const onCtxPasteRows = () => {
-  if (!rowCtx.row || rowClipboard.value.length === 0) return
-  tdStore.insertRowsAfter(ds.value.id, rowCtx.row.id, rowClipboard.value)
-  nextTick(() => takeSnapshot())
-  ElMessage.success(`已粘贴 ${rowClipboard.value.length} 行`)
-  closeRowCtx()
-}
-
-const onCtxMoveUp = () => {
-  if (rowCtx.isFirst) return
-  tdStore.moveRowUp(ds.value.id, rowCtx.row.id)
-  nextTick(() => takeSnapshot())
-  closeRowCtx()
-}
-
-const onCtxMoveDown = () => {
-  if (rowCtx.isLast) return
-  tdStore.moveRowDown(ds.value.id, rowCtx.row.id)
-  nextTick(() => takeSnapshot())
-  closeRowCtx()
-}
 
 const onCtxDeleteRow = () => {
   if (!rowCtx.row) return
@@ -814,55 +738,6 @@ const confirmCtxDelete = () => {
   }).then(() => {
     tdStore.removeRow(ds.value.id, rowId)
   }).catch(() => {})
-}
-
-/* ========== 工具栏行操作 ========== */
-const onCopyRows = () => {
-  if (selectedRows.value.length === 0) return
-  rowClipboard.value = selectedRows.value.map(r => JSON.parse(JSON.stringify(r)))
-  ElMessage.success(`已复制 ${rowClipboard.value.length} 行`)
-}
-
-const onPasteRows = () => {
-  if (rowClipboard.value.length === 0) return
-  // 粘贴到最后一个选中行之后，若无选中行则追加到末尾
-  const lastSelected = selectedRows.value[selectedRows.value.length - 1]
-  tdStore.insertRowsAfter(ds.value.id, lastSelected?.id ?? null, rowClipboard.value)
-  nextTick(() => takeSnapshot())
-  ElMessage.success(`已粘贴 ${rowClipboard.value.length} 行`)
-}
-
-const onDuplicateRows = () => {
-  if (selectedRows.value.length === 0) return
-  tdStore.duplicateRows(ds.value.id, selectedRows.value.map(r => r.id))
-  nextTick(() => takeSnapshot())
-  ElMessage.success(`已复制 ${selectedRows.value.length} 行`)
-}
-
-const canMoveUp = computed(() => {
-  if (selectedRows.value.length === 0) return false
-  const firstId = selectedRows.value[0].id
-  return ds.value.rows.findIndex(r => r.id === firstId) > 0
-})
-
-const canMoveDown = computed(() => {
-  if (selectedRows.value.length === 0) return false
-  const lastId = selectedRows.value[selectedRows.value.length - 1].id
-  return ds.value.rows.findIndex(r => r.id === lastId) < ds.value.rows.length - 1
-})
-
-const onMoveUp = () => {
-  if (!canMoveUp.value) return
-  // 逐个上移（从第一个选中行开始）
-  selectedRows.value.forEach(r => tdStore.moveRowUp(ds.value.id, r.id))
-  nextTick(() => takeSnapshot())
-}
-
-const onMoveDown = () => {
-  if (!canMoveDown.value) return
-  // 逐个下移（从最后一个选中行开始，逆序）
-  [...selectedRows.value].reverse().forEach(r => tdStore.moveRowDown(ds.value.id, r.id))
-  nextTick(() => takeSnapshot())
 }
 
 const onClearRows = () => {
@@ -1003,24 +878,6 @@ const onKeydown = (e) => {
     e.preventDefault()
     onExportCsv()
   }
-  if (e.ctrlKey && e.key === 'c') {
-    if (selectedRows.value.length > 0) {
-      e.preventDefault()
-      onCopyRows()
-    }
-  }
-  if (e.ctrlKey && e.key === 'v') {
-    if (rowClipboard.value.length > 0) {
-      e.preventDefault()
-      onPasteRows()
-    }
-  }
-  if (e.ctrlKey && e.key === 'd') {
-    if (selectedRows.value.length > 0) {
-      e.preventDefault()
-      onDuplicateRows()
-    }
-  }
   if (e.key === 'Delete' && selectedRows.value.length > 0) {
     e.preventDefault()
     const count = selectedRows.value.length
@@ -1086,17 +943,6 @@ const onKeydown = (e) => {
   :deep(.el-input__inner) {
     font-size: 17px;
     font-weight: 600;
-  }
-}
-
-.ds-desc-input {
-  :deep(.el-input__wrapper) {
-    box-shadow: none;
-    padding: 0;
-  }
-  :deep(.el-input__inner) {
-    font-size: 13px;
-    color: var(--el-text-color-secondary);
   }
 }
 

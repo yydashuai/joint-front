@@ -44,9 +44,9 @@
 
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
-import { ElMessage } from 'element-plus'
 import { useTestDataStore } from '@/stores/testData'
 import { useSystemStore } from '@/stores/system'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -57,6 +57,7 @@ const emit = defineEmits(['update:modelValue', 'confirm'])
 
 const tdStore = useTestDataStore()
 const systemStore = useSystemStore()
+const { validateName } = useEntityNameGuard()
 
 const visible = computed({
   get: () => props.modelValue,
@@ -92,12 +93,10 @@ watch(() => props.modelValue, (v) => {
 const onClose = () => emit('update:modelValue', false)
 
 const onConfirm = () => {
-  if (!form.name.trim()) {
-    ElMessage.warning('请输入方案名称')
-    return
-  }
+  const validName = validateName(form.name, props.scheme, '方案')
+  if (!validName) return
   emit('confirm', {
-    name: form.name.trim(),
+    name: validName,
     systemId: props.systemId || null,
     datasetIds: form.datasetIds,
     remark: form.remark

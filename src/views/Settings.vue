@@ -4,7 +4,6 @@
     <div class="page__header">
       <div>
         <h2>个人设置</h2>
-        <div class="page__desc">个人账号信息管理与密码修改</div>
       </div>
     </div>
 

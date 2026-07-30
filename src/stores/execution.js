@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { useTestTaskStore } from '@/stores/testTask'
-import { useProtocolStore, collectInterfaceFields } from '@/stores/protocol'
+import { useProtocolStore, collectTestInterfaceFields } from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
 import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
@@ -50,8 +50,8 @@ const makeHex = (bytes = 12) => Array.from({ length: bytes }, () =>
 
 const taskInterface = (task, protocolStore) => {
   const boundId = task?.bindings?.interfaceId
-  return protocolStore.interfaces.find((item) => normalizeId(item.id) === normalizeId(boundId)) ||
-    protocolStore.interfaces.find((item) => item.moduleId === task?.moduleId) ||
+  return protocolStore.testInterfaces.find((item) => normalizeId(item.id) === normalizeId(boundId)) ||
+    protocolStore.testInterfaces.find((item) => item.moduleId === task?.moduleId) ||
     null
 }
 
@@ -262,7 +262,15 @@ export const useExecutionStore = defineStore('execution', {
       const protocolStore = useProtocolStore()
       const queue = []
       for (const item of this.planItems) {
-        const fields = item.iface ? collectInterfaceFields(item.iface, protocolStore.protocols) : []
+        const fields = item.iface
+          ? collectTestInterfaceFields(
+            item.iface,
+            useTestDataStore().datasets,
+            protocolStore.interfaces,
+            protocolStore.protocols,
+            'send',
+          )
+          : []
         const rows = item.datasets.flatMap((ds) => (ds.rows || []).map((row) => ({ row, dsName: ds.name, dsId: ds.id })))
         const count = Math.max(1, item.estimatedRequests)
         for (let i = 0; i < count; i += 1) {
@@ -289,6 +297,28 @@ export const useExecutionStore = defineStore('execution', {
         }
       }
       return queue
+    },
+
+    /** 监控阶段新增接口时，把对应任务的数据追加到当前发送队列。 */
+    appendTaskToActiveQueue(taskId) {
+      if (!['running', 'paused'].includes(this.status)) return 0
+      const appended = this._buildSendQueue().filter((entry) => entry.taskId === taskId)
+      if (!appended.length) return 0
+      this.sendQueue.push(...appended)
+      this.targetTotal += appended.length
+      if (!this._stepStats[taskId]) {
+        this._stepStats[taskId] = {
+          total: 0,
+          success: 0,
+          failed: 0,
+          error: 0,
+          abnormalTypes: {},
+          durations: [],
+          traces: [],
+        }
+      }
+      this._updateCounters()
+      return appended.length
     },
 
     /**
@@ -596,7 +626,7 @@ export const useExecutionStore = defineStore('execution', {
           finishedAt: this.finishedAt,
           result: step?.result || result,
           duration: `${this.counters.executionTime}s`,
-          log: `本次执行 ${step?.total || 0} 次请求，成功 ${step?.success || 0} 次，异常 ${abnormal} 次`,
+          log: `本次执行发送 ${step?.total || 0} 次，成功 ${step?.success || 0} 次，异常 ${abnormal} 次`,
         })
         task.status = result === '成功' ? 'completed' : 'error'
         task.time = this.finishedAt

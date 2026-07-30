@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { systems as seedSystems } from '@/mock/seed-data'
 import { useAuthStore } from '@/stores/auth'
+import { makeUniqueName } from '@/utils/entityName'
 
 let seq = 100
 
@@ -43,7 +44,8 @@ export const useSystemStore = defineStore('system', {
         name: '',
         desc: '',
         owner: '',
-        ...system
+        ...system,
+        name: makeUniqueName(this.systems, system.name || '新建系统'),
       }
       this.systems.push(next)
       return next
@@ -51,7 +53,11 @@ export const useSystemStore = defineStore('system', {
     update(id, patch) {
       const system = this.systems.find((item) => item.id === id)
       if (!system) return
-      Object.assign(system, patch)
+      const next = { ...patch }
+      if (Object.prototype.hasOwnProperty.call(next, 'name')) {
+        next.name = makeUniqueName(this.systems, next.name, system)
+      }
+      Object.assign(system, next)
     },
     remove(id) {
       const index = this.systems.findIndex((item) => item.id === id)

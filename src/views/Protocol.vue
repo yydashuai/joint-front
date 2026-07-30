@@ -3,7 +3,10 @@
     <div class="page__header">
       <div>
         <h2>报文字段管理</h2>
-        <div class="page__desc">系统 → 模块 → 字段 / 报文</div>
+      </div>
+      <div class="header-actions">
+        <el-button type="primary" :icon="Plus" @click="addHeaderProtocol">新增字段</el-button>
+        <el-button type="success" :icon="Plus" @click="addHeaderInterface">新增报文</el-button>
       </div>
     </div>
 
@@ -23,33 +26,9 @@
       />
 
       <div class="proto-detail">
-        <!-- 字段摘要: 数据结构信息 -->
-        <div v-if="selectedKind === 'protocol' && curProto" class="proto-summary">
-          <span class="proto-summary__chip">
-            <el-icon><Grid /></el-icon>
-            <b>{{ curProto.fields?.length || 0 }}</b> 个字段
-          </span>
-          <span v-if="curProto.endian" class="proto-summary__chip">
-            <el-icon><Setting /></el-icon>
-            {{ curProto.endian === 'big' ? '大端' : '小端' }}
-          </span>
-          <span v-if="curProto.framing" class="proto-summary__chip is-framing">
-            <el-icon><Box /></el-icon>
-            帧结构
-          </span>
-          <span v-if="curProto.checksum" class="proto-summary__chip is-checksum">
-            <el-icon><Document /></el-icon>
-            校验
-          </span>
-          <span v-if="store.interfacesByProtocol(curProto.id).length" class="proto-summary__msg">
-            <el-icon><List /></el-icon>
-            {{ store.interfacesByProtocol(curProto.id).length }} 个报文引用
-          </span>
-        </div>
-
         <ByteFieldTree
           ref="byteTreeRef"
-          v-if="selectedKind === 'protocol' && curProto && hasByteFields(curProto)"
+          v-if="selectedKind === 'protocol' && curProto && isByteStreamProtocol(curProto)"
           :protocol="curProto"
           :system-options="systemOptions"
           :module-options="moduleOptions(curProto.systemId)"
@@ -61,7 +40,8 @@
         />
 
         <StructFieldEditor
-          v-else-if="selectedKind === 'protocol' && curProto && !hasByteFields(curProto)"
+          ref="structuredEditorRef"
+          v-else-if="selectedKind === 'protocol' && curProto"
           :protocol="curProto"
           :system-options="systemOptions"
           :module-options="moduleOptions(curProto.systemId)"
@@ -94,8 +74,8 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Grid, Setting, Box, Document, List, InfoFilled } from '@element-plus/icons-vue'
-import { useProtocolStore } from '@/stores/protocol'
+import { Plus } from '@element-plus/icons-vue'
+import { makeParam, useProtocolStore } from '@/stores/protocol'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
@@ -103,10 +83,12 @@ import ProtocolTypeDialog from '@/components/protocol/ProtocolTypeDialog.vue'
 import ByteFieldTree from '@/components/protocol/ByteFieldTree.vue'
 import StructFieldEditor from '@/components/protocol/StructFieldEditor.vue'
 import InterfaceEditor from '@/components/protocol/InterfaceEditor.vue'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const store = useProtocolStore()
 const systemStore = useSystemStore()
 const connStore = useConnectionStore()
+const { nextUniqueName, validateName } = useEntityNameGuard()
 const router = useRouter()
 const route = useRoute()
 
@@ -126,14 +108,12 @@ if (route.query.kind === 'interface') {
 const curProto = computed(() => store.selectedProtocol)
 const curIf = computed(() => store.selectedInterface)
 
-// v2: 摘要 (带防御默认值)
-const EMPTY_SUMMARY = { fieldCount: 0, hasFraming: false, hasChecksum: false, endian: 'big', isStruct: false }
-const protoSummary = computed(() => {
-  if (!curProto.value) return EMPTY_SUMMARY
-  return store.protocolSummary(curProto.value.id) || EMPTY_SUMMARY
-})
-
 const hasByteFields = (p) => (p.fields || []).some(f => f.kind === 'byte' || f.kind === 'bit' || f.kind === 'repeat')
+const isByteStreamProtocol = (p) =>
+  p?.category === 'bitstream' ||
+  p?.type === 'TCP' ||
+  !!p?.framing ||
+  hasByteFields(p)
 
 const systemOptions = computed(() => systemStore.systems.map((s) => ({ label: s.name, value: s.id })))
 const moduleOptions = (systemId) => connStore.nodes.filter((n) => n.systemId === systemId).map((m) => ({ label: m.name, value: m.id }))
@@ -196,27 +176,56 @@ const openTypeDialog = (module) => {
   typeDialogVisible.value = true
 }
 
-const onTypeSelected = (type) => {
+const onTypeSelected = (category) => {
   const mod = pendingModule.value
   if (!mod) return
-  const isByteStream = type === 'TCP'
+  const isByteStream = category === 'bitstream'
   store.addProtocol({
-    name: DEFAULT_NAME.protocol,
+    name: nextUniqueName(DEFAULT_NAME.protocol),
     systemId: mod.systemId,
     moduleId: mod.id,
+    category,
     endian: isByteStream ? 'big' : undefined,
-    fields: [],
+    fields: category === 'scalar'
+      ? [makeParam({ name: '变量1', type: 'scalar', encoding: 'uint8' })]
+      : [],
     framing: isByteStream ? { mode: 'fixed', fixedLength: 0, lengthFieldId: null, lengthIncludesHeader: true, lengthIncludesSelf: true, headerBytes: '', footerBytes: '' } : null,
     checksum: isByteStream ? { type: 'none', fieldId: null, rangeStart: 0, rangeEnd: 0, polynomial: '0x1021', initValue: '0xFFFF', reflectIn: false, reflectOut: false, xorOut: '0x0000' } : null,
+    fileConfig: category === 'file'
+      ? { mediaType: 'application/octet-stream', extension: '.bin', maxSizeMb: 100, checksum: 'sha256', chunkSizeKb: 64 }
+      : null,
+    matrixConfig: category === 'matrix'
+      ? { fileType: 'binary-matrix', scalarType: 'float32', rows: 0, columns: 0, rowMajor: true, headerBytes: 0 }
+      : null,
   })
   selectedKind.value = 'protocol'
 }
 
 const addProtocolLeaf = (module) => openTypeDialog(module)
 const addInterfaceLeaf = (module) => {
-  store.addInterface({ name: DEFAULT_NAME.interface, systemId: module.systemId, moduleId: module.id })
+  store.addInterface({ name: nextUniqueName(DEFAULT_NAME.interface), systemId: module.systemId, moduleId: module.id })
   selectedKind.value = 'interface'
 }
+
+const headerTargetModule = computed(() => {
+  const selected = selectedKind.value === 'protocol' ? curProto.value : curIf.value
+  const selectedModule = connStore.nodes.find((module) => module.id === selected?.moduleId)
+  if (selectedModule && (!systemStore.currentId || selectedModule.systemId === systemStore.currentId)) {
+    return selectedModule
+  }
+  return connStore.nodes.find((module) => !systemStore.currentId || module.systemId === systemStore.currentId) || null
+})
+
+const withHeaderTargetModule = (action) => {
+  if (!headerTargetModule.value) {
+    ElMessage.warning('请先在链路连接管理中添加模块')
+    return
+  }
+  action(headerTargetModule.value)
+}
+
+const addHeaderProtocol = () => withHeaderTargetModule(addProtocolLeaf)
+const addHeaderInterface = () => withHeaderTargetModule(addInterfaceLeaf)
 
 const onTreeAddLeaf = ({ groupKind, module }) => {
   if (groupKind === 'protoGroup') addProtocolLeaf(module)
@@ -250,11 +259,16 @@ watch(() => route.query.interfaceId, (ifaceId) => {
 }, { immediate: true })
 
 const byteTreeRef = ref()
+const structuredEditorRef = ref()
 
 const onSave = () => {
+  const validName = validateName(curProto.value?.name, curProto.value, '字段')
+  if (!validName) return
+  curProto.value.name = validName
   byteTreeRef.value?.fillAllGaps?.()
   nextTick(() => {
     byteTreeRef.value?.markClean?.()
+    structuredEditorRef.value?.markClean?.()
     ElMessage.success('字段已保存')
   })
 }
@@ -281,7 +295,7 @@ const onImportFile = (e) => {
     try {
       const obj = JSON.parse(reader.result)
       store.addProtocol({
-        name: (obj.name || '导入字段') + '(导入)',
+        name: nextUniqueName(`${obj.name || '导入字段'}(导入)`),
         type: obj.type || 'TCP',
         desc: obj.desc || '',
         systemId: curProto.value?.systemId ?? null,
@@ -302,11 +316,11 @@ const onImportFile = (e) => {
 <style scoped lang="scss">
 .page { height: 100%; min-height: 0; }
 .proto { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.page__header { flex-shrink: 0; margin-bottom: 12px; }
+.page__header { flex-shrink: 0; }
+.header-actions { display: flex; align-items: center; gap: 10px; }
 .split { flex: 1; min-height: 0; display: flex; gap: 16px; overflow: hidden; }
 .proto-tree { width: 300px; flex-shrink: 0; min-height: 0; overflow: auto; }
 .proto-detail { display: flex; flex-direction: column; gap: 10px; width: 100%; min-width: 0; flex: 1; min-height: 0; overflow: hidden; }
-.proto-detail > :deep(.proto-summary) { flex-shrink: 0; }
 .proto-detail > :deep(.el-card.main) { flex: 1; min-height: 0; overflow: hidden; }
 .main--empty {
   flex: 1;
@@ -316,44 +330,4 @@ const onImportFile = (e) => {
   background: var(--el-bg-color);
 }
 
-/* ============ v2 字段摘要条 ============ */
-.proto-summary {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 8px 14px;
-  background: linear-gradient(90deg, var(--el-color-primary-light-9), var(--el-fill-color-light));
-  border: 1px solid var(--el-color-primary-light-6);
-  border-radius: 6px;
-  font-size: 12px;
-
-  &__chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 2px 10px;
-    border-radius: 10px;
-    background: var(--el-bg-color);
-    color: var(--el-text-color-secondary);
-    b { color: var(--el-text-color-primary); font-family: ui-monospace, monospace; }
-    em { font-style: normal; color: var(--el-text-color-placeholder); }
-    .el-icon { font-size: 12px; }
-
-    &.is-binary { color: #b45309; background: #fef3c7; }
-    &.is-json   { color: #1e40af; background: #dbeafe; }
-    &.is-protobuf { color: #6d28d9; background: #ede9fe; }
-    &.is-secure { color: #166534; background: #dcfce7; }
-  }
-  &__msg {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-left: auto;
-    font-size: 12px;
-    color: var(--el-color-primary);
-    font-weight: 500;
-    .el-icon { font-size: 12px; }
-  }
-}
 </style>

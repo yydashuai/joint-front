@@ -4,7 +4,6 @@
     <div class="page__header">
       <div>
         <h2>统计与可视化</h2>
-        <div class="page__desc">联试结果聚合分析 · 仅展示可客观度量的指标</div>
       </div>
       <div class="header-actions">
         <el-dropdown trigger="click" @command="onExport">
@@ -65,15 +64,15 @@
         <el-tab-pane label="总览" name="overview">
           <div class="kpi-grid">
             <StatCard label="累计执行次数" :value="ov.runCount" tone="primary" />
-            <StatCard label="总请求数" :value="ov.totalRequests" />
+            <StatCard label="总发送数" :value="ov.totalRequests" />
             <StatCard label="整体通过率" :value="ov.passRate" suffix="%" :tone="ov.passRate >= 90 ? 'success' : 'warning'" />
-            <StatCard label="平均响应时延" :value="ov.avgResponseTime" suffix="ms" />
+            <StatCard label="平均接收时延" :value="ov.avgResponseTime" suffix="ms" />
             <StatCard label="异常总数" :value="ov.exceptionTotal" tone="warning" />
             <StatCard label="待处理异常" :value="ov.pending" :tone="ov.pending ? 'danger' : 'success'" />
           </div>
           <div class="chart-grid">
             <ChartCard title="执行结果构成">
-              <DonutChart :data="ov.composition" center-label="请求" />
+              <DonutChart :data="ov.composition" center-label="发送" />
             </ChartCard>
             <ChartCard title="通过率趋势">
               <LineChart :series="[{ name: '通过率', color: 'var(--el-color-success)', points: ov.passRateTrend }]" unit="%" :y-max="100" />
@@ -90,25 +89,25 @@
             <StatCard label="平均单次耗时" :value="ex.kpis.avgRunTime" suffix="ms" />
           </div>
           <div class="chart-grid">
-            <ChartCard title="执行结果构成"><DonutChart :data="ex.composition" center-label="请求" /></ChartCard>
+            <ChartCard title="执行结果构成"><DonutChart :data="ex.composition" center-label="发送" /></ChartCard>
             <ChartCard title="每日执行次数"><BarChart :data="ex.runsPerDay" /></ChartCard>
             <ChartCard title="通过率趋势"><LineChart :series="[{ name: '通过率', color: 'var(--el-color-success)', points: ex.passRateTrend }]" unit="%" :y-max="100" /></ChartCard>
             <ChartCard title="各接口执行次数 Top"><BarChart :data="ex.runsByIface" horizontal /></ChartCard>
           </div>
         </el-tab-pane>
 
-        <!-- ====== 请求指标 ====== -->
-        <el-tab-pane label="请求指标" name="request">
+        <!-- ====== 发送指标 ====== -->
+        <el-tab-pane label="发送指标" name="request">
           <div class="kpi-grid">
-            <StatCard label="总请求数" :value="rq.kpis.total" tone="primary" />
-            <StatCard label="成功请求" :value="rq.kpis.success" tone="success" />
-            <StatCard label="异常请求" :value="rq.kpis.abnormal" tone="danger" />
-            <StatCard label="请求成功率" :value="rq.kpis.successRate" suffix="%" :tone="rq.kpis.successRate >= 90 ? 'success' : 'warning'" />
+            <StatCard label="总发送数" :value="rq.kpis.total" tone="primary" />
+            <StatCard label="发送成功" :value="rq.kpis.success" tone="success" />
+            <StatCard label="发送异常" :value="rq.kpis.abnormal" tone="danger" />
+            <StatCard label="发送成功率" :value="rq.kpis.successRate" suffix="%" :tone="rq.kpis.successRate >= 90 ? 'success' : 'warning'" />
           </div>
           <div class="chart-grid">
-            <ChartCard title="请求量随时间"><LineChart :series="[{ name: '请求量', color: 'var(--el-color-primary)', points: rq.requestByDay }]" /></ChartCard>
+            <ChartCard title="发送量随时间"><LineChart :series="[{ name: '发送量', color: 'var(--el-color-primary)', points: rq.requestByDay }]" /></ChartCard>
             <ChartCard title="成功 / 异常（按天）"><BarChart :data="rq.resultStack" /></ChartCard>
-            <ChartCard title="按接口请求量 Top"><BarChart :data="rq.requestByIface" horizontal /></ChartCard>
+            <ChartCard title="按接口发送量 Top"><BarChart :data="rq.requestByIface" horizontal /></ChartCard>
             <ChartCard title="异常分类构成（来自规则类型）"><DonutChart :data="rq.failReasons" center-label="异常" /></ChartCard>
           </div>
         </el-tab-pane>
@@ -116,14 +115,14 @@
         <!-- ====== 性能指标 ====== -->
         <el-tab-pane label="性能指标" name="performance">
           <div class="kpi-grid">
-            <StatCard label="平均响应时延" :value="pf.kpis.avgMs" suffix="ms" tone="primary" />
+            <StatCard label="平均接收时延" :value="pf.kpis.avgMs" suffix="ms" tone="primary" />
             <StatCard label="P90 时延" :value="pf.kpis.p90" suffix="ms" />
             <StatCard label="P95 时延" :value="pf.kpis.p95" suffix="ms" tone="warning" />
             <StatCard label="最大时延" :value="pf.kpis.maxMs" suffix="ms" tone="danger" />
             <StatCard label="平均吞吐" :value="pf.kpis.avgRps" suffix="req/s" />
           </div>
           <div class="chart-grid">
-            <ChartCard title="响应时延分布"><Histogram :values="pf.histogram" /></ChartCard>
+            <ChartCard title="接收时延分布"><Histogram :values="pf.histogram" /></ChartCard>
             <ChartCard title="平均时延趋势"><LineChart :series="[{ name: '平均时延', color: 'var(--el-color-primary)', points: pf.latencyTrend }]" unit="ms" /></ChartCard>
             <ChartCard title="吞吐趋势"><LineChart :series="[{ name: '吞吐', color: '#13c2c2', points: pf.throughputTrend }]" unit="req/s" /></ChartCard>
             <ChartCard title="各接口平均时延 Top"><BarChart :data="pf.latencyByIface" horizontal unit="ms" color="var(--el-color-warning)" /></ChartCard>
@@ -174,7 +173,7 @@
                 </template>
               </el-table-column>
               <el-table-column label="所属模块" prop="module" min-width="130" show-overflow-tooltip />
-              <el-table-column label="请求数" prop="req" width="90" align="right" sortable />
+              <el-table-column label="发送数" prop="req" width="90" align="right" sortable />
               <el-table-column label="成功率" width="100" align="right" sortable :sort-by="(r) => r.successRate">
                 <template #default="{ row }">
                   <span :class="row.successRate >= 90 ? 'ok' : 'warn'">{{ row.successRate }}%</span>
@@ -183,7 +182,7 @@
               <el-table-column label="平均时延" width="100" align="right" sortable :sort-by="(r) => r.avgMs">
                 <template #default="{ row }">{{ row.avgMs }}ms</template>
               </el-table-column>
-              <el-table-column label="异常请求" prop="abnormal" width="100" align="right" sortable>
+              <el-table-column label="发送异常" prop="abnormal" width="100" align="right" sortable>
                 <template #default="{ row }">
                   <span :class="{ danger: row.abnormal > 0 }">{{ row.abnormal }}</span>
                 </template>
@@ -195,7 +194,7 @@
         <!-- ====== 综合趋势 ====== -->
         <el-tab-pane label="综合趋势" name="trend">
           <div class="chart-grid">
-            <ChartCard title="请求量趋势"><LineChart :series="[{ name: '请求量', color: 'var(--el-color-primary)', points: tr.reqTrend }]" /></ChartCard>
+            <ChartCard title="发送量趋势"><LineChart :series="[{ name: '发送量', color: 'var(--el-color-primary)', points: tr.reqTrend }]" /></ChartCard>
             <ChartCard title="通过率趋势"><LineChart :series="[{ name: '通过率', color: 'var(--el-color-success)', points: tr.passTrend }]" unit="%" :y-max="100" /></ChartCard>
             <ChartCard title="异常趋势"><LineChart :series="[{ name: '异常数', color: 'var(--el-color-danger)', points: tr.excTrend }]" /></ChartCard>
             <ChartCard title="各系统通过率对比"><BarChart :data="systemCompareBars" horizontal unit="%" /></ChartCard>
@@ -253,7 +252,7 @@ const resetFilters = () => {
 /* ===== 选项 ===== */
 const systemOptions = computed(() => systemStore.visibleSystems.map((s) => ({ label: s.name, value: s.id })))
 const moduleOptions = computed(() => connStore.modulesOf(systemId.value || null))
-const interfaceOptions = computed(() => protoStore.interfaces.filter((i) => {
+const interfaceOptions = computed(() => protoStore.testInterfaces.filter((i) => {
   if (systemId.value && i.systemId !== systemId.value) return false
   if (moduleId.value && i.moduleId !== moduleId.value) return false
   return true
@@ -284,13 +283,13 @@ const systemCompareBars = computed(() => tr.value.systemCompare.map((s) => ({
 
 const interfaceRouteId = (row) => {
   if (row.interfaceId) return row.interfaceId
-  return protoStore.interfaces.find((i) => i.name === row.iface || i.path === row.iface)?.id || ''
+  return protoStore.testInterfaces.find((i) => i.name === row.iface)?.id || ''
 }
 
 const openInterface = (row) => {
   const id = interfaceRouteId(row)
   if (!id) return
-  router.push({ path: '/protocol', query: { interfaceId: String(id) } })
+  router.push({ path: '/execution', query: { interfaceId: String(id) } })
 }
 
 /* ===== 导出 ===== */

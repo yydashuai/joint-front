@@ -2,16 +2,22 @@
   <el-card class="main" shadow="never" :body-style="mainBody">
     <template #header>
       <div class="proto-head">
-        <el-input v-model="iface.name" class="proto-name" placeholder="接口名称" />
-        <el-popconfirm title="删除该接口？" @confirm="$emit('delete')">
-          <template #reference><el-button :icon="Delete" plain>删除接口</el-button></template>
+        <el-input
+          v-model="iface.name"
+          class="proto-name"
+          placeholder="报文名称"
+          @focus="beginNameEdit"
+          @change="commitNameEdit"
+        />
+        <el-popconfirm title="删除该报文？" @confirm="$emit('delete')">
+          <template #reference><el-button :icon="Delete" plain>删除报文</el-button></template>
         </el-popconfirm>
       </div>
     </template>
 
     <el-scrollbar class="editor-scroll">
       <div class="field-label">备注说明</div>
-      <el-input v-model="iface.desc" placeholder="可选，描述该接口的用途" class="proto-desc" />
+      <el-input v-model="iface.desc" placeholder="可选，描述该报文的用途" class="proto-desc" />
 
       <div class="meta-row">
         <span class="meta-row__label req">传输类型</span>
@@ -41,12 +47,12 @@
       />
 
       <!-- 发送字段 -->
-      <div class="proto-refs-section proto-refs-section--request">
+      <div class="proto-refs-section proto-refs-section--send">
         <div class="section-head">
-          <span class="section-title section-title--request">发送字段</span>
-          <el-button size="small" type="primary" plain :icon="Plus" @click="openPicker('request')">添加</el-button>
+          <span class="section-title section-title--send">发送字段</span>
+          <el-button size="small" type="primary" plain :icon="Plus" @click="openPicker('send')">添加</el-button>
         </div>
-        <el-table v-if="requestProtocols.length" :data="requestProtocols" border size="small">
+        <el-table v-if="sendProtocols.length" :data="sendProtocols" border size="small">
           <el-table-column label="字段" min-width="200">
             <template #default="{ row }">
               <span style="font-weight:500">{{ protocolName(row.protocolId) }}</span>
@@ -63,12 +69,12 @@
       </div>
 
       <!-- 接收字段 -->
-      <div class="proto-refs-section proto-refs-section--response">
+      <div class="proto-refs-section proto-refs-section--receive">
         <div class="section-head">
-          <span class="section-title section-title--response">接收字段</span>
-          <el-button size="small" type="success" plain :icon="Plus" @click="openPicker('response')">添加</el-button>
+          <span class="section-title section-title--receive">接收字段</span>
+          <el-button size="small" type="success" plain :icon="Plus" @click="openPicker('receive')">添加</el-button>
         </div>
-        <el-table v-if="responseProtocols.length" :data="responseProtocols" border size="small">
+        <el-table v-if="receiveProtocols.length" :data="receiveProtocols" border size="small">
           <el-table-column label="字段" min-width="200">
             <template #default="{ row }">
               <span style="font-weight:500">{{ protocolName(row.protocolId) }}</span>
@@ -111,7 +117,7 @@
           <span class="section-title">数据预览</span>
           <span class="preview-hint">只读 · 点击字段名可跳转编辑</span>
         </div>
-        <div v-for="ref in iface.protocolRefs" :key="ref.protocolId" class="preview-block">
+        <div v-for="ref in iface.protocolRefs" :key="`${ref.protocolId}-${ref.role}`" class="preview-block">
           <div class="preview-header" @click="$emit('navigateProtocol', ref.protocolId)">
             <el-tag size="small" :type="roleTagType(ref.role)">{{ roleLabel(ref.role) }}</el-tag>
             <span class="preview-name">{{ protocolName(ref.protocolId) }}</span>
@@ -131,9 +137,8 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { Plus, Delete, Search, Promotion, VideoPlay } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Delete, Search } from '@element-plus/icons-vue'
+import { ElMessageBox } from 'element-plus'
 import {
   TRANSPORT_TYPES, PROTOCOL_ROLES,
   makeTransportConfig, useProtocolStore, makeProtocolRef,
@@ -141,6 +146,7 @@ import {
 import { useTestDataStore } from '@/stores/testData'
 import { useConnectionStore } from '@/stores/connection'
 import TransportConfigForm from './TransportConfigForm.vue'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const props = defineProps({
   iface: { type: Object, required: true },
@@ -154,7 +160,20 @@ const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'c
 const protoStore = useProtocolStore()
 const dataStore = useTestDataStore()
 const connStore = useConnectionStore()
-const router = useRouter()
+const { nextUniqueName, validateName } = useEntityNameGuard()
+const nameBeforeEdit = ref('')
+
+const beginNameEdit = () => {
+  nameBeforeEdit.value = props.iface.name
+}
+const commitNameEdit = () => {
+  const validName = validateName(props.iface.name, props.iface, '报文')
+  if (!validName) {
+    props.iface.name = nameBeforeEdit.value || nextUniqueName('新建报文', props.iface)
+    return
+  }
+  props.iface.name = validName
+}
 
 // 确保接口对象具备新增字段（兼容旧数据）
 if (!Array.isArray(props.iface.datasetIds)) props.iface.datasetIds = []
@@ -171,21 +190,12 @@ const datasetOptions = computed(() => {
   return list.map((d) => ({ value: d.id, label: `${d.name}（${d.rows?.length || 0} 行）` }))
 })
 
-// 跳转到计划 / 发送测试
-const jumpToPlan = () => {
-  router.push({ path: '/execution', query: { interfaceId: String(props.iface.id) } })
-  ElMessage.success('已跳转到编排计划，可快速配置与发送')
-}
-const sendTest = () => {
-  router.push({ path: '/execution', query: { interfaceId: String(props.iface.id), test: '1' } })
-}
-
 // Split protocol refs by role
-const requestProtocols = computed(() =>
-  props.iface.protocolRefs.filter(r => r.role === 'request')
+const sendProtocols = computed(() =>
+  props.iface.protocolRefs.filter(r => r.role === 'send')
 )
-const responseProtocols = computed(() =>
-  props.iface.protocolRefs.filter(r => r.role === 'response')
+const receiveProtocols = computed(() =>
+  props.iface.protocolRefs.filter(r => r.role === 'receive')
 )
 
 // 传输类型下拉选项（兼容旧类型 TCP/HTTP/gRPC 数据，避免下拉空白）
@@ -199,7 +209,7 @@ const transportTypeOptions = computed(() => {
 })
 
 // Protocol name lookup
-const protocolName = (id) => protoStore.protocols.find(p => p.id === id)?.name || '未知协议'
+const protocolName = (id) => protoStore.protocols.find(p => p.id === id)?.name || '未知字段'
 
 // Protocol system name (for display in table)
 const getProtocolSys = (id) => {
@@ -215,9 +225,9 @@ const getProtocolFields = (id) => {
   return p?.fields || []
 }
 
-// Remove a protocol ref
+// 移除一个字段引用
 const removeRef = (row) => {
-  ElMessageBox.confirm('确认移除该协议引用？', '移除确认', {
+  ElMessageBox.confirm('确认移除该字段引用？', '移除确认', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
@@ -231,10 +241,10 @@ const removeRef = (row) => {
 const pickerVisible = ref(false)
 const pickerSearch = ref('')
 const showAllProtocols = ref(false)
-const pickerRole = ref('request')
+const pickerRole = ref('send')
 
 const pickerTitle = computed(() =>
-  pickerRole.value === 'request' ? '添加发送字段' : '添加接收字段'
+  pickerRole.value === 'send' ? '添加发送字段' : '添加接收字段'
 )
 
 const openPicker = (role) => {
@@ -245,7 +255,10 @@ const openPicker = (role) => {
 
 // Build enriched protocol list with metadata
 const enrichedProtocols = computed(() => {
-  const usedIds = new Set(props.iface.protocolRefs.map(r => r.protocolId))
+  // 同一字段可分别用于发送和接收；只阻止在当前角色内重复添加。
+  const usedIds = new Set(props.iface.protocolRefs
+    .filter((ref) => ref.role === pickerRole.value)
+    .map((ref) => ref.protocolId))
   return protoStore.protocols
     .filter(p => !usedIds.has(p.id))
     .map(p => {
@@ -296,7 +309,7 @@ const roleLabel = (role) => {
 }
 
 const roleTagType = (role) => {
-  const map = { request: 'warning', response: 'success' }
+  const map = { send: 'warning', receive: 'success' }
   return map[role] || 'info'
 }
 
@@ -356,16 +369,16 @@ const onTransportTypeChange = (type) => {
 .editor-scroll { flex: 1; min-height: 0; }
 
 .proto-refs-section { margin-bottom: 12px; }
-.proto-refs-section--request {
+.proto-refs-section--send {
   .section-title { border-left-color: #E6A23C; }
 }
-.proto-refs-section--response {
+.proto-refs-section--receive {
   .section-title { border-left-color: #67C23A; }
 }
 .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .section-title { font-size: 14px; font-weight: 600; padding-left: 8px; border-left: 3px solid var(--el-color-primary); }
-.section-title--request { border-left-color: #E6A23C; }
-.section-title--response { border-left-color: #67C23A; }
+.section-title--send { border-left-color: #E6A23C; }
+.section-title--receive { border-left-color: #67C23A; }
 
 .proto-sys-tag {
   display: inline-block; font-size: 11px; color: var(--el-text-color-secondary);

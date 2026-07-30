@@ -2,18 +2,10 @@
   <div class="page reception-page">
     <div class="page__header">
       <div>
-        <h2>接收接口编排</h2>
-        <div class="page__desc">编排监听接口、实时接收数据流、两层校验（结构层 / 字段层）并沉淀异常台账</div>
+        <h2>接口收发监测</h2>
       </div>
       <div class="header-actions">
-        <el-select v-model="systemSelectValue" class="system-select" placeholder="系统上下文">
-          <el-option
-            v-for="item in systemOptions"
-            :key="item.selectValue"
-            :label="item.label"
-            :value="item.selectValue"
-          />
-        </el-select>
+        <el-button type="success" :icon="Plus" @click="openHeaderIfaceDialog">新增接口</el-button>
       </div>
     </div>
 
@@ -61,7 +53,6 @@
                 <span class="wizard-step__index">{{ index + 1 }}</span>
                 <span class="wizard-step__copy">
                   <strong>{{ step.title }}</strong>
-                  <small>{{ step.desc }}</small>
                 </span>
               </button>
             </div>
@@ -88,7 +79,6 @@
             <div class="wizard-footer">
               <div class="wizard-footer__meta">
                 <strong>{{ currentStep.title }}</strong>
-                <span>{{ currentStep.helper }}</span>
               </div>
               <div class="wizard-actions">
                 <el-button :icon="ArrowLeft" :disabled="prevDisabled" @click="prevStep">上一步</el-button>
@@ -174,6 +164,7 @@
       :interface-id="ifaceConfigId"
       :context="ifaceConfigContext"
       :hide-plan-actions="true"
+      @test="testInterface"
     />
   </div>
 </template>
@@ -183,7 +174,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  ArrowLeft, ArrowRight, RefreshRight, Search, SwitchButton, VideoPause, VideoPlay
+  ArrowLeft, ArrowRight, Plus, RefreshRight, Search, SwitchButton, VideoPause, VideoPlay
 } from '@element-plus/icons-vue'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import ReceptionPlanTable from '@/components/reception/ReceptionPlanTable.vue'
@@ -192,41 +183,34 @@ import ReceptionHistory from '@/components/reception/ReceptionHistory.vue'
 import InterfaceQuickConfig from '@/components/execution/InterfaceQuickConfig.vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useReceptionStore } from '@/stores/reception'
-import { useSystemStore } from '@/stores/system'
-import { useProtocolStore } from '@/stores/protocol'
+import { useProtocolStore, collectTestInterfaceFields } from '@/stores/protocol'
+import { useTestDataStore } from '@/stores/testData'
 import { usePlanSchemeStore } from '@/stores/planScheme'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const route = useRoute()
 const router = useRouter()
-const systemStore = useSystemStore()
 const connStore = useConnectionStore()
 const protocolStore = useProtocolStore()
+const testDataStore = useTestDataStore()
 const recvStore = useReceptionStore()
 const schemeStore = usePlanSchemeStore()
+const { nextUniqueName, validateName } = useEntityNameGuard()
+protocolStore.migrateAllFromV1()
 
 const selectedKey = ref('')
 const ifaceSearch = ref('')
 const activeTab = ref('plan')
 const wizardSteps = [
-  { name: 'plan', title: '编排监听计划', desc: '选择接口并确认顺序', helper: '先把要监听的接收接口按顺序加入编排，确认字段定义（解析依据）已就绪。' },
-  { name: 'monitor', title: '实时接收监控', desc: '启动监听并观察数据流', helper: '监听过程中关注接收、两层校验判定、异常台账与（无法解析报文的）转发 / 保存。' },
-  { name: 'history', title: '历史统计', desc: '查看会话统计与报文明细', helper: '查看本次监听的所有接收报文，可按状态/接口筛选，并保存到数据集。' },
+  { name: 'plan', title: '编排监听计划' },
+  { name: 'monitor', title: '实时接收监控' },
+  { name: 'history', title: '历史统计' },
 ]
-
-const ALL_SYSTEM_VALUE = '__all__'
-const systemOptions = computed(() => systemStore.options.map((item) => ({
-  ...item,
-  selectValue: item.value == null ? ALL_SYSTEM_VALUE : item.value,
-})))
-const systemSelectValue = computed({
-  get: () => systemStore.currentId ?? ALL_SYSTEM_VALUE,
-  set: (value) => systemStore.setCurrent(value === ALL_SYSTEM_VALUE ? null : value),
-})
 
 const selectedIface = computed(() => {
   const m = selectedKey.value.match(/^iface-(.+)$/)
   if (!m) return null
-  return protocolStore.interfaces.find((i) => String(i.id) === String(m[1])) || null
+  return protocolStore.testInterfaces.find((i) => String(i.id) === String(m[1])) || null
 })
 const isSelectedInPlan = computed(() => {
   if (!selectedIface.value) return false
@@ -269,16 +253,15 @@ const primaryTip = computed(() => {
   return ''
 })
 
-/* ---- 接口配置状态徽标：未配置字段 → 「未配置字段」；已配置 → N字段（未绑规则时提示） ---- */
+/* ---- 接口配置状态徽标：字段与报文由数据集向下关联。 ---- */
 const recvIfaceBadge = (iface) => {
-  if (!(iface.protocolRefs || []).length) return '未配置字段'
-  const fieldCount = (iface.protocolRefs || []).length
-  return `${fieldCount} 字段`
+  const datasetCount = (iface.datasetIds || []).length
+  return datasetCount ? `${datasetCount} 数据集` : '未关联数据'
 }
 
 const leafGroups = (module) => {
   const kw = ifaceSearch.value.toLowerCase()
-  let ifaces = protocolStore.interfaces.filter((i) => i.moduleId === module.id)
+  let ifaces = protocolStore.testInterfaces.filter((i) => i.moduleId === module.id)
   if (kw) {
     ifaces = ifaces.filter((i) =>
       i.name.toLowerCase().includes(kw) ||
@@ -352,17 +335,29 @@ const openIfaceConfig = (interfaceId = null, module = null) => {
   ifaceConfigVisible.value = true
 }
 
-/* ---- 接收侧就绪：必须已配置字段定义（解析依据）；规则可选，不强制要求数据集 ---- */
+const openHeaderIfaceDialog = () => {
+  openIfaceConfig(null, null)
+}
+
+/* ---- 接收侧就绪：接口关联数据集；数据集再关联报文和字段。 ---- */
 const interfaceReadiness = (iface) => {
   const reasons = []
-  if (!(iface.protocolRefs || []).length) {
-    reasons.push('未引用任何协议字段（报文为空帧，无法解析与校验）')
+  if (!(iface.datasetIds || []).length) {
+    reasons.push('未关联测试数据集')
+  } else if (!collectTestInterfaceFields(
+    iface,
+    testDataStore.datasets,
+    protocolStore.interfaces,
+    protocolStore.protocols,
+    'receive',
+  ).length) {
+    reasons.push('关联的数据集没有可用报文或字段')
   }
   return { ok: !reasons.length, reasons }
 }
 
 const addInterfaceToPlan = (interfaceId) => {
-  const iface = protocolStore.interfaces.find((i) => String(i.id) === String(interfaceId))
+  const iface = protocolStore.testInterfaces.find((i) => String(i.id) === String(interfaceId))
   if (!iface) {
     ElMessage.warning('未找到对应接口')
     return false
@@ -386,6 +381,11 @@ const addSelectedIface = () => {
 }
 const addInterfaceFromDrop = (interfaceId) => addInterfaceToPlan(interfaceId)
 
+const testInterface = (interfaceId) => {
+  if (!addInterfaceToPlan(interfaceId)) return
+  startRun()
+}
+
 /* ---- 方案管理（复用 planScheme store，type='recv'） ---- */
 const recvSchemeDialogVisible = ref(false)
 const recvSchemeForm = ref({ name: '', interfaceIds: [], remark: '' })
@@ -393,8 +393,8 @@ const editingRecvSchemeId = ref(null)
 const currentRecvSchemeSystemId = ref(null)
 
 const availableInterfaces = computed(() => {
-  if (!currentRecvSchemeSystemId.value) return protocolStore.interfaces
-  return protocolStore.interfaces.filter(i => i.systemId === currentRecvSchemeSystemId.value)
+  if (!currentRecvSchemeSystemId.value) return protocolStore.testInterfaces
+  return protocolStore.testInterfaces.filter(i => i.systemId === currentRecvSchemeSystemId.value)
 })
 
 const openRecvSchemeDialog = (systemId, scheme) => {
@@ -410,6 +410,13 @@ const openRecvSchemeDialog = (systemId, scheme) => {
 }
 
 const confirmRecvScheme = () => {
+  const currentScheme = editingRecvSchemeId.value
+    ? schemeStore.schemes.find((scheme) => scheme.id === editingRecvSchemeId.value)
+    : null
+  const candidateName = recvSchemeForm.value.name.trim() || currentScheme?.name || nextUniqueName('新建监听方案')
+  const validName = validateName(candidateName, currentScheme, '方案')
+  if (!validName) return
+  recvSchemeForm.value.name = validName
   if (editingRecvSchemeId.value) {
     schemeStore.update(editingRecvSchemeId.value, { ...recvSchemeForm.value })
     ElMessage.success('监听方案已更新')
@@ -427,7 +434,7 @@ const addRecvScheme = (schemeId) => {
   if (!scheme.interfaceIds.length) { ElMessage.info(`方案「${scheme.name}」还没有配置接口，请先编辑方案并勾选接口`); return }
   let added = 0; let skipped = 0; let missing = 0
   scheme.interfaceIds.forEach((interfaceId) => {
-    const iface = protocolStore.interfaces.find((i) => String(i.id) === String(interfaceId))
+    const iface = protocolStore.testInterfaces.find((i) => String(i.id) === String(interfaceId))
     if (!iface) { missing += 1; return }
     if (recvStore.addToPlan(iface.id)) added += 1
     else skipped += 1
@@ -460,7 +467,7 @@ const onAddLeaf = ({ groupKind, module }) => {
 
 const onDeleteLeaf = (node) => {
   if (node.kind === 'iface' && node.ref) {
-    protocolStore.removeInterface(node.ref.id)
+    protocolStore.removeTestInterface(node.ref.id)
     ElMessage.success('接口已删除')
   }
 }
@@ -514,7 +521,7 @@ onMounted(() => {
   const jumpInterfaceId = route.query.interfaceId
   if (jumpInterfaceId) {
     addInterfaceToPlan(jumpInterfaceId)
-    router.replace({ path: '/reception' })
+    router.replace({ path: '/execution', query: { mode: 'receive' } })
   }
 })
 
@@ -532,11 +539,8 @@ onBeforeUnmount(() => {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
   justify-content: flex-end;
 }
-.system-select { width: 220px; }
 .split {
   display: flex;
   gap: 16px;
@@ -673,13 +677,6 @@ onBeforeUnmount(() => {
 .wizard-step__copy strong {
   font-size: 14px;
   font-weight: 650;
-}
-.wizard-step__copy small {
-  overflow: hidden;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .wizard-body {
   flex: 1;

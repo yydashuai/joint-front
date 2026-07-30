@@ -2,7 +2,8 @@ import { defineStore } from 'pinia'
 import { ruleSets as seedRuleSets } from '@/mock/seed-data'
 import { useProtocolStore } from '@/stores/protocol'
 import { useTestTaskStore } from '@/stores/testTask'
-import { flattenInterfaceFields, inferConstraint, inferRange, RULE_TYPES, extractStructFields } from '@/utils/ruleEngine'
+import { flattenInterfaceFields, inferConstraint, RULE_TYPES } from '@/utils/ruleEngine'
+import { makeUniqueName } from '@/utils/entityName'
 
 let ruleSetSeq = 100
 let ruleSeq = 1000
@@ -13,6 +14,11 @@ const nextRuleSetId = () => `rs-${++ruleSetSeq}`
 const nextRuleId = () => `rule-${++ruleSeq}`
 
 const clone = (value) => JSON.parse(JSON.stringify(value))
+const SUPPORTED_RULE_TYPES = new Set(['range', 'semantic'])
+const normalizeRuleSets = (ruleSets = []) => clone(ruleSets).map((ruleSet) => ({
+  ...ruleSet,
+  rules: (ruleSet.rules || []).filter((rule) => SUPPORTED_RULE_TYPES.has(rule.type)),
+}))
 const norm = (value) => String(value ?? '').trim().toLowerCase()
 const ruleUniqueKeys = (rule = {}) => {
   const target = rule.target || {}
@@ -57,7 +63,7 @@ export const defaultRuleSet = (patch = {}) => ({
 
 export const makeRule = (patch = {}) => ({
   id: nextRuleId(),
-  type: 'type',
+  type: 'range',
   enabled: true,
   level: 'error',
   source: 'manual',
@@ -69,7 +75,7 @@ export const makeRule = (patch = {}) => ({
 
 export const useRuleStore = defineStore('rule', {
   state: () => ({
-    ruleSets: clone(seedRuleSets || []),
+    ruleSets: normalizeRuleSets(seedRuleSets || []),
     selectedRuleSetId: seedRuleSets?.[0]?.id || null,
     _idsResolved: false,
   }),
@@ -100,6 +106,19 @@ export const useRuleStore = defineStore('rule', {
       this.selectedRuleSetId = id
     },
 
+    normalizeRuleScope() {
+      const normalizedSeeds = normalizeRuleSets(seedRuleSets || [])
+      this.ruleSets.forEach((ruleSet) => {
+        ruleSet.rules = (ruleSet.rules || []).filter((rule) => SUPPORTED_RULE_TYPES.has(rule.type))
+        const seedRuleSet = normalizedSeeds.find((item) => item.id === ruleSet.id)
+        if (!seedRuleSet) return
+        const existingIds = new Set(ruleSet.rules.map((rule) => rule.id))
+        seedRuleSet.rules.forEach((rule) => {
+          if (!existingIds.has(rule.id)) ruleSet.rules.push(clone(rule))
+        })
+      })
+    },
+
     /** 一次性补全种子规则中缺失的 target.interfaceId（按 interfaceName 匹配） */
     resolveInterfaceIds() {
       if (this._idsResolved) return
@@ -108,7 +127,10 @@ export const useRuleStore = defineStore('rule', {
       this.ruleSets.forEach((rs) => {
         rs.rules.forEach((rule) => {
           if (!rule.target?.interfaceId && rule.target?.interfaceName) {
-            const iface = protoStore.interfaces.find((i) => i.name === rule.target.interfaceName)
+            const targetName = String(rule.target.interfaceName).replace(/报文$/, '')
+            const iface = protoStore.interfaces.find((i) =>
+              String(i.name).replace(/报文$/, '') === targetName
+            )
             if (iface) rule.target.interfaceId = iface.id
           }
         })
@@ -116,7 +138,10 @@ export const useRuleStore = defineStore('rule', {
     },
 
     addRuleSet(data = {}) {
-      const rs = defaultRuleSet(data)
+      const rs = defaultRuleSet({
+        ...data,
+        name: makeUniqueName(this.ruleSets, data.name || '新建规则集'),
+      })
       this.ruleSets.unshift(rs)
       this.selectedRuleSetId = rs.id
       return rs
@@ -125,7 +150,11 @@ export const useRuleStore = defineStore('rule', {
     updateRuleSet(id, patch) {
       const rs = this.ruleSets.find((item) => item.id === id)
       if (!rs) return
-      Object.assign(rs, patch)
+      const next = { ...patch }
+      if (Object.prototype.hasOwnProperty.call(next, 'name')) {
+        next.name = makeUniqueName(this.ruleSets, next.name, rs)
+      }
+      Object.assign(rs, next)
       rs.updatedAt = nowText()
     },
 
@@ -141,7 +170,7 @@ export const useRuleStore = defineStore('rule', {
       if (!src) return null
       const copy = clone(src)
       copy.id = nextRuleSetId()
-      copy.name = `${src.name}（副本）`
+      copy.name = makeUniqueName(this.ruleSets, `${src.name}（副本）`)
       copy.status = 'draft'
       copy.rules = copy.rules.map((rule) => ({ ...rule, id: nextRuleId() }))
       copy.createdAt = nowDate()
@@ -188,26 +217,16 @@ export const useRuleStore = defineStore('rule', {
       if (rs) rs.updatedAt = nowText()
     },
 
-    generatePreview(interfaceId, selectedTypes = ['type', 'range', 'overflow', 'boundary', 'timeout', 'format']) {
+    generatePreview(interfaceId, selectedTypes = ['range', 'semantic']) {
       const protoStore = useProtocolStore()
       const iface = protoStore.interfaces.find((item) => item.id === interfaceId)
       if (!iface) return []
       const preview = []
-      const fields = flattenInterfaceFields(iface).filter((field) => field.fieldPath.startsWith('response.'))
+      const fields = flattenInterfaceFields(iface, protoStore.protocols)
+        .filter((field) => field.fieldPath.startsWith('response.'))
 
       fields.forEach((field) => {
         const constraint = inferConstraint(field)
-        if (selectedTypes.includes('type')) {
-          const typeParams = {
-            dataType: field.type === '常量' ? field.dataType : field.type,
-            enumValues: field.constraint?.mode === 'enum' ? field.constraint.entries : [],
-          }
-          // 共识体字段：自动提取子结构（支持新名称 struct 和旧名称 共识体）
-          if ((field.type === 'struct' || field.type === '共识体') && field.children?.length) {
-            typeParams.structFields = extractStructFields(field.children)
-          }
-          preview.push(makeGeneratedRule(iface, field, 'type', typeParams))
-        }
         if (selectedTypes.includes('range') && constraint) {
           preview.push(makeGeneratedRule(iface, field, 'range', {
             dataType: field.dataType || field.type,
@@ -215,43 +234,26 @@ export const useRuleStore = defineStore('rule', {
             max: constraint.max,
           }))
         }
-        if (selectedTypes.includes('boundary') && constraint) {
-          preview.push(makeGeneratedRule(iface, field, 'boundary', {
-            dataType: field.dataType || field.type,
-            min: constraint.min,
-            max: constraint.max,
-            boundaryMode: 'inclusive',
-          }, 'warning'))
-        }
-        if (selectedTypes.includes('overflow')) {
-          // 位组序流(bitstream)的最大长度默认为 256
-          const isBitstream = field.type === 'bitstream' || field.type === '位组序流'
-          preview.push(makeGeneratedRule(iface, field, 'overflow', {
-            required: true,
-            maxLength: isBitstream ? 256 : 64,
-          }))
-        }
       })
 
-      if (selectedTypes.includes('timeout')) {
-        preview.push(makeRule({
-          type: 'timeout',
-          level: 'error',
-          source: 'auto',
-          target: { interfaceId: iface.id, interfaceName: iface.name, fieldPath: '', fieldName: '' },
-          params: { timeoutMs: 500 },
-          desc: `${iface.name} 响应时延不得超过 500ms`,
-        }))
-      }
-      if (selectedTypes.includes('format')) {
-        preview.push(makeRule({
-          type: 'format',
-          level: 'error',
-          source: 'auto',
-          target: { interfaceId: iface.id, interfaceName: iface.name, fieldPath: '', fieldName: '' },
-          params: { sampleType: iface.path?.startsWith('/') ? 'json' : 'hex' },
-          desc: `${iface.name} 响应格式必须合法`,
-        }))
+      if (selectedTypes.includes('semantic')) {
+        fields.forEach((declaredField, index) => {
+          if (!/(data)?length|len|长度/i.test(declaredField.fieldName || '')) return
+          const actualField = fields.slice(index + 1).find((field) =>
+            field.type === 'bitstream' ||
+            field.type === '位组序流' ||
+            field.type === 'file' ||
+            field.type === '流文件' ||
+            field.type === 'matrix' ||
+            field.type === '结构矩阵'
+          )
+          if (!actualField) return
+          preview.push(makeGeneratedRule(iface, actualField, 'semantic', {
+            declaredPath: declaredField.fieldPath,
+            actualPath: actualField.fieldPath,
+            measure: 'byteLength',
+          }))
+        })
       }
       return uniqueRules(preview).rules
     },
@@ -299,15 +301,7 @@ function makeGeneratedRule(iface, field, type, params = {}, level = 'error') {
 }
 
 function describeGeneratedRule(type, field, params) {
-  if (type === 'type') {
-    // 支持新名称 struct 和旧名称 共识体
-    if ((params.dataType === 'struct' || params.dataType === '共识体') && params.structFields?.length) {
-      return `${field.fieldPath} 必须符合共识体结构（${params.structFields.length} 个子字段）`
-    }
-    return `${field.fieldPath} 必须符合 ${params.dataType}`
-  }
   if (type === 'range') return `${field.fieldPath} 必须位于 ${params.min} ~ ${params.max}`
-  if (type === 'boundary') return `${field.fieldPath} 命中 ${params.min}/${params.max} 时提醒`
-  if (type === 'overflow') return `${field.fieldPath} 必须存在且长度不超过 ${params.maxLength}`
+  if (type === 'semantic') return `${params.declaredPath} 的长度声明必须与 ${params.actualPath} 的实际解析长度一致`
   return `${field.fieldPath} 校验`
 }

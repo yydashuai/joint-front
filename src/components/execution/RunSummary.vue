@@ -41,7 +41,7 @@
         </el-table-column>
         <el-table-column label="任务" prop="taskName" min-width="180" />
         <el-table-column label="接口" prop="iface" min-width="150" />
-        <el-table-column label="请求" prop="total" width="80" align="center" />
+        <el-table-column label="发送" prop="total" width="80" align="center" />
         <el-table-column label="成功" prop="success" width="80" align="center" />
         <el-table-column label="异常" width="80" align="center">
           <template #default="{ row }">{{ abnormalCount(row) }}</template>
@@ -104,7 +104,7 @@ const router = useRouter()
 const summary = computed(() => store.summary)
 const abnormalCount = (row) => row.abnormal ?? ((row.failed || 0) + (row.error || 0))
 const summaryItems = computed(() => [
-  { label: '总请求', value: summary.value.totalRequests },
+  { label: '总发送', value: summary.value.totalRequests },
   { label: '成功', value: summary.value.successRequests, cls: 'summary-item--ok' },
   { label: '异常', value: summary.value.abnormalRequests, cls: 'summary-item--bad' },
   { label: '总耗时', value: `${summary.value.executionTime}s` },
@@ -119,7 +119,7 @@ const saveRecord = () => {
 }
 
 const exportCsv = () => {
-  const header = '任务,接口,请求,成功,异常,平均时延,结果'
+  const header = '任务,接口,发送,成功,异常,平均时延,结果'
   const rows = store.stepResults.map((row) =>
     [row.taskName, row.iface, row.total, row.success, abnormalCount(row), `${row.avgMs}ms`, row.result].join(',')
   )

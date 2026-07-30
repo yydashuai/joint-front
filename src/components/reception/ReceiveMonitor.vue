@@ -1,27 +1,5 @@
 <template>
   <div class="rmonitor">
-    <!-- ===== 概览指标 ===== -->
-    <el-card shadow="never" class="exec-card">
-      <template #header>
-        <div class="card-head">
-          <div>
-            <span class="card-title">实时接收监控</span>
-            <span class="card-sub">监听 {{ store.planItems.length }} 个接口 · 两层校验（结构层 / 字段层）自动判定</span>
-          </div>
-          <el-tag :type="statusType" effect="dark">{{ statusText }}</el-tag>
-        </div>
-      </template>
-      <div class="metrics">
-        <div class="metric"><span class="metric__value">{{ store.totalCount }}</span><span class="metric__label">已接收</span></div>
-        <div class="metric metric--ok"><span class="metric__value">{{ store.okCount }}</span><span class="metric__label">正常</span></div>
-        <div class="metric metric--bad"><span class="metric__value">{{ store.errorCount }}</span><span class="metric__label">异常</span></div>
-        <div class="metric metric--warn"><span class="metric__value">{{ store.unparsedCount }}</span><span class="metric__label">无法解析</span></div>
-        <div class="metric"><span class="metric__value">{{ store.forwardCount }}</span><span class="metric__label">已转发</span></div>
-        <div class="metric"><span class="metric__value">{{ store.recvRate }}</span><span class="metric__label">条/秒</span></div>
-        <div class="metric"><span class="metric__value">{{ store.elapsedSeconds }}s</span><span class="metric__label">已监听</span></div>
-      </div>
-    </el-card>
-
     <!-- ===== 左：接收数据流 / 右：异常明细（常驻） ===== -->
     <div class="rm-split">
       <!-- 接收数据流 -->
@@ -29,9 +7,12 @@
         <template #header>
           <div class="card-head">
             <span class="card-title">接收数据流</span>
-            <el-badge :value="store.recvQueue.length" :hidden="!store.recvQueue.length" type="primary">
-              <span class="card-sub">实时滚动</span>
-            </el-badge>
+            <div class="stream-summary">
+              <el-tag :type="statusType" effect="dark">{{ statusText }}</el-tag>
+              <span v-for="metric in streamMetrics" :key="metric.label" class="stream-stat" :class="metric.cls">
+                <b>{{ metric.value }}</b>{{ metric.label }}
+              </span>
+            </div>
           </div>
         </template>
         <div class="stream-tools">
@@ -143,7 +124,6 @@
           <div class="card-head">
             <span class="card-title">
               本次监听异常明细
-              <el-tag size="small" type="info" effect="plain" class="sync-tag">已同步到故障异常管理</el-tag>
             </span>
             <el-button link type="primary" size="small" @click="router.push('/exception')">前往故障异常管理</el-button>
           </div>
@@ -246,6 +226,14 @@ const statusType = computed(() => ({
   done: 'success',
   idle: 'info',
 }[store.status]))
+const streamMetrics = computed(() => [
+  { label: '已接收', value: store.totalCount },
+  { label: '正常', value: store.okCount, cls: 'metric--ok' },
+  { label: '异常', value: store.errorCount, cls: 'metric--bad' },
+  { label: '未解析', value: store.unparsedCount, cls: 'metric--warn' },
+  { label: '条/秒', value: store.recvRate },
+  { label: '已监听', value: `${store.elapsedSeconds}s` },
+])
 
 /* ===== 过滤 ===== */
 const statusFilter = ref('all')
@@ -384,19 +372,23 @@ watch(() => store.recvQueue.length, () => {
 .card-sub { color: var(--el-text-color-secondary); font-size: 12px; }
 .mono { font-family: Consolas, Monaco, monospace; }
 
-.metrics { display: grid; grid-template-columns: repeat(7, minmax(86px, 1fr)); gap: 8px; }
-.metric {
-  min-height: 62px;
-  padding: 10px;
-  border-radius: 8px;
-  background: var(--el-fill-color-extra-light);
+.stream-summary { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+.stream-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 3px 7px;
   border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-extra-light);
+  font-size: 11px;
+  white-space: nowrap;
 }
-.metric__value { display: block; font: 700 20px Consolas, Monaco, monospace; }
-.metric__label { color: var(--el-text-color-secondary); font-size: 12px; }
-.metric--ok .metric__value { color: var(--el-color-success); }
-.metric--bad .metric__value { color: var(--el-color-danger); }
-.metric--warn .metric__value { color: var(--el-color-warning); }
+.stream-stat b { color: var(--el-text-color-primary); font: 700 12px Consolas, Monaco, monospace; }
+.stream-stat.metric--ok b { color: var(--el-color-success); }
+.stream-stat.metric--bad b { color: var(--el-color-danger); }
+.stream-stat.metric--warn b { color: var(--el-color-warning); }
 
 /* ===== 左右分栏 ===== */
 .rm-split {
@@ -507,7 +499,6 @@ $stream-cols: 30px 40px 72px 140px 56px minmax(140px, 1fr) 88px 52px;
 .save-tip { margin-bottom: 14px; }
 
 @media (max-width: 1180px) {
-  .metrics { grid-template-columns: repeat(4, minmax(86px, 1fr)); }
   .rm-split { grid-template-columns: 1fr; height: auto; }
   .stream-card, .exc-card { height: 460px; }
 }

@@ -3,7 +3,13 @@
     <!-- ========== HEADER ========== -->
     <template #header>
       <div class="proto-head">
-        <el-input v-model="protocol.name" class="proto-name" placeholder="字段名称" />
+        <el-input
+          v-model="protocol.name"
+          class="proto-name"
+          placeholder="字段名称"
+          @focus="beginNameEdit"
+          @change="commitNameEdit"
+        />
         <div class="proto-head__right">
           <el-dropdown trigger="click" @command="onIoCommand">
             <el-button :icon="Operation" plain>导入 / 导出</el-button>
@@ -50,47 +56,6 @@
         <el-option v-for="m in moduleOptions" :key="m.value" :label="m.label" :value="m.value" />
       </el-select>
     </div>
-
-    <!-- ========== 总长度摘要（实时预览） ========== -->
-    <div class="summary-bar">
-      <span class="summary-bar__item">
-        <span class="summary-bar__lbl">总长度</span>
-        <b>{{ totalBytes }}</b>
-        <em>字节</em>
-      </span>
-      <span class="summary-bar__item">
-        <span class="summary-bar__lbl">字段</span>
-        <b>{{ topLevelFieldCount }}</b>
-        <em>个</em>
-      </span>
-      <span class="summary-bar__item">
-        <span class="summary-bar__lbl">最后偏移</span>
-        <b>{{ lastOffset }}</b>
-      </span>
-      <span class="summary-bar__sep" />
-      <span class="summary-bar__item">
-        <span class="summary-bar__lbl">字节序</span>
-        <b>{{ protocol.endian === 'big' ? '大端 BE' : '小端 LE' }}</b>
-      </span>
-      <span class="summary-bar__progress">
-        <el-progress
-          :percentage="frameUsagePct"
-          :color="frameUsagePct > 90 ? '#fa541c' : frameUsagePct > 60 ? '#faad14' : '#52c41a'"
-          :stroke-width="6"
-          :show-text="false"
-        />
-        <span class="summary-bar__progress-text">帧内占用 {{ frameUsagePct }}%</span>
-      </span>
-    </div>
-
-    <!-- ========== 帧结构 & 拆包规则 ========== -->
-    <FramingPanel
-      v-if="protocol.framing"
-      :protocol="protocol"
-      :fields="protocol.fields"
-      :highlight-field-id="highlightFieldId"
-      @highlight="(id) => highlightFieldId = id"
-    />
 
     <!-- ========== 字段表格 ========== -->
     <el-table
@@ -228,6 +193,11 @@
                 <el-option v-for="f in numericFieldsBefore(row.id)" :key="f.value" :label="f.label" :value="f.value" />
               </el-select>
             </div>
+          </template>
+          <template v-else-if="row.kind === 'byte' && row.dataType === 'field-ref'">
+            <el-select v-model="row.protocolRef" size="small" style="width: 100%" placeholder="选择引用字段" filterable clearable>
+              <el-option v-for="o in fieldReferenceOptions" :key="o.value" :label="o.label" :value="o.value" />
+            </el-select>
           </template>
           <template v-else>
             <!-- 枚举约束 -->
@@ -369,7 +339,18 @@
         </el-table-column>
         <el-table-column label="约束" width="180">
           <template #default="{ row }">
-            <div class="constraint">
+            <el-select
+              v-if="row.kind === 'byte' && row.dataType === 'field-ref'"
+              v-model="row.protocolRef"
+              size="small"
+              style="width: 100%"
+              placeholder="选择引用字段"
+              filterable
+              clearable
+            >
+              <el-option v-for="o in fieldReferenceOptions" :key="o.value" :label="o.label" :value="o.value" />
+            </el-select>
+            <div v-else class="constraint">
               <el-select v-model="row.constraint.mode" size="small" class="c-mode">
                 <el-option label="范围" value="range" />
                 <el-option label="固定值" value="fixed" />
@@ -427,9 +408,10 @@ import {
   defaultConstraint, isNumericType, isStringType,
   range, fixed, enumConstraint, noneConstraint,
   getNumericFieldsBefore,
+  useProtocolStore,
 } from '@/stores/protocol'
-import { computeOffsets, computeBitOffsets, computeTotalBytes, formatHexOffset } from '@/utils/offsetCalc'
-import FramingPanel from './FramingPanel.vue'
+import { computeOffsets, computeBitOffsets, formatHexOffset } from '@/utils/offsetCalc'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const props = defineProps({
   protocol: { type: Object, required: true },
@@ -437,6 +419,21 @@ const props = defineProps({
   moduleOptions: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['import', 'export', 'delete', 'save', 'systemChange'])
+const protocolStore = useProtocolStore()
+const { nextUniqueName, validateName } = useEntityNameGuard()
+const nameBeforeEdit = ref('')
+
+const beginNameEdit = () => {
+  nameBeforeEdit.value = props.protocol.name
+}
+const commitNameEdit = () => {
+  const validName = validateName(props.protocol.name, props.protocol, '字段')
+  if (!validName) {
+    props.protocol.name = nameBeforeEdit.value || nextUniqueName('新建字段', props.protocol)
+    return
+  }
+  props.protocol.name = validName
+}
 
 const onIoCommand = (cmd) => {
   if (cmd === 'import') emit('import')
@@ -477,27 +474,9 @@ const dataTypeGroups = computed(() => {
   return Object.values(groups)
 })
 const flatDataTypes = BYTE_DATA_TYPES
-
-// ─── 总字节数 ───
-const totalBytes = computed(() => {
-  return computeTotalBytes(props.protocol.fields)
-})
-const topLevelFieldCount = computed(() => props.protocol.fields.length)
-// 最后偏移（按字段配置推断帧长度：固定长度模式用 fixedLength，否则用 totalBytes）
-const frameMaxBytes = computed(() => {
-  const framing = props.protocol.framing || {}
-  if (framing.mode === 'fixed' && framing.fixedLength) return Number(framing.fixedLength) || 0
-  return Math.max(totalBytes.value, 1024)
-})
-const lastOffset = computed(() => Math.max(0, totalBytes.value - 1))
-const frameUsagePct = computed(() => {
-  const max = frameMaxBytes.value
-  if (!max) return 0
-  return Math.min(100, Math.round((totalBytes.value / max) * 100))
-})
-
-// ─── 高亮字段（framing 引用） ───
-const highlightFieldId = ref(null)
+const fieldReferenceOptions = computed(() => protocolStore.protocols
+  .filter((p) => p.id !== props.protocol.id)
+  .map((p) => ({ label: p.name, value: p.id })))
 
 // ─── 偏移量自动重算 ───
 watch(() => props.protocol.fields, () => {
@@ -637,6 +616,7 @@ const onConstraintModeChange = (row) => {
 // ─── 数据类型切换 ───
 const onDataTypeChange = (row, newType) => {
   row.constraint = defaultConstraint(newType)
+  if (newType !== 'field-ref') row.protocolRef = null
   // 数值类型自动推断字节长度
   const dtInfo = BYTE_DATA_TYPES.find(t => t.value === newType)
   if (dtInfo?.bytes > 0 && !row.bitMode) {
@@ -835,7 +815,6 @@ const tableRowClass = ({ row }) => {
   if (row.kind === 'repeat') cls.push('row--repeat')
   else if (row.kind === 'bit') cls.push('row--bit')
   else cls.push('tl-row') // byte → top-level, sortable 可拖拽
-  if (highlightFieldId.value && row.id === highlightFieldId.value) cls.push('row--highlight')
   return cls.join(' ')
 }
 
@@ -975,7 +954,7 @@ defineExpose({ fillAllGaps, markClean })
 .proto-name { max-width: 280px; :deep(.el-input__wrapper) { font-weight: 600; } }
 .proto-head__right { display: flex; align-items: center; gap: 8px; .lbl { font-size: 13px; color: var(--el-text-color-secondary); } }
 .proto-type-sel { width: 122px; }
-.proto-endian-sel { width: 132px; }
+.proto-endian-sel { width: 180px; }
 .proto-prefix {
   font-size: 12px;
   color: var(--el-text-color-secondary);
@@ -998,25 +977,11 @@ defineExpose({ fillAllGaps, markClean })
 .meta-row__label.req::before { content: '*'; color: var(--el-color-danger); margin-right: 2px; }
 .meta-sel { width: 200px; }
 
-.summary-bar {
-  display: flex; align-items: center; gap: 18px; padding: 10px 14px; margin-bottom: 12px;
-  background: linear-gradient(90deg, var(--el-color-primary-light-9), var(--el-fill-color-light));
-  border: 1px solid var(--el-color-primary-light-6);
-  border-radius: 6px; font-size: 13px;
-  flex-wrap: wrap;
-  &__item { display: inline-flex; align-items: baseline; gap: 4px; color: var(--el-text-color-secondary); b { color: var(--el-color-primary); font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; } em { font-style: normal; font-size: 11px; } }
-  &__lbl { font-size: 11px; color: var(--el-text-color-placeholder); }
-  &__sep { width: 1px; height: 16px; background: var(--el-border-color-lighter); }
-  &__progress { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 200px; }
-  &__progress-text { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
-}
-
 .byte-tree {
   flex: 1;
   :deep(.el-select) { .el-input__wrapper { padding: 0 8px; } }
   :deep(.row--repeat) { background: var(--el-fill-color-lighter) !important; }
   :deep(.row--repeat td) { font-weight: 500; }
-  :deep(.row--highlight) { background: var(--el-color-warning-light-8) !important; }
   :deep(.sortable-ghost) { opacity: 0.4; background: var(--el-color-primary-light-9) !important; }
 }
 

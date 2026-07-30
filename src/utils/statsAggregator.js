@@ -2,9 +2,9 @@
  * 统计与可视化 —— 数据聚合层（纯函数 + 只读 store 访问）
  *
  * 原则：所有指标都能在真实数据结构里找到来源，绝不杜撰。
- *   - 执行 / 请求 / 性能 / 接口：来自统一执行批次 store（种子批次 + 执行编排实时批次）
+ *   - 执行 / 发送 / 性能 / 接口：来自统一执行批次 store（种子批次 + 执行编排实时批次）
  *   - 异常：来自 exceptionStore（种子 alerts + 执行实时捕捉）
- *   - 接口覆盖：来自 protocolStore.interfaces（真实接口总数）
+ *   - 接口覆盖：来自 protocolStore.testInterfaces（独立接口总数）
  * 禁列（无数据源）：被测系统 CPU/内存/带宽、业务正确率、真实并发用户、SLA、真实链路拓扑时延。
  */
 import { useExceptionStore } from '@/stores/exception'
@@ -282,7 +282,7 @@ export function aggregateInterface(filters = {}) {
   const proto = useProtocolStore()
   const runs = getRuns(filters)
   // 接口总数（受系统/模块过滤）
-  const allIfaces = proto.interfaces.filter((i) => {
+  const allIfaces = proto.testInterfaces.filter((i) => {
     if (filters.systemId && i.systemId !== filters.systemId) return false
     if (filters.moduleId && i.moduleId !== filters.moduleId) return false
     return true
@@ -328,7 +328,7 @@ export function aggregateInterface(filters = {}) {
 export function aggregateTrend(filters = {}) {
   const runs = getRuns(filters)
   const exc = getExceptions(filters)
-  // 综合趋势：请求量 / 通过率 / 异常记录数 随时间
+  // 综合趋势：发送量 / 通过率 / 异常记录数 随时间
   const reqTrend = dayBuckets(runs, (rs) => sum(rs, (r) => r.total))
   const passTrend = dayBuckets(runs, (rs) => pct(sum(rs, (r) => r.success), sum(rs, (r) => r.total)))
   const excDays = [...new Set(exc.map((e) => normalizeDate(e.capturedTime)))].sort()
@@ -348,7 +348,7 @@ export function aggregateTrend(filters = {}) {
 export function exportRows(category, filters = {}) {
   if (category === 'interface') {
     return aggregateInterface(filters).ranking.map((r) => ({
-      接口: r.iface, 模块: r.module, 请求数: r.req, 成功率: `${r.successRate}%`, 平均时延ms: r.avgMs, 异常请求: r.abnormal,
+      接口: r.iface, 模块: r.module, 发送数: r.req, 成功率: `${r.successRate}%`, 平均时延ms: r.avgMs, 发送异常: r.abnormal,
     }))
   }
   if (category === 'exception') {
@@ -359,7 +359,7 @@ export function exportRows(category, filters = {}) {
   // 默认导出执行记录明细
   return getRuns(filters).map((r) => ({
     时间: r.startedAt, 系统: r.systemId, 模块: r.moduleName, 接口: r.iface,
-    请求数: r.total, 成功: r.success, 异常: abnormalOf(r), 平均时延ms: r.avgMs, 吞吐rps: r.rps,
+    发送数: r.total, 成功: r.success, 异常: abnormalOf(r), 平均时延ms: r.avgMs, 吞吐rps: r.rps,
   }))
 }
 

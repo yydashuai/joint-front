@@ -4,10 +4,6 @@
 
     <!-- OSE：基于 UDP 的报文传输（消息头 + 消息体） -->
     <template v-if="transportType === 'OSE'">
-      <div class="section-hint">
-        底层传输：<el-tag size="small" type="info">UDP</el-tag>　OSE 报文由「消息头 + 消息体」组成。消息头含嵌套结构体与常量，其中
-        <b>OSE 总长</b> 等由 OSE 自动生成，<b>目标地址 / 消息类型</b> 等由用户填写；消息体由下方发送 / 接收字段以 uint16 等基础类型组合定义。
-      </div>
 
       <div class="form-grid">
         <div class="form-row">
@@ -47,10 +43,6 @@
 
     <!-- 4908A：基于 TCP/IP（UDP + TCP） -->
     <template v-if="transportType === '4908A'">
-      <div class="section-hint">
-        底层传输：<el-tag size="small" type="info">TCP/IP</el-tag>　同时支持 UDP 与 TCP。UDP 承载实时数据传输 / 实时数据控制传输，TCP 承载可靠数据控制传输。
-        报文首部字段按位 / 按字节定义后组装，形如 TCP 首部。
-      </div>
 
       <div class="form-grid">
         <div class="form-row">
@@ -120,10 +112,6 @@
       </div>
 
       <el-divider content-position="left">实时传输策略</el-divider>
-      <div class="section-hint">
-        实时数据传输根据数据长短决定是否分组及是否启用应答：<b>有可靠需求时不分组并启用应答</b>；
-        无可靠需求时（分组或不分组）<b>均不设置应答</b>。
-      </div>
       <div class="form-grid">
         <div class="form-row">
           <span class="form-label">是否分组</span>
@@ -182,8 +170,6 @@ const hexOf = (val) => {
 .form-row--block { flex-direction: column; align-items: flex-start; }
 .flag-group { display: flex; flex-wrap: wrap; gap: 2px 18px; }
 .flag-group :deep(.el-checkbox) { margin-right: 0; }
-
-.section-hint { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 10px; line-height: 1.6; padding-left: 4px; border-left: 3px solid var(--el-color-primary-light-5); }
 
 .sub-section { margin-bottom: 10px; }
 .sub-section__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }

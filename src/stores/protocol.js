@@ -1,10 +1,17 @@
 import { defineStore } from 'pinia'
-import { protocols as seedProtocols, interfaces as seedInterfaces } from '@/mock/seed-data'
+import {
+  protocols as seedProtocols,
+  interfaces as seedInterfaces,
+  testInterfaces as seedTestInterfaces,
+} from '@/mock/seed-data'
+import { makeUniqueName } from '@/utils/entityName'
 
 let seq = 2000
 export const uid = () => ++seq
+const directionlessFieldName = (name, fallback = '新建字段') =>
+  String(name || fallback).replace(/请求|响应|发送|接收/g, '').trim() || fallback
 
-export const makeProtocolRef = (protocolId, role = 'frame') => ({ protocolId, role })
+export const makeProtocolRef = (protocolId, role = 'send') => ({ protocolId, role })
 
 // ─── 接口级执行策略（配置于接口，供编排计划/实时监控复用）───
 // trigger: manual 手动 / scheduled 定时 / periodic 周期
@@ -17,12 +24,13 @@ export const defaultIfaceStrategy = () => ({
 })
 
 /**
- * 扁平化收集接口的全部引用字段（请求 + 响应），用于实时监控「编辑发送数据」面板。
+ * 扁平化收集报文的全部引用字段（发送 + 接收），用于实时监控「编辑发送数据」面板。
  * @param {object} iface 接口对象（含 protocolRefs）
  * @param {Array}  protocols 协议列表（用于解析引用字段）
+ * @param {string|null} role 可选，仅收集 send 或 receive 角色
  * @returns {Array} [{ id, name, remark, desc, type, kind }]
  */
-export const collectInterfaceFields = (iface, protocols = []) => {
+export const collectInterfaceFields = (iface, protocols = [], role = null) => {
   const out = []
   const pushField = (f, kind) => {
     const type = f.type && f.type !== 'byte' && f.type !== 'bit'
@@ -49,10 +57,42 @@ export const collectInterfaceFields = (iface, protocols = []) => {
     }
   }
   for (const ref of iface.protocolRefs || []) {
-    const proto = protocols.find(p => p.id === ref.protocolId)
+    if (!ref) continue
+    const refRole = typeof ref === 'object' ? (ref.role || 'send') : 'send'
+    if (role && refRole !== role) continue
+    const protocolId = typeof ref === 'object' ? ref.protocolId : ref
+    const proto = protocols.find(p => p.id === protocolId)
     if (proto) walk(proto.fields, ref.role)
   }
   return out
+}
+
+/**
+ * 按“接口 → 数据集 → 报文 → 字段”链路收集接口最终使用的字段。
+ * datasets 中的 linkedInterface 是历史字段名，实际表示其关联报文名称。
+ */
+export const collectTestInterfaceFields = (
+  testInterface,
+  datasets = [],
+  messages = [],
+  protocols = [],
+  role = null,
+) => {
+  if (!testInterface) return []
+  const datasetIds = new Set((testInterface.datasetIds || []).map((id) => String(id)))
+  const linkedDatasets = datasets.filter((dataset) => datasetIds.has(String(dataset.id)))
+  const linkedMessageNames = new Set(linkedDatasets
+    .map((dataset) => dataset.linkedInterface || dataset.linkedMessage)
+    .filter(Boolean))
+  const linkedMessages = messages.filter((message) => linkedMessageNames.has(message.name))
+  const fields = linkedMessages.flatMap((message) => collectInterfaceFields(message, protocols, role))
+  const seen = new Set()
+  return fields.filter((field) => {
+    const key = String(field.id ?? field.name)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 /**
@@ -89,7 +129,7 @@ export const collectInterfaceRequestFields = (iface) => {
 
 /**
  * 收集报文的全部数据集字段：request 参数树（拍平）+ protocolRefs 引用字段（拍平，跳过 byte 容器）。
- * 兼容 migrateAllFromV1 前后：迁移前 request 存在；迁移后 request 被清空，protocolRefs 含由 request 生成的内联协议。
+ * 兼容 migrateAllFromV1 前后：迁移前 request 可能存在；迁移后仅保留显式关联的 protocolRefs。
  * bit 字段携带 startBit / endBit（来自 bitStart / bitEnd），便于数据矩阵区分「单 bit 开关」与「多 bit 数值」。
  * 按字段名去重（保留首个）。用于数据集矩阵列、约束校验、智能生成。
  */
@@ -128,7 +168,7 @@ export const collectInterfaceDatasetFields = (iface, protocols = []) => {
     }
   }
   for (const ref of iface?.protocolRefs || []) {
-    const pid = typeof ref === 'object' ? ref.protocolId : ref
+    const pid = ref && typeof ref === 'object' ? ref.protocolId : ref
     const proto = protocols.find(p => p.id === pid)
     if (proto) walkProto(proto.fields)
   }
@@ -150,14 +190,14 @@ export const TRANSPORT_TYPES = [
 // ─── 字段角色（报文引用字段时标注其在通信中的作用）───
 // 统一两种角色，所有传输类型通用
 export const PROTOCOL_ROLES = [
-  { value: 'request', label: '发送', desc: '发送方向的数据结构' },
-  { value: 'response', label: '接收', desc: '接收方向的数据结构' },
+  { value: 'send', label: '发送', desc: '在报文发送时使用该字段' },
+  { value: 'receive', label: '接收', desc: '在报文接收时使用该字段' },
 ]
 // 向后兼容
 export const TRANSPORT_ROLES = {
   OSE: PROTOCOL_ROLES, '4908A': PROTOCOL_ROLES, MDS: PROTOCOL_ROLES,
 }
-export const ALL_TRANSPORT_ROLES = ['request', 'response']
+export const ALL_TRANSPORT_ROLES = ['send', 'receive']
 
 // ─── 五类数据规则（便携式智能联试工具设计文档 V7.4 定义）───
 // 用户定义字段时，必须先选择数据规则类别，再选择具体数据类型：
@@ -168,8 +208,8 @@ export const ALL_TRANSPORT_ROLES = ['request', 'response']
 //   结构矩阵：二维表格形式的数据，行列有明确语义，适用于批量参数、配置表或测试用例集。
 export const DATA_RULE_CATEGORIES = [
   { value: 'scalar',  label: '标量',     icon: 'Number',   desc: '单一数值（整数/实数），不附带维度或结构信息', color: '#409EFF' },
-  { value: 'bitstream', label: '位组序流', icon: 'Connection', desc: '连续二进制位序列，按字节/位级解析', color: '#E6A23C' },
   { value: 'struct',  label: '共识体',   icon: 'Grid',     desc: '多字段结构化数据块，字段间存在语义关联', color: '#67C23A' },
+  { value: 'bitstream', label: '位组序流', icon: 'Connection', desc: '连续二进制位序列，按字节/位级解析', color: '#E6A23C' },
   { value: 'file',    label: '流文件',   icon: 'Document', desc: '持久化二进制/文本文件，以整体为操作单元', color: '#909399' },
   { value: 'matrix',  label: '结构矩阵', icon: 'Table',    desc: '二维表格数据，行列有明确语义', color: '#F56C6C' },
 ]
@@ -228,6 +268,7 @@ export const BYTE_DATA_TYPES = [
   { value: 'int64',   label: 'int64',   group: '数值', bytes: 8, signed: true },
   { value: 'float32', label: 'float32', group: '数值', bytes: 4, signed: true },
   { value: 'float64', label: 'float64', group: '数值', bytes: 8, signed: true },
+  { value: 'field-ref', label: '字段引用', group: '引用', bytes: 0, signed: false },
 ]
 
 export const isNumericType = (dt) =>
@@ -256,6 +297,7 @@ export const defaultConstraint = (dataType) => {
     case 'ascii': case 'gbk': case 'utf8': return lengthConstraint(0, 256)
     case 'bcd':     return lengthConstraint(1, 32)
     case 'raw':     return noneConstraint()
+    case 'field-ref': return noneConstraint()
     default:        return range(0, 255)
   }
 }
@@ -305,6 +347,7 @@ export const makeByteField = (o = {}) => {
     byteLength: 1,
     bitMode: false,
     dataType,
+    protocolRef: null,
     constraint: o.constraint || defaultConstraint(dataType),
     desc: '',
     remark: '',
@@ -347,8 +390,8 @@ export const makeParam = (o = {}) => ({
   name: '',
   type: 'scalar',                  // scalar | bitstream | struct | matrix | file
   encoding: 'uint8',               // 仅 scalar 用, 来自 SCALAR_ENCODINGS
-  protocolRef: null,               // 仅 bitstream 用, 引用 protocol id
-  fileName: '', fileSize: 0,       // 仅 file 用
+  protocolRef: null,               // 共识体引用或位组序流解析引用
+  fileName: '', fileSize: 0,       // file / matrix 用
   required: true,
   defaultValue: null,
   constraint: noneConstraint(),
@@ -617,9 +660,15 @@ const migrateV1Param = (p) => {
 
 const migrateV1Interface = (iface) => {
   // Convert old flat protocolRefs (number[]) to ProtocolRef[] with default role
-  // Do NOT strip request/response/path yet — migrateAllFromV1 uses them to generate inline protocols
+  // Do NOT strip request/response/path yet — migrateAllFromV1 still handles legacy transport fields
   const migratedRefs = Array.isArray(iface.protocolRefs)
-    ? iface.protocolRefs.map(id => typeof id === 'object' ? id : { protocolId: id, role: 'request' })
+    ? iface.protocolRefs
+      .filter(Boolean)
+      .map((id) => {
+        if (typeof id !== 'object') return { protocolId: id, role: 'send' }
+        const role = id.role === 'request' ? 'send' : id.role === 'response' ? 'receive' : (id.role || 'send')
+        return { ...id, role }
+      })
     : []
   return { ...iface, protocolRefs: migratedRefs }
 }
@@ -638,62 +687,28 @@ export const useProtocolStore = defineStore('protocol', {
         if (!i.sendInterval) i.sendInterval = 500
         return i
       }),
+    // 接口独立于报文：接口只关联数据集；数据集再关联报文，报文再引用字段。
+    testInterfaces: JSON.parse(JSON.stringify(seedTestInterfaces)),
     selectedProtocolId: null,
-    selectedInterfaceId: null
+    selectedInterfaceId: null,
+    selectedTestInterfaceId: null,
   }),
 
   getters: {
     protocolOptions: (s) => s.protocols.map((p) => ({ label: p.name, value: p.id })),
     selectedProtocol: (s) => s.protocols.find((p) => p.id === s.selectedProtocolId) || null,
     selectedInterface: (s) => s.interfaces.find((i) => i.id === s.selectedInterfaceId) || null,
+    selectedTestInterface: (s) => s.testInterfaces.find((i) => i.id === s.selectedTestInterfaceId) || null,
     protocolName: (s) => (id) => s.protocols.find((p) => p.id === id)?.name || '—',
 
-    /** 查询引用了某字段的报文列表 */
-    interfacesByProtocol: (s) => (protocolId) => s.interfaces.filter((i) =>
-      (i.protocolRefs || []).some(ref => (typeof ref === 'object' ? ref.protocolId : ref) === protocolId)
-    ),
-
-    /**
-     * 字段摘要: 数据结构信息（用于 Protocol.vue 头部摘要）
-     * 返回 { fieldCount, hasFraming, hasChecksum, endian }
-     */
-    protocolSummary: (s) => (id) => {
-      const p = s.protocols.find((x) => x.id === id)
-      if (!p) return null
-      const fieldCount = (p.fields || []).length
-      return {
-        fieldCount,
-        hasFraming: !!p.framing,
-        hasChecksum: !!p.checksum,
-        endian: p.endian || 'big',
-        isStruct: !p.fields?.some?.(f => f.kind === 'byte' || f.kind === 'bit'),
-      }
-    },
   },
 
   actions: {
     /* ---- v1 → v2 数据迁移 ---- */
     migrateAllFromV1() {
-      // ── 阶段1: 从报文的 request/response 生成内联字段 ──
-      let inlineSeq = 3000
-      const inlinePid = () => ++inlineSeq
-      const inlineProtocols = []
-
-      // 角色映射：统一使用 request/response
-      const REQUEST_ROLES = { OSE: 'request', '4908A': 'request', MDS: 'request' }
-      const RESPONSE_ROLES = { OSE: 'response', '4908A': 'response', MDS: 'response' }
-
-      const migrateParamTree = (params) => {
-        if (!Array.isArray(params)) return []
-        return params.map(p => ({
-          ...migrateV1Param(p),
-          id: p.id || inlinePid(),
-          children: Array.isArray(p.children) ? migrateParamTree(p.children) : [],
-        }))
-      }
-
+      // ── 阶段1: 迁移报文传输配置与显式字段引用 ──
+      // 字段与报文是独立层级，不再把旧 request/response 自动生成顶层字段。
       this.interfaces = this.interfaces.map((iface) => {
-        const newRefs = [...(iface.protocolRefs || [])]
         const tc = { ...(iface.transportConfig || {}) }
         const tt = iface.transportType
 
@@ -708,50 +723,13 @@ export const useProtocolStore = defineStore('protocol', {
           else if (tt === 'TCP') tc.port = tc.port || 0  // TCP path was decorative
         }
 
-        // ── 从 request 生成内联字段 ──
-        if (Array.isArray(iface.request) && iface.request.length > 0) {
-          const reqFields = migrateParamTree(iface.request)
-          const reqProto = {
-            id: inlinePid(),
-            name: iface.name,
-            systemId: iface.systemId,
-            moduleId: iface.moduleId,
-            desc: `${iface.name} 参数`,
-            endian: 'big',
-            fields: reqFields,
-            framing: null,
-            checksum: null,
-            __inline: true,
+        // ── 给已有的 protocolRefs 补角色 ──
+        const finalRefs = [...(iface.protocolRefs || [])].filter(Boolean).map(ref => {
+          if (typeof ref === 'object' && ref.protocolId) {
+            const role = ref.role === 'request' ? 'send' : ref.role === 'response' ? 'receive' : (ref.role || 'send')
+            return { ...ref, role }
           }
-          inlineProtocols.push(reqProto)
-          const role = REQUEST_ROLES[tt] || 'request'
-          newRefs.push({ protocolId: reqProto.id, role })
-        }
-
-        // ── 从 response 生成内联字段 ──
-        if (Array.isArray(iface.response) && iface.response.length > 0) {
-          const resFields = migrateParamTree(iface.response)
-          const resProto = {
-            id: inlinePid(),
-            name: iface.name,
-            systemId: iface.systemId,
-            moduleId: iface.moduleId,
-            desc: `${iface.name} 参数`,
-            endian: 'big',
-            fields: resFields,
-            framing: null,
-            checksum: null,
-            __inline: true,
-          }
-          inlineProtocols.push(resProto)
-          const role = RESPONSE_ROLES[tt] || 'response'
-          newRefs.push({ protocolId: resProto.id, role })
-        }
-
-        // ── 给已有的 protocolRefs 补角色（默认 request） ──
-        const finalRefs = newRefs.map(ref => {
-          if (typeof ref === 'object' && ref.protocolId) return ref
-          return { protocolId: ref, role: 'request' }
+          return { protocolId: ref, role: 'send' }
         })
 
         return {
@@ -764,11 +742,6 @@ export const useProtocolStore = defineStore('protocol', {
           path: undefined,
         }
       })
-
-      // ── 将内联字段追加到字段列表 ──
-      if (inlineProtocols.length) {
-        this.protocols.push(...inlineProtocols)
-      }
 
       // ── 阶段2: 字段迁移 ──
       this.protocols.forEach((p) => {
@@ -795,21 +768,38 @@ export const useProtocolStore = defineStore('protocol', {
         if (p.config?.framing && !p.framing) p.framing = p.config.framing
         if (p.config?.checksum && !p.checksum) p.checksum = p.config.checksum
         if (p.config?.endian && !p.endian) p.endian = p.config.endian
+        if (!p.category) {
+          p.category = (p.fields || []).some((field) => ['byte', 'bit', 'repeat'].includes(field.kind))
+            ? 'bitstream'
+            : 'struct'
+        }
       })
     },
 
     /* ---- 字段 ---- */
     addProtocol(p = {}) {
+      const fields = p.fields || p.config?.fields || []
+      const framing = p.framing || p.config?.framing || null
+      const isByteStream = p.category === 'bitstream' ||
+        p.type === 'TCP' ||
+        !!framing ||
+        fields.some((field) => ['byte', 'bit', 'repeat'].includes(field.kind))
       const np = {
         id: uid(),
-        name: p.name || '新建字段',
+        name: makeUniqueName(
+          [...this.protocols, ...this.interfaces, ...this.testInterfaces],
+          directionlessFieldName(p.name),
+        ),
         systemId: p.systemId ?? null,
         moduleId: p.moduleId ?? null,
         desc: p.desc || '',
-        endian: p.endian || 'big',
-        fields: p.fields || [],
-        framing: p.framing || null,
-        checksum: p.checksum || null,
+        category: isByteStream ? 'bitstream' : (p.category || 'struct'),
+        endian: p.endian || p.config?.endian || 'big',
+        fields,
+        framing,
+        checksum: p.checksum || p.config?.checksum || null,
+        fileConfig: p.fileConfig || null,
+        matrixConfig: p.matrixConfig || null,
       }
       this.protocols.unshift(np)
       this.selectedProtocolId = np.id
@@ -922,7 +912,10 @@ export const useProtocolStore = defineStore('protocol', {
       const transportType = it.transportType || null
       const ni = {
         id: uid(),
-        name: it.name || '新建报文',
+        name: makeUniqueName(
+          [...this.protocols, ...this.interfaces, ...this.testInterfaces],
+          it.name || '新建报文',
+        ),
         transportType,
         transportConfig: it.transportConfig || (transportType ? makeTransportConfig(transportType) : {}),
         protocolRefs: it.protocolRefs || [],
@@ -942,6 +935,32 @@ export const useProtocolStore = defineStore('protocol', {
       const i = this.interfaces.findIndex((x) => x.id === id)
       if (i >= 0) this.interfaces.splice(i, 1)
       if (this.selectedInterfaceId === id) this.selectedInterfaceId = this.interfaces[0]?.id ?? null
+    },
+    /* ---- 接口（位于数据集之上，与报文分离） ---- */
+    addTestInterface(it = {}) {
+      const ni = {
+        id: `endpoint-${uid()}`,
+        name: makeUniqueName(
+          [...this.protocols, ...this.interfaces, ...this.testInterfaces],
+          it.name || '新建接口',
+        ),
+        systemId: it.systemId ?? null,
+        moduleId: it.moduleId ?? null,
+        datasetIds: it.datasetIds || [],
+        desc: it.desc || '',
+        strategy: it.strategy || defaultIfaceStrategy(),
+        sendInterval: it.sendInterval || 500,
+      }
+      this.testInterfaces.unshift(ni)
+      this.selectedTestInterfaceId = ni.id
+      return ni
+    },
+    removeTestInterface(id) {
+      const i = this.testInterfaces.findIndex((item) => item.id === id)
+      if (i >= 0) this.testInterfaces.splice(i, 1)
+      if (this.selectedTestInterfaceId === id) {
+        this.selectedTestInterfaceId = this.testInterfaces[0]?.id ?? null
+      }
     },
     addParam(list) {
       list.push(makeParam({ name: `param${list.length + 1}` }))

@@ -40,8 +40,8 @@
           </el-table-column>
           <el-table-column label="目标" min-width="210">
             <template #default="{ row }">
-              <div class="strong">{{ row.target?.interfaceName || '报文级' }}</div>
-              <div class="muted mono">{{ row.target?.fieldPath || 'interface' }}</div>
+              <div class="strong">{{ row.target?.interfaceName || '未指定接口' }}</div>
+              <div class="muted mono">{{ row.target?.fieldPath || '—' }}</div>
             </template>
           </el-table-column>
           <el-table-column label="校验内容" min-width="240">
@@ -105,11 +105,7 @@ const fieldOptions = computed(() => {
     if (!fp || rule.type === 'timeout' || rule.type === 'format') return
     if (!fieldSet.has(fp)) fieldSet.set(fp, fp)
   })
-  const options = [...fieldSet.values()].map((fp) => ({ label: fp, value: fp }))
-  // Add interface-level option if any interface-level rules exist
-  const hasInterfaceLevel = rules.some((r) => !r.target?.fieldPath || r.type === 'timeout' || r.type === 'format')
-  if (hasInterfaceLevel) options.push({ label: '报文级校验', value: '__interface__' })
-  return options
+  return [...fieldSet.values()].map((fp) => ({ label: fp, value: fp }))
 })
 
 const filteredRules = computed(() => {
@@ -117,7 +113,6 @@ const filteredRules = computed(() => {
   return (props.ruleSet.rules || []).filter((rule) => {
     const typeOk = typeFilter.value === 'all' || rule.type === typeFilter.value
     const fieldOk = fieldFilter.value === 'all'
-      || (fieldFilter.value === '__interface__' && (!rule.target?.fieldPath || rule.type === 'timeout' || rule.type === 'format'))
       || rule.target?.fieldPath === fieldFilter.value
     const text = `${rule.target?.interfaceName || ''} ${rule.target?.fieldPath || ''} ${rule.desc || ''}`.toLowerCase()
     return typeOk && fieldOk && (!kw || text.includes(kw))
@@ -148,9 +143,10 @@ const groupedRules = computed(() => {
 
   const groups = [...fieldGroups.values()]
   if (interfaceRules.length) {
+    const interfaceName = interfaceRules[0]?.target?.interfaceName || '接口通用规则'
     groups.push({
       key: 'interface-level',
-      label: '报文级校验',
+      label: interfaceName,
       fieldPath: '',
       isInterface: true,
       rules: interfaceRules,
@@ -171,6 +167,7 @@ const ruleText = (rule) => {
     return `类型必须为 ${p.dataType || '已声明类型'}`
   }
   if (rule.type === 'range') return `${p.min} ~ ${p.max}`
+  if (rule.type === 'semantic') return `${p.declaredPath || '声明字段'} ↔ ${p.actualPath || rule.target?.fieldPath || '解析字段'}`
   if (rule.type === 'boundary') return `边界提醒：${p.min} / ${p.max}`
   if (rule.type === 'overflow') return `必填 ${p.required ? '是' : '否'}，最大长度 ${p.maxLength || '不限'}`
   if (rule.type === 'timeout') return `< ${p.timeoutMs || 500}ms`

@@ -7,9 +7,6 @@
           <img src="/favicon.svg" alt="便携式智能联试工具" />
         </div>
         <h1 class="login-brand__title">便携式智能联试工具</h1>
-        <p class="login-brand__desc">
-          多系统联合测试 · 链路监控 · 字段管理 · 智能诊断
-        </p>
         <div class="login-brand__features">
           <div class="login-brand__feat">
             <span class="feat-dot" />实时链路状态监控
@@ -31,7 +28,6 @@
     <div class="login-form-wrap">
       <div class="login-form-card">
         <h2 class="login-form-card__title">用户登录</h2>
-        <p class="login-form-card__subtitle">Portable Joint Test Tool</p>
 
         <el-form
           ref="formRef"
@@ -249,15 +245,8 @@ const handleLogin = async () => {
     color: #fff;
     font-size: 28px;
     font-weight: 700;
-    margin: 0 0 12px;
-    letter-spacing: 1px;
-  }
-
-  &__desc {
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 14px;
     margin: 0 0 36px;
-    letter-spacing: 2px;
+    letter-spacing: 1px;
   }
 
   &__features {
@@ -311,16 +300,10 @@ const handleLogin = async () => {
   &__title {
     font-size: 24px;
     font-weight: 700;
-    margin: 0 0 4px;
+    margin: 0 0 28px;
     color: var(--el-text-color-primary);
   }
 
-  &__subtitle {
-    font-size: 13px;
-    color: var(--el-text-color-placeholder);
-    margin: 0 0 36px;
-    letter-spacing: 1px;
-  }
 }
 
 .login-options {

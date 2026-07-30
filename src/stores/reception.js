@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { useProtocolStore, collectInterfaceFields } from '@/stores/protocol'
+import { useProtocolStore, collectTestInterfaceFields } from '@/stores/protocol'
 import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
 import { useExceptionStore } from '@/stores/exception'
@@ -78,11 +78,17 @@ export const useReceptionStore = defineStore('reception', {
       const ruleStore = useRuleStore()
 
       return state.plan.map((planItem, index) => {
-        const iface = protocolStore.interfaces.find((i) => String(i.id) === String(planItem.interfaceId))
+        const iface = protocolStore.testInterfaces.find((i) => String(i.id) === String(planItem.interfaceId))
         if (!iface) return null
         const module = connStore.nodes.find((n) => n.id === iface.moduleId) || null
         const system = systemStore.systems.find((s) => s.id === iface.systemId) || null
-        const fields = collectInterfaceFields(iface, protocolStore.protocols)
+        const fields = collectTestInterfaceFields(
+          iface,
+          useTestDataStore().datasets,
+          protocolStore.interfaces,
+          protocolStore.protocols,
+          'receive',
+        )
         const rules = ruleStore.ruleSets.flatMap((rs) => (rs.rules || []).filter(
           (r) => r.enabled !== false && String(r.target?.interfaceId ?? '') === String(iface.id)
         ))
@@ -117,7 +123,7 @@ export const useReceptionStore = defineStore('reception', {
       if (!interfaceId) return false
       if (this.plan.some((p) => String(p.interfaceId) === String(interfaceId))) return false
       const protocolStore = useProtocolStore()
-      if (!protocolStore.interfaces.some((i) => String(i.id) === String(interfaceId))) return false
+      if (!protocolStore.testInterfaces.some((i) => String(i.id) === String(interfaceId))) return false
       this.plan.push({ id: uid('rplan'), interfaceId })
       return true
     },
@@ -318,14 +324,16 @@ export const useReceptionStore = defineStore('reception', {
       if (target.datasetId) {
         ds = dataStore.datasets.find((d) => d.id === target.datasetId)
       } else if (target.newName) {
-        const iface = protocolStore.interfaces.find((i) => String(i.id) === String(target.interfaceId || entries[0].interfaceId))
+        const iface = protocolStore.testInterfaces.find((i) => String(i.id) === String(target.interfaceId || entries[0].interfaceId))
         const module = connStore.nodes.find((n) => n.id === iface?.moduleId)
+        const sourceDataset = dataStore.datasets.find((dataset) =>
+          (iface?.datasetIds || []).some((id) => String(id) === String(dataset.id)))
         ds = dataStore.addDataset({
           name: target.newName,
           systemId: iface?.systemId ?? entries[0].systemId ?? null,
           moduleName: module?.name || '',
-          linkedInterface: iface?.name || entries[0].iface,
-          desc: `由接收接口编排保存（${nowText()}）`,
+          linkedInterface: sourceDataset?.linkedInterface || '',
+          desc: `由接口收发监测保存（${nowText()}）`,
         })
       }
       if (!ds) return null

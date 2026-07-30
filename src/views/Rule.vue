@@ -3,7 +3,6 @@
     <div class="page__header">
       <div>
         <h2>校验规则管理</h2>
-        <div class="page__desc">从报文字段生成黑盒校验规则，绑定到任务后用于执行时实时判定</div>
       </div>
       <div class="header-actions">
         <el-select v-model="systemSelectValue" class="system-select">
@@ -48,7 +47,6 @@
                   inactive-text="草稿"
                   @change="ruleStore.updateRuleSet(currentRuleSet.id, { status: $event ? 'enabled' : 'draft' })"
                 />
-                <el-tag type="info" effect="plain">被 {{ ruleStore.refCountOf(currentRuleSet.id) }} 个任务引用</el-tag>
               </div>
               <div class="rule-head__right">
                 <el-button :icon="CopyDocument" @click="duplicate">复制</el-button>
@@ -90,14 +88,17 @@ import { useRuleStore } from '@/stores/rule'
 import { useSystemStore } from '@/stores/system'
 import { useProtocolStore } from '@/stores/protocol'
 import { useConnectionStore } from '@/stores/connection'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const ruleStore = useRuleStore()
 const systemStore = useSystemStore()
 const protoStore = useProtocolStore()
 const connStore = useConnectionStore()
+const { nextUniqueName, validateName } = useEntityNameGuard()
 const router = useRouter()
 const route = useRoute()
 
+ruleStore.normalizeRuleScope()
 // 一次性补全种子规则中缺失的 target.interfaceId
 onMounted(() => ruleStore.resolveInterfaceIds())
 
@@ -169,7 +170,7 @@ const onTreeSelect = (data) => {
 }
 const onAddLeaf = ({ module }) => {
   const ruleSet = ruleStore.addRuleSet({
-    name: `${module.name}规则集`,
+    name: nextUniqueName(`${module.name}规则集`),
     systemId: module.systemId,
     moduleId: module.id,
     desc: '从报文字段自动生成后，可按现场需要微调阈值。',
@@ -189,7 +190,11 @@ const onLeafAction = ({ action, data }) => {
 
 const commitName = () => {
   if (!currentRuleSet.value) return
-  const name = editName.value.trim()
+  const name = validateName(editName.value, currentRuleSet.value, '规则集')
+  if (!name) {
+    editName.value = currentRuleSet.value.name
+    return
+  }
   if (name && name !== currentRuleSet.value.name) ruleStore.updateRuleSet(currentRuleSet.value.id, { name })
   else editName.value = currentRuleSet.value.name
 }

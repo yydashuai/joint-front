@@ -4,7 +4,6 @@
     <div class="page__header">
       <div>
         <h2>测试任务管理</h2>
-        <div class="page__desc">组建联试任务：绑定字段 / 报文 / 数据集，配置执行策略</div>
       </div>
       <div class="header-actions">
         <el-button :icon="Share" @click="goExecution" :disabled="!currentTask">执行调度</el-button>
@@ -247,12 +246,14 @@ import CreateTaskDialog from '@/components/testtask/CreateTaskDialog.vue'
 import { useTestTaskStore, TASK_STATUS, PRIORITY_OPTIONS } from '@/stores/testTask'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const route = useRoute()
 const router = useRouter()
 const taskStore = useTestTaskStore()
 const systemStore = useSystemStore()
 const connStore = useConnectionStore()
+const { validateName } = useEntityNameGuard()
 
 /* ========== 树选择 + 搜索 ========== */
 const selectedKey = ref('')
@@ -366,7 +367,11 @@ watch(currentTask, (t) => {
 
 const onNameBlur = () => {
   if (!currentTask.value) return
-  const name = editName.value.trim()
+  const name = validateName(editName.value, currentTask.value, '任务')
+  if (!name) {
+    editName.value = currentTask.value.name
+    return
+  }
   if (name && name !== currentTask.value.name) {
     taskStore.updateTask(currentTask.value.id, { name })
     ElMessage.success('任务名称已更新')

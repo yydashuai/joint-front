@@ -51,7 +51,7 @@
             <el-input-number v-model="config.endurance.concurrentUsers" :min="1" :max="200" controls-position="right" />
             <span class="unit">用户</span>
           </el-form-item>
-          <el-form-item label="请求间隔">
+          <el-form-item label="发送间隔">
             <el-input-number v-model="config.endurance.requestInterval" :min="100" :max="60000" :step="100" controls-position="right" />
             <span class="unit">ms</span>
           </el-form-item>
@@ -127,7 +127,7 @@ const config = computed(() => store.config)
 
 const modeHint = computed(() => ({
   smoke: '快速验证接口能不能跑通，适合联试前的第一轮确认。',
-  stress: '高并发反复请求，观察吞吐、平均时延与失败率。',
+  stress: '高并发反复发送，观察吞吐、平均时延与失败率。',
   endurance: '长时间持续运行，观察链路和被测模块是否越跑越不稳定。',
 }[config.value.mode]))
 

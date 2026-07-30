@@ -11,11 +11,9 @@
       <template #header>
         <div class="card-head">
           <div>
-            <span class="card-title">接收编排</span>
-            <span class="card-sub">编排要监听的接收接口，拖动手柄可调整顺序；也可从左侧接口树拖入</span>
+            <span class="card-title">接收接口列表</span>
           </div>
           <div class="plan-actions">
-            <el-tag type="info" effect="plain">{{ items.length }} 个接口</el-tag>
             <el-tooltip content="将选中的接口添加到接收编排">
               <el-button
                 type="primary"
@@ -35,8 +33,10 @@
       </template>
 
       <el-table
+        v-if="items.length"
         ref="tableRef"
         :data="items"
+        :height="152"
         row-key="id"
         size="small"
         empty-text="暂无接收编排"
@@ -50,36 +50,25 @@
         <el-table-column label="接口名称" min-width="170">
           <template #default="{ row }">
             <div class="strong">{{ row.iface?.name }}</div>
-            <div class="muted ellipsis">{{ row.iface?.desc || '无备注' }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="系统 / 模块" min-width="170">
+        <el-table-column label="系统" min-width="180">
           <template #default="{ row }">
-            <div>{{ row.system?.name || '未归属系统' }}</div>
-            <div class="muted">
-              <span class="status-dot" :class="`status-dot--${row.module?.status || 'offline'}`" />
-              {{ row.module?.name || '未知模块' }}
-            </div>
+            {{ row.system?.name || '未归属系统' }}
           </template>
         </el-table-column>
-        <el-table-column label="传输类型" width="100" align="center">
+        <el-table-column label="模块" min-width="160">
           <template #default="{ row }">
-            <el-tag size="small" effect="plain">{{ row.iface?.transportType || 'OSE' }}</el-tag>
+            <span class="status-dot" :class="`status-dot--${row.module?.status || 'offline'}`" />
+            {{ row.module?.name || '未知模块' }}
           </template>
         </el-table-column>
-        <el-table-column label="解析依据（字段定义）" min-width="140">
+        <el-table-column label="备注" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
-            <span v-if="row.fieldCount">{{ row.fieldCount }} 个字段</span>
-            <span v-else class="text-danger">未配置字段</span>
+            {{ row.iface?.desc || '—' }}
           </template>
         </el-table-column>
-        <el-table-column label="校验依据（规则集）" min-width="140">
-          <template #default="{ row }">
-            <span v-if="row.ruleCount">{{ row.ruleCount }} 条规则</span>
-            <el-tag v-else size="small" type="warning" effect="plain">未绑定规则（仅做结构与字段校验）</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="100" align="center">
+        <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
             <el-popconfirm title="确认从编排中移除？" @confirm="store.removeFromPlan(row.id)">
               <template #reference><el-button link type="danger" size="small">移除</el-button></template>
@@ -88,7 +77,7 @@
         </el-table-column>
       </el-table>
 
-      <el-empty v-if="!items.length" class="plan-empty" :image-size="88" description="从左侧接口树拖入或选中添加接收接口；接口需已配置字段定义（解析依据）" />
+      <el-empty v-else class="plan-empty" :image-size="72" description="从左侧接口树拖入或选中添加接收接口；接口需已配置字段定义（解析依据）" />
     </el-card>
   </div>
 </template>
@@ -123,8 +112,8 @@ const onDrop = (event) => {
   const raw = event.dataTransfer.getData('application/json')
   let payload = null
   try { payload = raw ? JSON.parse(raw) : null } catch { payload = null }
-  // 监听方案拖入
-  if (payload?.kind === 'recvScheme' && payload.id) {
+  // 接口方案拖入：拖到接收列表时按接收方向加入
+  if (payload?.kind === 'scheme' && payload.id) {
     emit('drop-scheme', payload.id)
     return
   }
@@ -172,6 +161,18 @@ onBeforeUnmount(() => sortable?.destroy())
 .plan-table-card {
   border: 1px solid var(--el-border-color-lighter);
   transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+  :deep(.el-card__body) {
+    height: 180px;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  :deep(.el-table__header-wrapper th.el-table__cell),
+  :deep(.el-table__body-wrapper td.el-table__cell) {
+    height: 40px;
+  }
+  :deep(.el-table__body-wrapper .cell) {
+    white-space: nowrap;
+  }
 }
 .plan-table-card--dragover {
   border-color: var(--el-color-primary);
@@ -183,7 +184,7 @@ onBeforeUnmount(() => sortable?.destroy())
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
 .text-danger { color: var(--el-color-danger); }
 .drag-handle { cursor: grab; color: var(--el-text-color-secondary); }
-.plan-empty { padding: 18px 0 4px; }
+.plan-empty { height: 152px; padding: 0; }
 .status-dot {
   display: inline-block;
   width: 7px;

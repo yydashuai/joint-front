@@ -16,7 +16,7 @@
         <el-select v-model="filterFormat" placeholder="全部格式" clearable size="small" style="width: 110px;">
           <el-option label="CSV" value="csv" />
           <el-option label="JSON" value="json" />
-          <el-option label="二进制" value="bin" />
+          <el-option label="BIN" value="bin" />
           <el-option label="XML" value="xml" />
         </el-select>
         <el-button size="small" :icon="Upload" @click="$emit('upload')">上传文件</el-button>

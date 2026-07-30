@@ -5,7 +5,6 @@
         <div class="step-head">
           <div>
             <div class="blk__title"><el-icon><Setting /></el-icon> 报告设置</div>
-            <div class="blk__desc">选择的模板会决定报告章节、占位符和最终交付侧重点。</div>
           </div>
           <div class="step-actions">
             <el-button :icon="ArrowLeft" @click="$emit('back')">上一步</el-button>
@@ -72,7 +71,7 @@ const PREVIEWS = {
     meta: ['适用：常规验收', '占位符：XX / XXX', '素材：拓扑图、指标表'],
     sections: [
       { title: '一、联试概述', ph: '本次联试针对 XX 系统开展全流程接口联试，说明环境、对象与执行范围。' },
-      { title: '二、关键指标', ph: '[ 指标统计表 · 请求总量 / 成功率 / 平均延迟 / P95 ]', data: true },
+      { title: '二、关键指标', ph: '[ 指标统计表 · 发送总量 / 成功率 / 平均延迟 / P95 ]', data: true },
       { title: '三、接口测试结果', ph: '[ 接口结果表 · 由所选批次数据自动填充 ]', data: true },
       { title: '四、异常分析', ph: '对捕获异常按等级、接口、规则命中情况进行归纳。' },
       { title: '五、结论与建议', ph: '形成可交付结论，并列出回归验证建议。' }
@@ -85,7 +84,7 @@ const PREVIEWS = {
     sections: [
       { title: '一、异常摘要', ph: '汇总异常数量、最高等级、集中接口与首次出现时间。' },
       { title: '二、异常接口清单', ph: '[ 异常明细表 · 接口 / 时间 / 等级 / 规则命中 ]', data: true },
-      { title: '三、影响范围评估', ph: '说明异常对任务链路、响应时间和数据有效性的影响。' },
+      { title: '三、影响范围评估', ph: '说明异常对任务链路、接收时间和数据有效性的影响。' },
       { title: '四、处置过程留痕', ph: '记录定位、修复、复测节点，支持插入 ![日志截图]()。', media: true },
       { title: '五、回归验证建议', ph: '给出下一轮联试的重点接口、阈值和数据覆盖要求。' }
     ]
@@ -136,7 +135,6 @@ onMounted(() => {
   display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
   font-size: 14px; font-weight: 600; .el-icon { color: var(--el-color-primary); }
 }
-.blk__desc { font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.5; }
 .tpl-row { display: flex; gap: 10px; width: 100%; }
 .muted { color: var(--el-text-color-secondary); font-size: 12px; font-weight: 400; }
 

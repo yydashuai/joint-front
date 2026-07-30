@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { makeUniqueName } from '@/utils/entityName'
 
 let seq = 6000
 const uid = () => `dsScheme-${++seq}`
@@ -47,7 +48,7 @@ export const useDatasetSchemeStore = defineStore('datasetScheme', {
     add({ name, systemId, datasetIds, remark }) {
       const scheme = {
         id: uid(),
-        name: name || '新建数据集方案',
+        name: makeUniqueName(this.schemes, name || '新建数据集方案'),
         systemId: systemId || null,
         datasetIds: datasetIds || [],
         remark: remark || '',
@@ -60,7 +61,13 @@ export const useDatasetSchemeStore = defineStore('datasetScheme', {
 
     update(id, patch) {
       const scheme = this.schemes.find((s) => s.id === id)
-      if (scheme) Object.assign(scheme, patch)
+      if (scheme) {
+        const next = { ...patch }
+        if (Object.prototype.hasOwnProperty.call(next, 'name')) {
+          next.name = makeUniqueName(this.schemes, next.name, scheme)
+        }
+        Object.assign(scheme, next)
+      }
     },
 
     remove(id) {

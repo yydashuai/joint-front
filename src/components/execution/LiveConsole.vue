@@ -1,30 +1,5 @@
 <template>
   <div class="monitor">
-    <el-card shadow="never" class="exec-card">
-      <template #header>
-        <div class="card-head">
-          <div>
-            <span class="card-title">实时监控</span>
-            <span class="card-sub">计数器对齐 ActiveTestResult</span>
-          </div>
-          <el-tag :type="statusType" effect="dark">{{ statusText }}</el-tag>
-        </div>
-      </template>
-
-      <el-progress :percentage="store.progress" :stroke-width="10" :status="progressStatus" />
-      <div class="metrics">
-        <div v-for="metric in metrics" :key="metric.label" class="metric" :class="metric.cls">
-          <span class="metric__value">{{ metric.value }}</span>
-          <span class="metric__label">{{ metric.label }}</span>
-        </div>
-      </div>
-
-      <div class="current-row">
-        <span v-if="current">正在执行：<strong>{{ current.task.name }}</strong> → {{ current.iface?.name || '未命名接口' }}（第 {{ current.index + 1 }}/{{ store.planItems.length }} 项）</span>
-        <span v-else>等待编排计划。</span>
-      </div>
-    </el-card>
-
     <el-card shadow="never" class="exec-card strategy-card">
       <div class="strategy-card__inner">
         <Strategy-bar :disabled="store.status === 'running'" />
@@ -36,12 +11,20 @@
         <div class="console-tools">
           <span class="card-title">发送数据流</span>
           <div class="console-tools__right">
+            <el-tag :type="statusType" effect="dark">{{ statusText }}</el-tag>
+            <span
+              v-for="metric in streamMetrics"
+              :key="metric.label"
+              class="stream-stat"
+              :class="metric.cls"
+            >
+              <b>{{ metric.value }}</b>{{ metric.label }}
+            </span>
             <el-tag size="small" type="success" effect="plain">已发送 {{ store.sentCount }}</el-tag>
             <el-tag size="small" type="info" effect="plain">待发送 {{ store.pendingCount }}</el-tag>
             <el-tooltip v-if="store.status === 'running'" content="运行中不可修改，暂停后点击任一条数据即可编辑字段" placement="top">
               <span class="lock-hint">运行中锁定</span>
             </el-tooltip>
-            <span v-else-if="store.status === 'paused'" class="edit-hint">已暂停，点击任一条数据可修改（已发送数据修改后追加到队尾重发）</span>
             <el-switch v-model="autoScroll" size="small" active-text="自动滚动" />
           </div>
         </div>
@@ -96,9 +79,7 @@
         <div class="edit-meta">
           <el-tag size="small" type="info" effect="plain">{{ editEntry.iface }}</el-tag>
           <el-tag v-if="editEntry.datasetName" size="small" type="success" effect="plain">数据集：{{ editEntry.datasetName }}</el-tag>
-          <el-tag v-if="editEntry.status === 'sent'" size="small" type="warning" effect="plain">已发送 · 修改后将追加到队尾重发</el-tag>
           <span class="edit-meta__judge">
-            数据性质（按字段定义自动判定）：
             <el-tag size="small" :type="liveJudge.abnormal ? 'danger' : 'success'" effect="dark">
               {{ liveJudge.abnormal ? '异常' : '正常' }}
             </el-tag>
@@ -207,18 +188,11 @@ const tdStore = useTestDataStore()
 const autoScroll = ref(true)
 const consoleRef = ref()
 
-const current = computed(() => store.currentItem)
 const firstPendingIndex = computed(() => store.sendQueue.findIndex((e) => e.status === 'pending'))
 const abnormalRequests = computed(() => store.counters.failedRequests + store.counters.errorRequests)
 
-const metrics = computed(() => [
+const streamMetrics = computed(() => [
   { label: '进度', value: `${store.progress}%` },
-  { label: '总请求', value: store.counters.totalRequests },
-  { label: '成功', value: store.counters.successRequests, cls: 'metric--ok' },
-  { label: '异常', value: abnormalRequests.value, cls: 'metric--bad' },
-  { label: '平均时延', value: `${store.counters.avgResponseTime}ms` },
-  { label: 'RPS', value: store.counters.rps },
-  { label: '已用时', value: `${store.counters.executionTime}s` },
 ])
 
 const statusText = computed(() => ({
@@ -235,8 +209,6 @@ const statusType = computed(() => ({
   stopped: 'info',
   idle: 'info',
 }[store.status]))
-const progressStatus = computed(() => store.status === 'done' ? 'success' : undefined)
-
 /* ---- 待发送行的数据预览（未发送时报文列显示字段值摘要） ---- */
 const previewValues = (entry) => {
   const pairs = Object.entries(entry.values || {}).filter(([, v]) => v !== '' && v != null)
@@ -349,26 +321,28 @@ watch(() => store.sentCount, () => {
   :deep(.el-card__body) { padding: 14px; }
 }
 .card-head, .console-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.console-tools__right { display: flex; align-items: center; gap: 12px; }
+.console-tools__right { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .card-title { font-weight: 650; font-size: 14px; margin-right: 8px; }
 .strategy-card :deep(.el-card__body) { padding: 10px 14px; }
 .strategy-card__inner { display: flex; align-items: center; }
 .card-sub, .muted { color: var(--el-text-color-secondary); font-size: 12px; }
 .lock-hint { font-size: 12px; color: var(--el-color-warning); cursor: help; }
 .edit-hint { font-size: 12px; color: var(--el-color-primary); }
-.metrics { display: grid; grid-template-columns: repeat(7, minmax(86px, 1fr)); gap: 8px; margin-top: 12px; }
-.metric {
-  min-height: 62px;
-  padding: 10px;
-  border-radius: 8px;
-  background: var(--el-fill-color-extra-light);
+.stream-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 3px 7px;
   border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-extra-light);
+  font-size: 11px;
+  white-space: nowrap;
 }
-.metric__value { display: block; font: 700 20px Consolas, Monaco, monospace; }
-.metric__label { color: var(--el-text-color-secondary); font-size: 12px; }
-.metric--ok .metric__value { color: var(--el-color-success); }
-.metric--bad .metric__value { color: var(--el-color-danger); }
-.current-row { margin-top: 10px; color: var(--el-text-color-secondary); font-size: 13px; }
+.stream-stat b { color: var(--el-text-color-primary); font: 700 12px Consolas, Monaco, monospace; }
+.stream-stat.metric--ok b { color: var(--el-color-success); }
+.stream-stat.metric--bad b { color: var(--el-color-danger); }
 
 /* ---- 发送数据流 ---- */
 $stream-cols: 40px 76px 170px 150px minmax(160px, 1fr) 64px;
@@ -464,6 +438,6 @@ $stream-cols: 40px 76px 170px 150px minmax(160px, 1fr) 64px;
 }
 
 @media (max-width: 1180px) {
-  .metrics { grid-template-columns: repeat(4, minmax(86px, 1fr)); }
+  .console-tools { align-items: flex-start; }
 }
 </style>

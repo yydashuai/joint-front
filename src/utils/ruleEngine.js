@@ -1,12 +1,6 @@
 export const RULE_TYPES = [
-  { value: 'type', label: '类型校验', tag: 'primary', icon: 'DataAnalysis', level: 'error', desc: '收到的字段是不是声明的类型' },
   { value: 'range', label: '取值范围', tag: 'danger', icon: 'Aim', level: 'error', desc: '数值有没有超出字段规定的上下限' },
-  { value: 'boundary', label: '边界值检测', tag: 'warning', icon: 'Crop', level: 'warning', desc: '卡在临界值时表现对不对' },
-  { value: 'overflow', label: '字段越界', tag: 'danger', icon: 'FullScreen', level: 'error', desc: '帧长够不够、该有的字段在不在' },
-  { value: 'timeout', label: '接收超时', tag: 'danger', icon: 'Timer', level: 'error', desc: '回得够不够快' },
-  { value: 'format', label: '格式错误', tag: 'danger', icon: 'Tickets', level: 'error', desc: '帧格式、校验码、报文结构对不对' },
-  { value: 'delivery', label: '投递校验', tag: 'success', icon: 'Promotion', level: 'error', desc: '消息是否在指定时间内被成功投递（MQ）' },
-  { value: 'ordering', label: '顺序校验', tag: 'warning', icon: 'Sort', level: 'warning', desc: '消息是否按预期顺序到达（MQ）' },
+  { value: 'semantic', label: '语义一致性', tag: 'warning', icon: 'Connection', level: 'error', desc: '前置声明字段与后续解析结果是否一致' },
 ]
 
 export const RULE_TYPE_MAP = Object.fromEntries(RULE_TYPES.map((item) => [item.value, item]))
@@ -52,17 +46,36 @@ export function inferConstraint(field = {}) {
   return range ? { min: range[0], max: range[1] } : null
 }
 
-export function flattenInterfaceFields(iface) {
+const fieldsOfRole = (iface, protocols, role) => {
+  const legacyKey = role === 'send' ? 'request' : 'response'
+  if (Array.isArray(iface?.[legacyKey]) && iface[legacyKey].length) return iface[legacyKey]
+  if (!Array.isArray(protocols) || !protocols.length) return []
+  return (iface?.protocolRefs || [])
+    .filter((ref) => {
+      const refRole = typeof ref === 'object' ? ref.role : 'send'
+      return refRole === role || refRole === (role === 'send' ? 'request' : 'response')
+    })
+    .flatMap((ref) => {
+      const protocolId = typeof ref === 'object' ? ref.protocolId : ref
+      return protocols.find((protocol) => String(protocol.id) === String(protocolId))?.fields || []
+    })
+}
+
+export function flattenInterfaceFields(iface, protocols = []) {
   const out = []
+  const seen = new Set()
   const walk = (list = [], prefix) => {
     list.forEach((field) => {
       const path = `${prefix}.${field.name || `field${field.id}`}`
-      out.push({ ...field, fieldPath: path, fieldName: field.name })
+      if (!seen.has(path)) {
+        seen.add(path)
+        out.push({ ...field, fieldPath: path, fieldName: field.name })
+      }
       if (field.children?.length) walk(field.children, path)
     })
   }
-  walk(iface?.request || [], 'request')
-  walk(iface?.response || [], 'response')
+  walk(fieldsOfRole(iface, protocols, 'send'), 'request')
+  walk(fieldsOfRole(iface, protocols, 'receive'), 'response')
   return out
 }
 
@@ -83,7 +96,7 @@ export function extractStructFields(children = []) {
   })
 }
 
-export function makeSample(iface, variant = 'valid') {
+export function makeSample(iface, variant = 'valid', protocols = []) {
   const build = (fields = []) => {
     const obj = {}
     fields.forEach((field) => {
@@ -105,7 +118,13 @@ export function makeSample(iface, variant = 'valid') {
     })
     return obj
   }
-  return { request: build(iface?.request), response: build(iface?.response) }
+  const sample = {
+    request: build(fieldsOfRole(iface, protocols, 'send')),
+    response: build(fieldsOfRole(iface, protocols, 'receive')),
+  }
+  syncLengthDeclarations(sample.request, variant === 'bad')
+  syncLengthDeclarations(sample.response, variant === 'bad')
+  return sample
 }
 
 function sampleValue(field, constraint) {
@@ -163,6 +182,22 @@ export function evaluate(ruleSet, sample, iface, opts = { recvMs: null }) {
 
     if (!parsed.valid) {
       results.push(fail(rule, rule.target?.fieldPath, parsed.error))
+      return
+    }
+
+    if (rule.type === 'semantic') {
+      const declaredPath = rule.params?.declaredPath
+      const actualPath = rule.params?.actualPath || rule.target?.fieldPath
+      const declaredLength = Number(getPath(parsed.value, declaredPath))
+      const actualLength = semanticLength(getPath(parsed.value, actualPath), rule.params?.measure)
+      const resultPath = `${declaredPath || '声明字段'} ↔ ${actualPath || '解析字段'}`
+      if (!Number.isFinite(declaredLength) || actualLength == null) {
+        results.push(fail(rule, resultPath, '长度声明或对应解析字段缺失，无法完成语义一致性校验'))
+      } else if (declaredLength !== actualLength) {
+        results.push(fail(rule, resultPath, `声明长度为 ${declaredLength}，实际解析长度为 ${actualLength}`))
+      } else {
+        results.push(ok(rule, resultPath, `声明长度与实际解析长度一致，均为 ${actualLength}`))
+      }
       return
     }
 
@@ -264,6 +299,39 @@ function getPath(obj, path = '') {
     if (Array.isArray(cur)) return cur[0]?.[key]
     return cur[key]
   }, obj)
+}
+
+function semanticLength(value, measure = 'byteLength') {
+  if (value == null) return null
+  if (Array.isArray(value)) return value.length
+  if (typeof value === 'string') {
+    const compact = value.replace(/\s/g, '')
+    if (measure === 'byteLength' && compact.length % 2 === 0 && /^[\da-fA-F]+$/.test(compact)) {
+      return compact.length / 2
+    }
+    return measure === 'byteLength' ? new TextEncoder().encode(value).length : value.length
+  }
+  if (typeof value === 'object') {
+    if (Number.isFinite(Number(value.byteLength))) return Number(value.byteLength)
+    if (Number.isFinite(Number(value.length))) return Number(value.length)
+    return new TextEncoder().encode(JSON.stringify(value)).length
+  }
+  return String(value).length
+}
+
+function syncLengthDeclarations(obj, makeMismatch = false) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return
+  const entries = Object.entries(obj)
+  entries.forEach(([key, value], index) => {
+    if (value && typeof value === 'object') syncLengthDeclarations(value, makeMismatch)
+    if (!/(data)?length|len|长度/i.test(key)) return
+    const nextEntry = entries.slice(index + 1).find(([, nextValue]) =>
+      typeof nextValue === 'string' || Array.isArray(nextValue) || (nextValue && typeof nextValue === 'object')
+    )
+    if (!nextEntry) return
+    const actualLength = semanticLength(nextEntry[1], 'byteLength')
+    if (actualLength != null) obj[key] = actualLength + (makeMismatch ? 1 : 0)
+  })
 }
 
 function typeMatches(value, dataType, enumValues = [], structFields = []) {

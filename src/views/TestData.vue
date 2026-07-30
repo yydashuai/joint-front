@@ -3,7 +3,6 @@
     <div class="page__header">
       <div>
         <h2>测试数据管理</h2>
-        <div class="page__desc">构造基于字段/报文的测试报文数据集，管理数据文件</div>
       </div>
       <div class="header-actions">
         <!-- 各视图专属按钮：放在切换组左侧，避免切换组左右浮动 -->

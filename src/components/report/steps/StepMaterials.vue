@@ -5,7 +5,6 @@
         <div class="step-head">
           <div>
             <div class="blk__title"><el-icon><PictureFilled /></el-icon> 素材</div>
-            <div class="blk__desc">图片和表格会按用途说明回填到报告对应章节。上传后请写清楚放置位置和表达目的。</div>
           </div>
           <div class="step-actions">
             <el-tooltip content="返回上一步"><el-button :icon="ArrowLeft" @click="$emit('back')">上一步</el-button></el-tooltip>
@@ -119,7 +118,6 @@ onMounted(() => {
   display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
   font-size: 14px; font-weight: 600; .el-icon { color: var(--el-color-primary); }
 }
-.blk__desc { font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.5; }
 
 .upload-tip {
   display: flex; align-items: center; justify-content: space-between; gap: 14px;

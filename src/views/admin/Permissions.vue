@@ -4,7 +4,6 @@
     <div class="page__header">
       <div>
         <h2>权限管理</h2>
-        <div class="page__desc">管理测试员对各系统的访问权限，勾选即授权</div>
       </div>
     </div>
 
@@ -33,7 +32,6 @@
       <template #header>
         <div class="panel-head">
           <span class="panel-title">权限分配矩阵</span>
-          <span class="panel-hint">管理员默认拥有全部系统权限，勾选/取消勾选即时生效</span>
         </div>
       </template>
 
@@ -260,7 +258,6 @@ const truncate = (value, length) => {
   justify-content: space-between;
 }
 .panel-title { font-weight: 600; font-size: 14px; }
-.panel-hint { font-size: 12px; color: var(--el-text-color-placeholder); }
 
 .matrix-wrapper {
   overflow-x: auto;

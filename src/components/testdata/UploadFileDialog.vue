@@ -63,11 +63,13 @@ import { ElMessage } from 'element-plus'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
 import { formatFileSize, inferFileFormat, readFileAsText } from '@/services/testDataService'
+import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const props = defineProps({ modelValue: Boolean })
 const emit = defineEmits(['update:modelValue', 'submitted'])
 
 const systemStore = useSystemStore()
+const { validateName } = useEntityNameGuard()
 const connStore = useConnectionStore()
 
 const visible = computed({
@@ -149,13 +151,15 @@ const onSubmit = async () => {
     ElMessage.warning('请选择文件')
     return
   }
+  const validName = validateName(form.name || selectedFile.value.name, null, '数据文件')
+  if (!validName) return
   // 文本类文件（≤1MB）读取内容保留，便于数据文件管理中「解析」为数据链
   let content = ''
   if (selectedFile.value.size <= 1024 * 1024) {
     try { content = await readFileAsText(selectedFile.value) } catch { content = '' }
   }
   emit('submitted', {
-    name: form.name || selectedFile.value.name,
+    name: validName,
     format: form.format,
     size: selectedFile.value.size,
     systemId: form.systemId,

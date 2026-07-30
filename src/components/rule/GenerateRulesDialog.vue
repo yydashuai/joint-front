@@ -63,7 +63,7 @@ const emit = defineEmits(['update:modelValue'])
 const store = useRuleStore()
 const protoStore = useProtocolStore()
 const interfaceId = ref(null)
-const selectedTypes = ref(['type', 'range', 'overflow', 'boundary', 'timeout', 'format'])
+const selectedTypes = ref(['range', 'semantic'])
 const checkedIds = ref([])
 
 const visible = computed({
@@ -89,7 +89,7 @@ const getProtoRange = (rule) => {
   if (rule.type !== 'range' || !rule.target?.fieldPath) return null
   const iface = protoStore.interfaces.find((i) => i.id === rule.target.interfaceId)
   if (!iface) return null
-  const field = flattenInterfaceFields(iface).find((f) => f.fieldPath === rule.target.fieldPath)
+  const field = flattenInterfaceFields(iface, protoStore.protocols).find((f) => f.fieldPath === rule.target.fieldPath)
   if (!field) return null
   const c = inferConstraint(field)
   return c ? `${c.min} ~ ${c.max}` : null

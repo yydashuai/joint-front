@@ -6,7 +6,7 @@
         <el-icon class="summary-item__icon"><Connection /></el-icon>
         <div class="summary-item__body">
           <span class="summary-item__count">{{ hasInterface ? 1 : 0 }}</span>
-          <span class="summary-item__label">报文</span>
+          <span class="summary-item__label">接口</span>
         </div>
       </div>
       <div class="summary-item" :class="{ 'summary-item--empty': localBindings.datasetIds.length === 0 }">
@@ -32,11 +32,11 @@
       </div>
     </div>
 
-    <!-- 目标报文 -->
+    <!-- 目标接口 -->
     <el-card shadow="never" class="bind-card">
       <template #header>
         <div class="bind-card__head">
-          <span class="bind-card__title">目标报文</span>
+          <span class="bind-card__title">目标接口</span>
           <el-tag v-if="hasInterface" type="success" size="small" effect="plain">{{ selectedInterfaceName }}</el-tag>
           <el-tag v-else type="warning" size="small" effect="plain">未选择</el-tag>
         </div>
@@ -45,7 +45,7 @@
         v-model="localBindings.interfaceId"
         filterable
         clearable
-        placeholder="选择当前模块下的报文"
+        placeholder="选择当前模块下的接口"
         style="width: 100%;"
         @change="onInterfaceChange"
       >
@@ -56,13 +56,10 @@
           :value="i.id"
         >
           <span style="float: left;">{{ i.name }}</span>
-          <span class="iface-path">{{ i.path }}</span>
         </el-option>
       </el-select>
       <div v-if="moduleInterfaces.length === 0" class="bind-hint">
-        当前模块暂无报文，请先在
-        <el-link type="primary" :underline="false" @click="$router.push('/protocol')">字段管理</el-link>
-        中定义
+        当前模块暂无接口，请先在测试接口编排页面新建
       </div>
     </el-card>
 
@@ -81,7 +78,7 @@
         filterable
         collapse-tags
         collapse-tags-tooltip
-        :placeholder="hasInterface ? '选择测试数据集（可多选）' : '请先选择报文'"
+        :placeholder="hasInterface ? '选择测试数据集（可多选）' : '请先选择接口'"
         :disabled="!hasInterface"
         style="width: 100%;"
         @change="emitChange"
@@ -96,10 +93,10 @@
       <div v-if="hasInterface && filteredDatasets.length === 0" class="bind-hint">
         暂无关联「{{ selectedInterfaceName }}」的数据集，请先在
         <el-link type="primary" :underline="false" @click="$router.push('/test-data')">测试数据</el-link>
-        中创建并关联该报文
+        中创建数据集
       </div>
       <div v-if="!hasInterface" class="bind-hint">
-        请先选择目标报文，数据集将自动按关联过滤
+        请先选择目标接口，数据集将按接口关联范围显示
       </div>
     </el-card>
 
@@ -212,7 +209,7 @@ const moduleName = computed(() =>
 )
 
 const moduleInterfaces = computed(() =>
-  protoStore.interfaces.filter(i => i.moduleId === props.task.moduleId)
+  protoStore.testInterfaces.filter(i => i.moduleId === props.task.moduleId)
 )
 
 const moduleFiles = computed(() =>
@@ -222,23 +219,21 @@ const moduleFiles = computed(() =>
 /* ========== 按所选报文过滤数据集 ========== */
 const selectedInterfaceName = computed(() => {
   if (localBindings.interfaceId == null) return ''
-  return protoStore.interfaces.find(i => i.id === localBindings.interfaceId)?.name || ''
+  return protoStore.testInterfaces.find(i => i.id === localBindings.interfaceId)?.name || ''
 })
 
 const filteredDatasets = computed(() => {
-  if (!selectedInterfaceName.value) return []
-  return tdStore.datasets.filter(d =>
-    d.systemId === props.task.systemId &&
-    d.moduleName === moduleName.value &&
-    d.linkedInterface === selectedInterfaceName.value
-  )
+  const iface = protoStore.testInterfaces.find(i => i.id === localBindings.interfaceId)
+  if (!iface) return []
+  const ids = new Set((iface.datasetIds || []).map(id => String(id)))
+  return tdStore.datasets.filter(dataset => ids.has(String(dataset.id)))
 })
 
 /* ========== 状态 ========== */
 const hasInterface = computed(() => localBindings.interfaceId != null)
 
 const onInterfaceChange = () => {
-  // 切换报文时清空已选数据集（可能不再匹配）
+  // 切换接口时清空已选数据集（可能不再匹配）
   localBindings.datasetIds = []
   emitChange()
 }
