@@ -30,24 +30,18 @@
           ref="byteTreeRef"
           v-if="selectedKind === 'protocol' && curProto && isByteStreamProtocol(curProto)"
           :protocol="curProto"
-          :system-options="systemOptions"
-          :module-options="moduleOptions(curProto.systemId)"
           @import="triggerImport"
           @export="exportProto"
           @save="onSave"
           @delete="store.removeProtocol(curProto.id)"
-          @system-change="onProtoSystemChange"
         />
 
         <StructFieldEditor
           ref="structuredEditorRef"
           v-else-if="selectedKind === 'protocol' && curProto"
           :protocol="curProto"
-          :system-options="systemOptions"
-          :module-options="moduleOptions(curProto.systemId)"
           @save="onSave"
           @delete="store.removeProtocol(curProto.id)"
-          @system-change="onProtoSystemChange"
         />
 
         <InterfaceEditor
@@ -117,7 +111,6 @@ const isByteStreamProtocol = (p) =>
 
 const systemOptions = computed(() => systemStore.systems.map((s) => ({ label: s.name, value: s.id })))
 const moduleOptions = (systemId) => connStore.nodes.filter((n) => n.systemId === systemId).map((m) => ({ label: m.name, value: m.id }))
-const onProtoSystemChange = () => { if (curProto.value) curProto.value.moduleId = null }
 const onIfSystemChange = () => { if (curIf.value) curIf.value.moduleId = null }
 const onNavigateProtocol = (protocolId) => {
   selectedKind.value = 'protocol'

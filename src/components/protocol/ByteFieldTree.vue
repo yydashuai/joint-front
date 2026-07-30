@@ -3,13 +3,16 @@
     <!-- ========== HEADER ========== -->
     <template #header>
       <div class="proto-head">
-        <el-input
-          v-model="protocol.name"
-          class="proto-name"
-          placeholder="字段名称"
-          @focus="beginNameEdit"
-          @change="commitNameEdit"
-        />
+        <div class="proto-head__identity">
+          <el-input
+            v-model="protocol.name"
+            class="proto-name"
+            placeholder="字段名称"
+            @focus="beginNameEdit"
+            @change="commitNameEdit"
+          />
+          <el-tag type="warning" effect="plain">位组序流</el-tag>
+        </div>
         <div class="proto-head__right">
           <el-dropdown trigger="click" @command="onIoCommand">
             <el-button :icon="Operation" plain>导入 / 导出</el-button>
@@ -45,17 +48,6 @@
 
     <div class="field-label">备注说明</div>
     <el-input v-model="protocol.desc" placeholder="可选，描述该字段的用途" class="proto-desc" />
-
-    <div class="meta-row">
-      <span class="meta-row__label req">所属系统</span>
-      <el-select v-model="protocol.systemId" placeholder="选择系统" class="meta-sel" @change="$emit('systemChange')">
-        <el-option v-for="s in systemOptions" :key="s.value" :label="s.label" :value="s.value" />
-      </el-select>
-      <span class="meta-row__label req">模块</span>
-      <el-select v-model="protocol.moduleId" placeholder="选择模块" class="meta-sel" :disabled="!protocol.systemId">
-        <el-option v-for="m in moduleOptions" :key="m.value" :label="m.label" :value="m.value" />
-      </el-select>
-    </div>
 
     <!-- ========== 字段表格 ========== -->
     <el-table
@@ -194,11 +186,6 @@
               </el-select>
             </div>
           </template>
-          <template v-else-if="row.kind === 'byte' && row.dataType === 'field-ref'">
-            <el-select v-model="row.protocolRef" size="small" style="width: 100%" placeholder="选择引用字段" filterable clearable>
-              <el-option v-for="o in fieldReferenceOptions" :key="o.value" :label="o.label" :value="o.value" />
-            </el-select>
-          </template>
           <template v-else>
             <!-- 枚举约束 -->
             <template v-if="row.constraint.mode === 'enum'">
@@ -285,8 +272,7 @@
 
     <!-- ========== 底部操作按钮 ========== -->
     <div class="bottom-actions">
-      <el-tooltip content="新增一个字节类型的字段"><el-button class="add-row" :icon="Plus" @click="addByteRow">添加字节字段</el-button></el-tooltip>
-      <el-tooltip content="新增一个重复组字段，用于定义可重复的数据结构"><el-button class="add-row" :icon="FolderAdd" @click="addRepeatRow">添加重复组</el-button></el-tooltip>
+      <el-button class="add-row" :icon="Plus" @click="addByteRow">添加字节</el-button>
     </div>
 
     <!-- ========== 重复组编辑弹窗 ========== -->
@@ -339,18 +325,7 @@
         </el-table-column>
         <el-table-column label="约束" width="180">
           <template #default="{ row }">
-            <el-select
-              v-if="row.kind === 'byte' && row.dataType === 'field-ref'"
-              v-model="row.protocolRef"
-              size="small"
-              style="width: 100%"
-              placeholder="选择引用字段"
-              filterable
-              clearable
-            >
-              <el-option v-for="o in fieldReferenceOptions" :key="o.value" :label="o.label" :value="o.value" />
-            </el-select>
-            <div v-else class="constraint">
+            <div class="constraint">
               <el-select v-model="row.constraint.mode" size="small" class="c-mode">
                 <el-option label="范围" value="range" />
                 <el-option label="固定值" value="fixed" />
@@ -399,7 +374,7 @@
 import { ref, computed, reactive, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus, Delete, Upload, Download, Check, Top, Bottom, Operation, Rank, Edit, FolderAdd
+  Plus, Delete, Upload, Download, Check, Top, Bottom, Operation, Rank, Edit
 } from '@element-plus/icons-vue'
 import Sortable from 'sortablejs'
 import {
@@ -408,18 +383,14 @@ import {
   defaultConstraint, isNumericType, isStringType,
   range, fixed, enumConstraint, noneConstraint,
   getNumericFieldsBefore,
-  useProtocolStore,
 } from '@/stores/protocol'
 import { computeOffsets, computeBitOffsets, formatHexOffset } from '@/utils/offsetCalc'
 import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const props = defineProps({
   protocol: { type: Object, required: true },
-  systemOptions: { type: Array, default: () => [] },
-  moduleOptions: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['import', 'export', 'delete', 'save', 'systemChange'])
-const protocolStore = useProtocolStore()
+const emit = defineEmits(['import', 'export', 'delete', 'save'])
 const { nextUniqueName, validateName } = useEntityNameGuard()
 const nameBeforeEdit = ref('')
 
@@ -474,9 +445,19 @@ const dataTypeGroups = computed(() => {
   return Object.values(groups)
 })
 const flatDataTypes = BYTE_DATA_TYPES
-const fieldReferenceOptions = computed(() => protocolStore.protocols
-  .filter((p) => p.id !== props.protocol.id)
-  .map((p) => ({ label: p.name, value: p.id })))
+
+const removeLegacyReferences = (fields = []) => {
+  fields.forEach((field) => {
+    if (field.dataType === 'field-ref') {
+      field.dataType = 'uint8'
+      delete field.protocolRef
+      field.constraint = defaultConstraint('uint8')
+    }
+    if (field.children?.length) removeLegacyReferences(field.children)
+  })
+}
+removeLegacyReferences(props.protocol.fields)
+watch(() => props.protocol.id, () => removeLegacyReferences(props.protocol.fields))
 
 // ─── 偏移量自动重算 ───
 watch(() => props.protocol.fields, () => {
@@ -616,7 +597,6 @@ const onConstraintModeChange = (row) => {
 // ─── 数据类型切换 ───
 const onDataTypeChange = (row, newType) => {
   row.constraint = defaultConstraint(newType)
-  if (newType !== 'field-ref') row.protocolRef = null
   // 数值类型自动推断字节长度
   const dtInfo = BYTE_DATA_TYPES.find(t => t.value === newType)
   if (dtInfo?.bytes > 0 && !row.bitMode) {
@@ -639,10 +619,6 @@ const addByteRow = () => {
     }
   }
   fields.push(makeByteField({ name: `字段${fields.length + 1}` }))
-}
-
-const addRepeatRow = () => {
-  props.protocol.fields.push(makeRepeatGroup({ name: `重复组${props.protocol.fields.filter(f => f.kind === 'repeat').length + 1}` }))
 }
 
 const addRepeatAfter = (afterRow) => {
@@ -951,6 +927,7 @@ defineExpose({ fillAllGaps, markClean })
 <style scoped lang="scss">
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .proto-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.proto-head__identity { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .proto-name { max-width: 280px; :deep(.el-input__wrapper) { font-weight: 600; } }
 .proto-head__right { display: flex; align-items: center; gap: 8px; .lbl { font-size: 13px; color: var(--el-text-color-secondary); } }
 .proto-type-sel { width: 122px; }
@@ -972,10 +949,6 @@ defineExpose({ fillAllGaps, markClean })
 .saved-hint-fade-enter-from, .saved-hint-fade-leave-to { opacity: 0; transform: translateX(4px); }
 .field-label { font-size: 13px; font-weight: 500; color: var(--el-text-color-regular); margin-bottom: 4px; }
 .proto-desc { margin-bottom: 12px; }
-.meta-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-.meta-row__label { font-size: 13px; color: var(--el-text-color-regular); }
-.meta-row__label.req::before { content: '*'; color: var(--el-color-danger); margin-right: 2px; }
-.meta-sel { width: 200px; }
 
 .byte-tree {
   flex: 1;

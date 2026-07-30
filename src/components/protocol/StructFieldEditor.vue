@@ -26,30 +26,10 @@
     <div class="field-label">备注说明</div>
     <el-input v-model="protocol.desc" placeholder="可选，描述该字段的用途" class="proto-desc" />
 
-    <div class="meta-row">
-      <span class="meta-row__label req">所属系统</span>
-      <el-select v-model="protocol.systemId" placeholder="选择系统" class="meta-sel" @change="$emit('systemChange')">
-        <el-option v-for="s in systemOptions" :key="s.value" :label="s.label" :value="s.value" />
-      </el-select>
-      <span class="meta-row__label req">模块</span>
-      <el-select v-model="protocol.moduleId" placeholder="选择模块" class="meta-sel" :disabled="!protocol.systemId">
-        <el-option v-for="m in moduleOptions" :key="m.value" :label="m.label" :value="m.value" />
-      </el-select>
-    </div>
-
-    <div class="matrix-head">
-      <div>
-        <strong>数据矩阵</strong>
-        <span>{{ categoryMeta.desc }}</span>
-      </div>
-      <div v-if="category === 'struct'" class="matrix-actions">
-        <el-button size="small" :icon="Plus" @click="addScalarVariable">添加基础变量</el-button>
-        <el-button size="small" type="primary" plain :icon="Connection" @click="addStructReference">引用共识体</el-button>
-      </div>
-    </div>
-
     <el-table
       v-if="category === 'scalar' || category === 'struct'"
+      :key="tableKey"
+      ref="tableRef"
       :data="protocol.fields"
       row-key="id"
       border
@@ -58,12 +38,22 @@
       lazy
       :load="loadStructReference"
       :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
+      :row-class-name="tableRowClass"
     >
-      <el-table-column label="类别" width="116" align="center">
+      <el-table-column label="" width="36" align="center" class-name="drag-col">
         <template #default="{ row }">
-          <el-tag :type="row.type === 'struct' ? 'success' : 'primary'" effect="plain" size="small">
-            {{ row.type === 'struct' ? '共识体引用' : '标量' }}
+          <el-icon v-if="!row.__readonly" class="drag-handle"><Rank /></el-icon>
+        </template>
+      </el-table-column>
+      <el-table-column v-if="category === 'struct'" label="类别" width="116" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="row.__readonly" :type="row.type === 'struct' ? 'success' : 'primary'" effect="plain" size="small">
+            {{ row.type === 'struct' ? '共识体' : '标量' }}
           </el-tag>
+          <el-select v-else v-model="row.type" size="small" @change="onRowTypeChange(row)">
+            <el-option label="标量" value="scalar" />
+            <el-option label="共识体" value="struct" />
+          </el-select>
         </template>
       </el-table-column>
       <el-table-column label="数据类型" min-width="180">
@@ -200,12 +190,17 @@
         <template #default="{ row }"><el-input-number v-model="row.headerBytes" :min="0" controls-position="right" /><span class="unit">B</span></template>
       </el-table-column>
     </el-table>
+
+    <div v-if="category === 'struct'" class="bottom-actions">
+      <el-button class="add-row" :icon="Plus" @click="addVariable">添加变量</el-button>
+    </div>
   </el-card>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
-import { Check, Connection, Delete, Plus } from '@element-plus/icons-vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Check, Delete, Plus, Rank } from '@element-plus/icons-vue'
+import Sortable from 'sortablejs'
 import {
   DATA_RULE_CATEGORY_MAP,
   SCALAR_ENCODINGS,
@@ -216,10 +211,8 @@ import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const props = defineProps({
   protocol: { type: Object, required: true },
-  systemOptions: { type: Array, default: () => [] },
-  moduleOptions: { type: Array, default: () => [] },
 })
-defineEmits(['delete', 'save', 'systemChange'])
+defineEmits(['delete', 'save'])
 
 const store = useProtocolStore()
 const { nextUniqueName, validateName } = useEntityNameGuard()
@@ -310,6 +303,45 @@ const ensureShape = () => {
 watch(() => props.protocol.id, ensureShape, { immediate: true })
 watch(category, ensureShape)
 
+const tableRef = ref(null)
+const tableKey = ref(0)
+let sortable = null
+
+const tableRowClass = ({ row }) => row.__readonly ? 'structured-row--reference' : 'structured-row--top'
+
+const initSortable = () => {
+  sortable?.destroy()
+  sortable = null
+  if (!['scalar', 'struct'].includes(category.value)) return
+  const tbody = tableRef.value?.$el?.querySelector('.el-table__body-wrapper tbody')
+  if (!tbody) return
+  sortable = Sortable.create(tbody, {
+    handle: '.drag-handle',
+    draggable: '.structured-row--top',
+    animation: 150,
+    ghostClass: 'sortable-ghost',
+    onEnd: ({ oldDraggableIndex, newDraggableIndex }) => {
+      if (
+        oldDraggableIndex == null ||
+        newDraggableIndex == null ||
+        oldDraggableIndex === newDraggableIndex
+      ) return
+      const rows = [...props.protocol.fields]
+      const [moved] = rows.splice(oldDraggableIndex, 1)
+      if (!moved) return
+      rows.splice(newDraggableIndex, 0, moved)
+      props.protocol.fields.splice(0, props.protocol.fields.length, ...rows)
+      tableKey.value++
+      nextTick(initSortable)
+    },
+  })
+}
+
+onMounted(() => nextTick(initSortable))
+onBeforeUnmount(() => sortable?.destroy())
+watch(() => props.protocol.id, () => nextTick(initSortable))
+watch(category, () => nextTick(initSortable))
+
 const nameBeforeEdit = ref('')
 const beginNameEdit = () => { nameBeforeEdit.value = props.protocol.name }
 const commitNameEdit = () => {
@@ -332,25 +364,29 @@ const markClean = () => {
 }
 defineExpose({ markClean })
 
-const addScalarVariable = () => {
+const addVariable = () => {
   props.protocol.fields.push(makeParam({
     name: `变量${props.protocol.fields.length + 1}`,
     type: 'scalar',
     encoding: 'uint8',
   }))
 }
-const addStructReference = () => {
-  const row = makeParam({
-    name: `共识体引用${props.protocol.fields.filter((item) => item.type === 'struct').length + 1}`,
-    type: 'struct',
-    protocolRef: null,
-  })
-  row.hasChildren = false
-  props.protocol.fields.push(row)
-}
 const removeRow = (id) => {
   const index = props.protocol.fields.findIndex((row) => row.id === id)
   if (index >= 0) props.protocol.fields.splice(index, 1)
+}
+const onRowTypeChange = (row) => {
+  row.type = legacyType(row.type)
+  row.protocolRef = null
+  row.children = []
+  row.hasChildren = false
+  if (row.type === 'scalar') {
+    row.encoding = row.encoding || row.dataType || 'uint8'
+  } else {
+    row.defaultValue = ''
+  }
+  tableKey.value++
+  nextTick(initSortable)
 }
 function syncReferenceState(row) {
   row.type = legacyType(row.type)
@@ -398,25 +434,29 @@ const dataTypeText = (row) => {
 .proto-name { width: 280px; :deep(.el-input__wrapper) { font-weight: 600; } }
 .field-label { font-size: 13px; font-weight: 500; color: var(--el-text-color-regular); margin-bottom: 4px; }
 .proto-desc { margin-bottom: 12px; }
-.meta-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-.meta-row__label { font-size: 13px; color: var(--el-text-color-regular); }
-.meta-row__label.req::before { content: '*'; color: var(--el-color-danger); margin-right: 2px; }
-.meta-sel { width: 200px; }
-.matrix-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 9px 12px; border: 1px solid var(--el-border-color-lighter); border-bottom: 0;
-  border-radius: 8px 8px 0 0; background: var(--el-fill-color-extra-light);
-  > div:first-child { display: flex; align-items: baseline; gap: 10px; }
-  strong { font-size: 14px; }
-  span { color: var(--el-text-color-secondary); font-size: 12px; }
-}
-.matrix-actions { display: flex; align-items: center; gap: 8px; }
 .field-matrix {
+  flex: 1;
   width: 100%;
-  border-radius: 0 0 8px 8px;
+  :deep(.el-select) { .el-input__wrapper { padding: 0 8px; } }
   :deep(.el-input-number) { width: 108px; }
   :deep(.el-table__cell) { vertical-align: middle; }
+  :deep(.drag-col .cell) {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+  :deep(.sortable-ghost) {
+    opacity: 0.4;
+    background: var(--el-color-primary-light-9) !important;
+  }
 }
+.drag-handle {
+  cursor: grab; color: var(--el-text-color-placeholder); font-size: 14px; flex-shrink: 0;
+  &:hover { color: var(--el-text-color-regular); }
+  &:active { cursor: grabbing; }
+}
+.bottom-actions { display: flex; gap: 8px; margin-top: 12px; }
+.add-row { flex: 1; border-style: dashed; }
 .readonly-value { color: var(--el-text-color-regular); }
 .unit { margin-left: 5px; color: var(--el-text-color-secondary); font-size: 12px; }
 </style>

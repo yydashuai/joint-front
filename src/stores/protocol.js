@@ -268,7 +268,6 @@ export const BYTE_DATA_TYPES = [
   { value: 'int64',   label: 'int64',   group: '数值', bytes: 8, signed: true },
   { value: 'float32', label: 'float32', group: '数值', bytes: 4, signed: true },
   { value: 'float64', label: 'float64', group: '数值', bytes: 8, signed: true },
-  { value: 'field-ref', label: '字段引用', group: '引用', bytes: 0, signed: false },
 ]
 
 export const isNumericType = (dt) =>
@@ -297,7 +296,6 @@ export const defaultConstraint = (dataType) => {
     case 'ascii': case 'gbk': case 'utf8': return lengthConstraint(0, 256)
     case 'bcd':     return lengthConstraint(1, 32)
     case 'raw':     return noneConstraint()
-    case 'field-ref': return noneConstraint()
     default:        return range(0, 255)
   }
 }
@@ -347,7 +345,6 @@ export const makeByteField = (o = {}) => {
     byteLength: 1,
     bitMode: false,
     dataType,
-    protocolRef: null,
     constraint: o.constraint || defaultConstraint(dataType),
     desc: '',
     remark: '',
@@ -390,7 +387,7 @@ export const makeParam = (o = {}) => ({
   name: '',
   type: 'scalar',                  // scalar | bitstream | struct | matrix | file
   encoding: 'uint8',               // 仅 scalar 用, 来自 SCALAR_ENCODINGS
-  protocolRef: null,               // 共识体引用或位组序流解析引用
+  protocolRef: null,               // 仅共识体引用使用
   fileName: '', fileSize: 0,       // file / matrix 用
   required: true,
   defaultValue: null,
