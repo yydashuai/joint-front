@@ -9,6 +9,37 @@
       </div>
       <div class="hdm-toolbar__right">
         <el-select
+          v-model="filterSource"
+          placeholder="按来源筛选"
+          clearable
+          size="default"
+          style="width: 140px;"
+        >
+          <el-option v-for="s in DATA_SOURCES" :key="s.value" :label="s.value" :value="s.value" />
+        </el-select>
+        <el-select
+          v-model="filterAbnormal"
+          placeholder="异常状态"
+          clearable
+          size="default"
+          style="width: 120px;"
+        >
+          <el-option label="全部状态" :value="''" />
+          <el-option label="异常" value="abnormal" />
+          <el-option label="正常" value="normal" />
+        </el-select>
+        <el-select
+          v-model="filterExcellent"
+          placeholder="优秀历史"
+          clearable
+          size="default"
+          style="width: 130px;"
+        >
+          <el-option label="全部" :value="''" />
+          <el-option label="优秀历史" value="excellent" />
+          <el-option label="非优秀" value="normal" />
+        </el-select>
+        <el-select
           v-model="filterDatasetId"
           placeholder="按数据集筛选"
           clearable
@@ -30,6 +61,7 @@
           size="default"
           style="width: 200px;"
         />
+        <el-button size="default" :icon="Promotion" @click="pedVisible = true">粘贴报文构造</el-button>
         <el-button type="primary" size="default" :icon="Plus" @click="onAddNew">新增历史数据</el-button>
       </div>
     </div>
@@ -59,6 +91,23 @@
           </template>
         </el-table-column>
         <el-table-column prop="label" label="行标签" width="150" show-overflow-tooltip />
+        <el-table-column label="来源" width="96" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="sourceTagType(row.source)" effect="plain">{{ normalizeSource(row.source) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="异常" width="76" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.abnormal" size="small" type="danger" effect="dark">异常</el-tag>
+            <el-tag v-else size="small" type="success" effect="plain">正常</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="优秀" width="76" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.excellent" size="small" type="warning" effect="dark">优秀</el-tag>
+            <span v-else class="text-ph">—</span>
+          </template>
+        </el-table-column>
         <el-table-column label="数据内容" min-width="260">
           <template #default="{ row }">
             <span class="mono text-secondary">{{ formatValues(row.values) }}</span>
@@ -73,6 +122,9 @@
         <el-table-column prop="savedAt" label="保存日期" width="110" align="center" />
         <el-table-column label="操作" width="180" align="center" fixed="right">
           <template #default="{ row }">
+            <el-tooltip :content="row.excellent ? '移出优秀历史' : '加入优秀历史'">
+              <el-button text :type="row.excellent ? 'warning' : 'info'" size="small" :icon="Star" @click="onToggleExcellent(row)" />
+            </el-tooltip>
             <el-tooltip content="编辑">
               <el-button text type="primary" size="small" :icon="Edit" @click="onEditRow(row)" />
             </el-tooltip>
@@ -93,6 +145,8 @@
     <div v-if="selectedRows.length > 0" class="hdm-batch-bar">
       <el-tag size="small" type="warning" effect="plain">已选 {{ selectedRows.length }} 条</el-tag>
       <el-button size="small" text type="primary" :icon="Right" @click="onBatchImport">批量导入</el-button>
+      <el-button size="small" text type="success" :icon="FolderAdd" @click="onBatchSaveAsDataset">另存为数据集</el-button>
+      <el-button size="small" text type="primary" :icon="Promotion" @click="openSendDialog">直接发送</el-button>
       <el-button size="small" text type="danger" :icon="Delete" @click="onBatchDelete">批量删除</el-button>
     </div>
 
@@ -123,6 +177,12 @@
         <el-form-item label="行标签" required>
           <el-input v-model="formData.label" placeholder="输入行标签" />
         </el-form-item>
+        <el-form-item label="数据来源">
+          <el-select v-model="formData.source" style="width: 100%;">
+            <el-option v-for="s in DATA_SOURCES" :key="s.value" :label="s.value" :value="s.value" :disabled="s.value === '接收报文'" />
+          </el-select>
+          <div class="source-hint">「接收报文」来源由接收接口编排页保存时自动标注，不支持手动选择</div>
+        </el-form-item>
         <el-form-item label="数据内容">
           <div class="kv-editor">
             <div v-for="(item, idx) in formData.kvPairs" :key="idx" class="kv-row">
@@ -147,25 +207,86 @@
         <el-button type="primary" @click="onSubmitForm">{{ isEditing ? '保存修改' : '确认新增' }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- ======== 粘贴报文构造 / 发送测试 ======== -->
+    <PacketEditor v-model="pedVisible" mode="construct" />
+
+    <!-- ======== 直接发送（绑定接口，与其他流程一致） ======== -->
+    <el-dialog v-model="sendVisible" title="直接发送选中数据" width="520px" append-to-body destroy-on-close>
+      <el-alert type="info" :closable="false" class="send-alert">
+        选中 {{ selectedRows.length }} 条数据，将按绑定接口的字段定义重建报文并发送（异常由校验引擎自动判定、标红并同步异常台账）。
+      </el-alert>
+      <el-form label-width="96px" class="send-form">
+        <el-form-item label="绑定接口" required>
+          <el-select v-model="sendInterfaceId" filterable placeholder="选择发送接口（需含字段定义）" style="width: 100%;">
+            <el-option
+              v-for="i in bindableInterfaces"
+              :key="i.id"
+              :label="`${i.name}（${i.transportType || 'OSE'}）`"
+              :value="i.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="sendVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmSend">开始发送</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed } from 'vue'
-import { Search, Delete, Right, Plus, Edit } from '@element-plus/icons-vue'
+import { Search, Delete, Right, Plus, Edit, Promotion, Star, FolderAdd } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTestDataStore } from '@/stores/testData'
+import { useProtocolStore, collectInterfaceFields } from '@/stores/protocol'
+import { useReceptionStore } from '@/stores/reception'
+import { buildFrame, valuesToBytes } from '@/utils/receiveValidator'
+import PacketEditor from '@/components/reception/PacketEditor.vue'
 
 const tdStore = useTestDataStore()
+const protocolStore = useProtocolStore()
+const recvStore = useReceptionStore()
+const pedVisible = ref(false)
+
+/* ========== 数据来源枚举（统一四类；旧值归一化显示） ========== */
+const DATA_SOURCES = [
+  { value: '手动创建', tag: 'info' },
+  { value: '文件导入', tag: 'warning' },
+  { value: '智能生成', tag: 'success' },
+  { value: '接收报文', tag: 'primary' },
+]
+// 历史遗留来源值 → 统一枚举
+const LEGACY_SOURCE_MAP = { '手动录入': '手动创建', '历史优秀案例': '手动创建' }
+const normalizeSource = (s) => LEGACY_SOURCE_MAP[s] || s || '手动创建'
+const sourceTagType = (s) => DATA_SOURCES.find(d => d.value === normalizeSource(s))?.tag || 'info'
 
 /* ========== 筛选 & 搜索 ========== */
 const filterDatasetId = ref(null)
+const filterSource = ref(null)
+const filterAbnormal = ref('')
+const filterExcellent = ref('')
 const searchKeyword = ref('')
 
 const filteredHistory = computed(() => {
   let data = tdStore.allHistoryData
   if (filterDatasetId.value) {
     data = data.filter(h => h._datasetId === filterDatasetId.value)
+  }
+  if (filterSource.value) {
+    data = data.filter(h => normalizeSource(h.source) === filterSource.value)
+  }
+  if (filterAbnormal.value === 'abnormal') {
+    data = data.filter(h => h.abnormal)
+  } else if (filterAbnormal.value === 'normal') {
+    data = data.filter(h => !h.abnormal)
+  }
+  if (filterExcellent.value === 'excellent') {
+    data = data.filter(h => h.excellent)
+  } else if (filterExcellent.value === 'normal') {
+    data = data.filter(h => !h.excellent)
   }
   if (searchKeyword.value) {
     const kw = searchKeyword.value.toLowerCase()
@@ -190,6 +311,11 @@ const datasetCount = computed(() => {
 const selectedRows = ref([])
 
 const onSelectionChange = (rows) => { selectedRows.value = rows }
+
+const onToggleExcellent = (row) => {
+  tdStore.toggleExcellent(row._datasetId, row.id)
+  ElMessage.success(row.excellent ? '已移出优秀历史数据库' : '已加入优秀历史数据库')
+}
 
 const onDeleteRow = (row) => {
   tdStore.removeHistoryRow(row._datasetId, row.id)
@@ -224,7 +350,7 @@ const editingRow = ref(null)
 const formData = reactive({
   datasetId: null,
   label: '',
-  source: '手动录入',
+  source: '手动创建',
   remark: '',
   kvPairs: [{ key: '', value: '' }]
 })
@@ -232,7 +358,7 @@ const formData = reactive({
 const resetForm = () => {
   formData.datasetId = filterDatasetId.value || tdStore.datasets[0]?.id || null
   formData.label = ''
-  formData.source = '手动录入'
+  formData.source = '手动创建'
   formData.remark = ''
   formData.kvPairs = [{ key: '', value: '' }]
 }
@@ -249,7 +375,7 @@ const onEditRow = (row) => {
   editingRow.value = row
   formData.datasetId = row._datasetId
   formData.label = row.label
-  formData.source = row.source
+  formData.source = normalizeSource(row.source)
   formData.remark = row.remark || ''
   const entries = Object.entries(row.values || {})
   formData.kvPairs = entries.length > 0
@@ -281,12 +407,15 @@ const onSubmitForm = () => {
     if (key.trim()) values[key.trim()] = value
   })
 
+  const abnormal = tdStore.computeAbnormal(values, formData.datasetId)
+
   if (isEditing.value && editingRow.value) {
     tdStore.updateHistoryRow(formData.datasetId, editingRow.value.id, {
       label: formData.label.trim(),
       values,
       source: formData.source,
-      remark: formData.remark
+      remark: formData.remark,
+      abnormal,
     })
     ElMessage.success('历史数据已更新')
   } else {
@@ -294,7 +423,9 @@ const onSubmitForm = () => {
       label: formData.label.trim(),
       values,
       source: formData.source,
-      remark: formData.remark
+      remark: formData.remark,
+      abnormal,
+      excellent: false,
     }])
     ElMessage.success('历史数据已新增')
   }
@@ -361,6 +492,105 @@ const onBatchImport = () => {
     ElMessage.success(`已批量导入 ${rowsData.length} 条数据到「${currentDs.name}」`)
   }
   selectedRows.value = []
+}
+
+/* ========== 另存为数据集 / 直接发送 ========== */
+/** 可绑定发送的接口（需含字段定义） */
+const bindableInterfaces = computed(() =>
+  protocolStore.interfaces.filter((i) => (i.protocolRefs?.length))
+)
+
+/* ----- 另存为数据集 ----- */
+const onBatchSaveAsDataset = () => {
+  if (!selectedRows.value.length) return
+  ElMessageBox.prompt('请输入新数据集名称', '另存为数据集', {
+    confirmButtonText: '创建',
+    cancelButtonText: '取消',
+    inputPattern: /\S+/,
+    inputErrorMessage: '名称不能为空',
+  }).then(({ value }) => {
+    const name = value.trim()
+    const sample = selectedRows.value[0]
+    const sampleDs = tdStore.datasets.find((d) => d.id === sample._datasetId)
+    const ds = tdStore.addDataset({
+      name,
+      systemId: sample._systemId ?? null,
+      moduleName: sample._moduleName || '',
+      linkedInterface: sampleDs?.linkedInterface || null,
+      desc: `由历史数据另存（${selectedRows.value.length} 条，${new Date().toLocaleString('zh-CN', { hour12: false })})`,
+    })
+    const rowsData = selectedRows.value.map((r) => ({
+      label: r.label,
+      values: { ...r.values },
+      source: r.source || '手动创建',
+      remark: r.remark || '',
+      abnormal: !!r.abnormal,
+      excellent: !!r.excellent,
+    }))
+    tdStore.addHistoryRows(ds.id, rowsData)
+    ElMessage.success(`已创建数据集「${name}」并写入 ${rowsData.length} 条`)
+    selectedRows.value = []
+  }).catch(() => {})
+}
+
+/* ----- 直接发送（绑定接口 → 重建帧 → injectReceived） ----- */
+const sendVisible = ref(false)
+const sendInterfaceId = ref(null)
+
+const openSendDialog = () => {
+  if (!selectedRows.value.length) return
+  // 默认接口：选中数据所属数据集的绑定接口（若一致）
+  const linked = [...new Set(selectedRows.value.map((r) => {
+    const ds = tdStore.datasets.find((d) => d.id === r._datasetId)
+    return ds?.linkedInterface || ''
+  }))].filter(Boolean)
+  const matched = linked.length === 1
+    ? protocolStore.interfaces.find((i) => i.name === linked[0])
+    : null
+  sendInterfaceId.value = matched?.id || bindableInterfaces.value[0]?.id || null
+  sendVisible.value = true
+}
+
+const confirmSend = () => {
+  if (!sendInterfaceId.value) { ElMessage.warning('请选择绑定接口'); return }
+  const iface = protocolStore.interfaces.find((i) => String(i.id) === String(sendInterfaceId.value))
+  if (!iface) { ElMessage.warning('接口不存在'); return }
+  const fields = collectInterfaceFields(iface, protocolStore.protocols)
+  if (!fields.length) { ElMessage.warning('该接口无字段定义，无法校验发送'); return }
+  const transport = iface.transportType || 'OSE'
+  let sent = 0
+  let abnormal = 0
+  let skipped = 0
+  selectedRows.value.forEach((r) => {
+    const overlap = fields.some((f) => f.name in (r.values || {}))
+    if (!overlap) { skipped++; return }
+    const body = valuesToBytes(fields, r.values || {})
+    const bytes = transport === 'MDS' ? body : buildFrame(transport, body, {}, true)
+    if (!bytes) { skipped++; return }
+    const entry = recvStore.injectReceived({
+      transport,
+      bytes,
+      fields,
+      values: { ...r.values },
+      interfaceId: iface.id,
+      iface: iface.name,
+      moduleId: iface.moduleId || '',
+      systemId: iface.systemId || '',
+      sentTest: true,
+    })
+    if (entry) {
+      sent++
+      if (entry.verdict.status !== 'ok') abnormal++
+    } else {
+      skipped++
+    }
+  })
+  sendVisible.value = false
+  selectedRows.value = []
+  ElMessage.success(
+    `发送完成：共 ${sent} 条` + (abnormal ? `，其中 ${abnormal} 条被判定为异常（已标红并同步异常台账）` : '') +
+    (skipped ? `，${skipped} 条因无匹配字段被跳过` : '')
+  )
 }
 
 /* ========== 辅助 ========== */
@@ -444,6 +674,13 @@ const formatValues = (values) => {
   font-family: 'Consolas', 'Monaco', monospace;
 }
 
+.source-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  line-height: 1.4;
+}
+
 /* 键值对编辑器 */
 .kv-editor {
   width: 100%;
@@ -457,4 +694,8 @@ const formatValues = (values) => {
   align-items: center;
   gap: 8px;
 }
+
+/* 直接发送对话框 */
+.send-alert { margin-bottom: 14px; }
+.send-form { margin-top: 4px; }
 </style>

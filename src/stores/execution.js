@@ -4,7 +4,6 @@ import { useProtocolStore, collectInterfaceFields } from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
 import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
-import { useExceptionStore } from '@/stores/exception'
 import { useRunBatchStore } from '@/stores/runBatch'
 import { bus, EVENTS } from '@/utils/bus'
 
@@ -496,33 +495,12 @@ export const useExecutionStore = defineStore('execution', {
         })
       }
       if (isAbnormal) {
-        const issueText = (entry.issues || []).map((i) => `${i.name}：${i.message}`).join('；') || '字段值不符合定义'
+        // 发送侧只统计「发送了异常构造数据」，不写入异常台账 ——
+        // 异常台账与故障异常管理页共享，异常仅由接收校验（reception store）产生。
         if (step) {
           step.failed += 1
           step.abnormalTypes['异常数据'] = (step.abnormalTypes['异常数据'] || 0) + 1
         }
-        const item = this.planItems[entry.planIndex]
-        const exceptionStore = useExceptionStore()
-        const ex = exceptionStore.capture({
-          type: '异常数据',
-          level: '中',
-          systemId: item?.system?.id || item?.task?.systemId,
-          moduleId: item?.module?.id || item?.task?.moduleId,
-          interfaceId: item?.iface?.id || item?.task?.bindings?.interfaceId || '',
-          iface: entry.iface,
-          source: 'execution',
-          runId: this.currentRunId,
-          taskId: entry.taskId,
-          detail: {
-            reqHex,
-            respHex: '',
-            ruleMessage: `${entry.label}：${issueText}`,
-            fieldPath: (entry.issues || [])[0]?.name || '',
-            recvMs: 0,
-          },
-          capturedTime: nowText(),
-        })
-        if (ex) this.exceptions.unshift(ex)
         this.counters.failedRequests += 1
       } else {
         if (step) step.success += 1

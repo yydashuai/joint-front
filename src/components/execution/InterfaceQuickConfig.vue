@@ -23,18 +23,18 @@
     </el-alert>
 
     <!-- 未关联数据集警告（必须显式绑定数据集后才能加入计划） -->
-    <el-alert
-      v-else-if="datasetMissing"
-      type="warning"
-      :closable="false"
-      show-icon
-      class="iqc-alert"
-    >
-      <template #title>
-        该接口尚未关联任何测试数据集，无法加入计划。
-        <el-button link type="primary" size="small" @click="goTestData">去测试数据管理创建/关联数据集</el-button>
-      </template>
-    </el-alert>
+      <el-alert
+        v-else-if="datasetMissing && !hidePlanActions"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="iqc-alert"
+      >
+        <template #title>
+          该接口尚未关联任何测试数据集，无法加入计划。
+          <el-button link type="primary" size="small" @click="goTestData">去测试数据管理创建/关联数据集</el-button>
+        </template>
+      </el-alert>
 
     <el-form label-width="88px" label-position="left">
       <!-- 基本信息 -->
@@ -112,16 +112,18 @@
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
       <el-button @click="save()">仅保存</el-button>
-      <el-tooltip :content="blockTip" :disabled="!blockPlan" placement="top">
-        <span class="iqc-btn-wrap">
-          <el-button type="primary" plain :disabled="blockPlan" @click="saveAnd('plan')">保存并加入计划</el-button>
-        </span>
-      </el-tooltip>
-      <el-tooltip :content="blockTip" :disabled="!blockPlan" placement="top">
-        <span class="iqc-btn-wrap">
-          <el-button type="primary" :disabled="blockPlan" @click="saveAnd('test')">保存并发送测试</el-button>
-        </span>
-      </el-tooltip>
+      <template v-if="!hidePlanActions">
+        <el-tooltip :content="blockTip" :disabled="!blockPlan" placement="top">
+          <span class="iqc-btn-wrap">
+            <el-button type="primary" plain :disabled="blockPlan" @click="saveAnd('plan')">保存并加入计划</el-button>
+          </span>
+        </el-tooltip>
+        <el-tooltip :content="blockTip" :disabled="!blockPlan" placement="top">
+          <span class="iqc-btn-wrap">
+            <el-button type="primary" :disabled="blockPlan" @click="saveAnd('test')">保存并发送测试</el-button>
+          </span>
+        </el-tooltip>
+      </template>
     </template>
   </el-dialog>
 </template>
@@ -146,6 +148,7 @@ const props = defineProps({
   modelValue: { type: Boolean, default: false },
   interfaceId: { type: [String, Number], default: null }, // 非空 = 编辑模式
   context: { type: Object, default: null },               // 新建模式：{ systemId, moduleId }
+  hidePlanActions: { type: Boolean, default: false },      // 接收编排等场景：不要求数据集、隐藏「加入计划/发送测试」
 })
 const emit = defineEmits(['update:modelValue', 'saved', 'plan', 'test'])
 

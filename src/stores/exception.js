@@ -17,20 +17,24 @@ export const EXC_STATES = [
   { value: '已处理', label: '已处理', tag: 'success' },
 ]
 
+// 异常只产生于接收侧（发送数据不产异常）：reception = 接收接口编排的实时校验捕获
 export const EXC_SOURCES = [
-  { value: 'execution', label: '执行编排' },
+  { value: 'reception', label: '接收校验' },
   { value: 'rule', label: '规则判定' },
   { value: 'link', label: '链路连接' },
   { value: 'system', label: '系统事件' },
 ]
 
 const defaultTypes = [
-  { id: 'type', name: '类型校验', source: 'rule', defaultLevel: '高', suggestion: '核对字段类型与接收解析器配置。' },
-  { id: 'range', name: '取值范围', source: 'rule', defaultLevel: '高', suggestion: '检查字段上下限、单位换算与现场传感器标定。' },
-  { id: 'boundary', name: '边界值检测', source: 'rule', defaultLevel: '中', suggestion: '复核边界条件，确认被测系统在临界值附近的处理策略。' },
-  { id: 'overflow', name: '字段越界', source: 'rule', defaultLevel: '高', suggestion: '确认报文字段长度、字节偏移与端序定义。' },
-  { id: 'timeout', name: '接收超时', source: 'rule', defaultLevel: '中', suggestion: '排查链路时延、任务负载与被测模块接收能力。' },
-  { id: 'format', name: '格式错误', source: 'rule', defaultLevel: '高', suggestion: '检查帧头、校验码、JSON/结构体格式与字段版本。' },
+  { id: 'unparsed', name: '无法解析', source: 'reception', defaultLevel: '高', suggestion: '自动轮询 OSE/4908A/MDS 头解析均失败；确认对端协议版本，或在接收数据流中选择转发/保存原始样本。' },
+  { id: 'semantic', name: '语义不一致', source: 'reception', defaultLevel: '高', suggestion: '报文头声明信息与实际不符（长度/校验和），核对发送端帧组装逻辑与字节偏移。' },
+  { id: 'ruleFail', name: '规则校验失败', source: 'reception', defaultLevel: '中', suggestion: '字段值违反绑定到接口的校验规则，核对规则参数与被测系统输出。' },
+  { id: 'type', name: '类型校验', source: 'reception', defaultLevel: '高', suggestion: '核对字段类型与接收解析器配置。' },
+  { id: 'range', name: '取值范围', source: 'reception', defaultLevel: '高', suggestion: '检查字段上下限、单位换算与现场传感器标定。' },
+  { id: 'boundary', name: '边界值检测', source: 'reception', defaultLevel: '中', suggestion: '复核边界条件，确认被测系统在临界值附近的处理策略。' },
+  { id: 'overflow', name: '字段越界', source: 'reception', defaultLevel: '高', suggestion: '确认报文字段长度、字节偏移与端序定义。' },
+  { id: 'timeout', name: '接收超时', source: 'reception', defaultLevel: '中', suggestion: '排查链路时延、任务负载与被测模块接收能力。' },
+  { id: 'format', name: '格式错误', source: 'reception', defaultLevel: '高', suggestion: '检查帧头、校验码、JSON/结构体格式与字段版本。' },
 ].map((item) => ({ ...item, captureEnabled: true, desc: item.suggestion }))
 
 const typeIdOf = (typeName) => {
@@ -38,7 +42,7 @@ const typeIdOf = (typeName) => {
   return hit?.id || `custom-${typeName}`
 }
 
-const sourceOf = (typeName) => defaultTypes.find((item) => item.name === typeName)?.source || 'execution'
+const sourceOf = (typeName) => defaultTypes.find((item) => item.name === typeName)?.source || 'reception'
 
 const activeStateOf = (state) => {
   if (['已处理', '已修复', '已忽略', '已转派', '自动恢复', '已记录'].includes(state)) return '已处理'
@@ -202,7 +206,7 @@ export const useExceptionStore = defineStore('exception', {
         moduleId: payload.moduleId || '',
         interfaceId: payload.interfaceId || '',
         iface: payload.iface || payload.interfaceName || '未命名报文',
-        source: payload.source || typeDef.source || 'execution',
+        source: payload.source || typeDef.source || 'reception',
         runId: payload.runId || '',
         taskId: payload.taskId || '',
         detail: {
@@ -296,7 +300,7 @@ export const useExceptionStore = defineStore('exception', {
       const item = {
         id: payload.id || uid('etype'),
         name,
-        source: payload.source || 'execution',
+        source: payload.source || 'reception',
         defaultLevel: payload.defaultLevel || '中',
         captureEnabled: payload.captureEnabled ?? true,
         suggestion: payload.suggestion || '按现场处置经验补充建议。',

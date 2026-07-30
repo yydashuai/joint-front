@@ -9,6 +9,7 @@ export const navRoutes = [
   { path: '/protocol', name: 'protocol', short: '文', title: '报文管理', icon: 'Document', component: () => import('@/views/Protocol.vue') },
   { path: '/test-data', name: 'test-data', short: '数', title: '测试数据管理', icon: 'Coin', component: () => import('@/views/TestData.vue') },
   { path: '/execution', name: 'execution', short: '编', title: '测试接口编排', icon: 'VideoPlay', component: () => import('@/views/Execution.vue') },
+  { path: '/reception', name: 'reception', short: '收', title: '接收接口编排', icon: 'Download', component: () => import('@/views/Reception.vue') },
   { path: '/rule', name: 'rule', short: '则', title: '校验规则管理', icon: 'SetUp', component: () => import('@/views/Rule.vue') },
   { path: '/exception', name: 'exception', short: '异', title: '故障异常管理', icon: 'Warning', component: () => import('@/views/Exception.vue') },
   { path: '/statistics', name: 'statistics', short: '计', title: '统计与可视化', icon: 'TrendCharts', component: () => import('@/views/Statistics.vue') },

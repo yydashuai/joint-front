@@ -79,23 +79,6 @@
       </div>
     </el-card>
 
-    <el-card shadow="never" class="exec-card exception-feed">
-      <template #header>
-        <div class="card-head">
-          <span class="card-title">现场异常</span>
-          <el-button link type="primary" size="small" :disabled="!store.exceptions.length" @click="router.push('/exception')">查看本次异常</el-button>
-        </div>
-      </template>
-      <div v-if="!store.exceptions.length" class="muted">本轮暂无异常。</div>
-      <div v-else class="feed-list">
-        <div v-for="ex in store.exceptions.slice(0, 5)" :key="ex.id" class="feed-item">
-          <el-tag :type="ex.level === '高' ? 'danger' : 'warning'" size="small">{{ ex.level }}</el-tag>
-          <span>{{ ex.type }}</span>
-          <small>{{ ex.iface }} · {{ ex.capturedTime || ex.time }}</small>
-        </div>
-      </div>
-    </el-card>
-
     <!-- 暂停后点击测试数据：矩阵形式编辑字段值 -->
     <el-dialog
       v-model="editVisible"
@@ -207,12 +190,10 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useExecutionStore, judgeValues } from '@/stores/execution'
 
 const store = useExecutionStore()
-const router = useRouter()
 const autoScroll = ref(true)
 const consoleRef = ref()
 
@@ -335,9 +316,7 @@ watch(() => store.sentCount, () => {
 </script>
 
 <style scoped lang="scss">
-.monitor { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 14px; }
-.monitor > .exec-card:first-child, .console-card { grid-column: 1; }
-.exception-feed { grid-column: 2; grid-row: 1 / -1; align-self: stretch; }
+.monitor { display: flex; flex-direction: column; gap: 14px; }
 .exec-card {
   border-radius: 8px;
   :deep(.el-card__header) { padding: 12px 14px; }
@@ -421,11 +400,6 @@ $stream-cols: 40px 76px 170px 150px minmax(160px, 1fr) 64px;
 .mono { font-family: Consolas, Monaco, monospace; }
 .stream-empty { padding: 80px 0; text-align: center; color: rgba(215,225,234,.55); }
 
-/* ---- 现场异常 ---- */
-.feed-list { display: flex; flex-direction: column; gap: 8px; }
-.feed-item { display: flex; flex-direction: column; gap: 4px; padding: 9px; border-radius: 7px; background: var(--el-fill-color-extra-light); border: 1px solid var(--el-border-color-lighter); }
-.feed-item small { color: var(--el-text-color-secondary); }
-
 /* ---- 编辑弹窗 ---- */
 .edit-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .edit-meta__judge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; margin-left: auto; color: var(--el-text-color-secondary); }
@@ -457,8 +431,6 @@ $stream-cols: 40px 76px 170px 150px minmax(160px, 1fr) 64px;
 }
 
 @media (max-width: 1180px) {
-  .monitor { grid-template-columns: 1fr; }
-  .exception-feed { grid-column: 1; grid-row: auto; }
   .metrics { grid-template-columns: repeat(4, minmax(86px, 1fr)); }
 }
 </style>

@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { datasets as seedDatasets, files as seedFiles } from '@/mock/testData'
+import { useProtocolStore, collectInterfaceFields } from '@/stores/protocol'
+import { checkFieldConstraints } from '@/utils/receiveValidator'
 
 let _dsSeq = 100
 let _rowSeq = 1000
@@ -13,19 +15,24 @@ const historyRowsFromDataset = (dataset) => {
     id: ++_historyRowSeq,
     label: row.label || `历史行 ${index + 1}`,
     values: clone(row.values || {}),
-    source: '历史优秀案例',
+    source: '手动创建',
     savedAt: dataset.createdAt || '2026-06-25',
-    remark: ''
+    remark: '',
+    abnormal: false,   // 是否异常（自动判定，默认正常）
+    excellent: false,  // 是否加入优秀历史数据库（可选）
   }))
 }
 
 const normalizeDatasets = () => {
-  return clone(seedDatasets).map(dataset => ({
+  const list = clone(seedDatasets).map(dataset => ({
     ...dataset,
     historyRows: Array.isArray(dataset.historyRows) && dataset.historyRows.length
       ? dataset.historyRows
       : historyRowsFromDataset(dataset)
   }))
+  // 演示标注：首条历史数据标记为「优秀历史」，便于展示优秀标签与筛选
+  if (list[0]?.historyRows?.length) list[0].historyRows[0].excellent = true
+  return list
 }
 
 export const useTestDataStore = defineStore('testData', {
@@ -297,10 +304,32 @@ export const useTestDataStore = defineStore('testData', {
         values: clone(r.values || {}),
         source: r.source || '智能生成',
         savedAt: new Date().toISOString().slice(0, 10),
-        remark: r.remark || ''
+        remark: r.remark || '',
+        abnormal: r.abnormal ?? false,     // 异常标签（调用方按字段定义校验后传入）
+        excellent: r.excellent ?? false,   // 优秀历史标签（可选）
       }))
       ds.historyRows.push(...newRows)
       return newRows
+    },
+
+    /**
+     * 按数据集绑定的接口字段定义，自动判定一行数据是否异常。
+     * 仅在字段名存在交集时校验，避免泛型 KV 数据被误判。
+     * @returns {boolean} 是否异常
+     */
+    computeAbnormal(values = {}, datasetId) {
+      const ds = this.datasets.find(d => d.id === datasetId)
+      if (!ds?.linkedInterface) return false
+      const protocolStore = useProtocolStore()
+      const iface = protocolStore.interfaces.find(
+        (i) => i.name === ds.linkedInterface || String(i.id) === String(ds.linkedInterface)
+      )
+      if (!iface) return false
+      const fields = collectInterfaceFields(iface, protocolStore.protocols)
+      if (!fields.length) return false
+      const overlap = fields.some(f => f.name in (values || {}))
+      if (!overlap) return false
+      return checkFieldConstraints(fields, values || {}).length > 0
     },
 
     /** 更新历史数据行（编辑备注、标签、值等） */
@@ -309,6 +338,14 @@ export const useTestDataStore = defineStore('testData', {
       if (!ds?.historyRows) return
       const row = ds.historyRows.find(r => r.id === rowId)
       if (row) Object.assign(row, patch)
+    },
+
+    /** 切换「优秀历史数据库」标签 */
+    toggleExcellent(datasetId, rowId) {
+      const ds = this.datasets.find(d => d.id === datasetId)
+      if (!ds?.historyRows) return
+      const row = ds.historyRows.find(r => r.id === rowId)
+      if (row) row.excellent = !row.excellent
     },
 
     /**
