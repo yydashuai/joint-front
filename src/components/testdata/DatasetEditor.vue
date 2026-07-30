@@ -177,13 +177,18 @@
           :class-name="isFieldFixed(field) ? 'fixed-col' : ''"
         >
           <template #header>
-            <div class="field-col-header">
-              <div class="field-col-header__name">
-                <el-icon v-if="isFieldFixed(field)" class="lock-icon"><Lock /></el-icon>
-                {{ field.name }}
+            <el-tooltip placement="top" :show-after="150">
+              <template #content>
+                <div class="field-tip">{{ fieldTooltipText(field) }}</div>
+              </template>
+              <div class="field-col-header">
+                <div class="field-col-header__name">
+                  <el-icon v-if="isFieldFixed(field)" class="lock-icon"><Lock /></el-icon>
+                  {{ field.name }}
+                </div>
+                <div class="field-col-header__type">{{ fieldHint(field) }}</div>
               </div>
-              <div class="field-col-header__type">{{ fieldHint(field) }}</div>
-            </div>
+            </el-tooltip>
           </template>
           <template #default="{ row }">
             <!-- 固定值 (优化点 4: 更紧凑) -->
@@ -303,13 +308,18 @@
             show-overflow-tooltip
           >
             <template #header>
-              <div class="field-col-header">
-                <div class="field-col-header__name">
-                  <el-icon v-if="isFieldFixed(field)" class="lock-icon"><Lock /></el-icon>
-                  {{ field.name }}
+              <el-tooltip placement="top" :show-after="150">
+                <template #content>
+                  <div class="field-tip">{{ fieldTooltipText(field) }}</div>
+                </template>
+                <div class="field-col-header">
+                  <div class="field-col-header__name">
+                    <el-icon v-if="isFieldFixed(field)" class="lock-icon"><Lock /></el-icon>
+                    {{ field.name }}
+                  </div>
+                  <div class="field-col-header__type">{{ fieldHint(field) }}</div>
                 </div>
-                <div class="field-col-header__type">{{ fieldHint(field) }}</div>
-              </div>
+              </el-tooltip>
             </template>
             <template #default="{ row }">
               <span class="readonly-cell">{{ readonlyCellValue(row, field) }}</span>
@@ -360,6 +370,15 @@
           <label class="gen-label">生成数量</label>
           <el-input-number v-model="genCount" :min="1" :max="20" :step="1" style="width: 140px;" />
           <span class="gen-hint">基于现有数据的值范围和分布模式生成</span>
+        </div>
+        <div class="gen-form__row">
+          <label class="gen-label">生成类型</label>
+          <el-radio-group v-model="genMode">
+            <el-radio value="normal">正常数据</el-radio>
+            <el-radio value="abnormal">异常数据</el-radio>
+            <el-radio value="mixed">混合数据</el-radio>
+          </el-radio-group>
+          <span class="gen-hint">正常=全部符合约束；异常=每行至少一处违规；混合=两者交替</span>
         </div>
         <div class="gen-form__row">
           <label class="gen-label">生成策略</label>
@@ -541,6 +560,18 @@ const fieldHint = (f) => {
   return ''
 }
 
+// 字段列头悬浮提示：字段名 + 说明 + 约束范围，方便测试人员核对
+const fieldTooltipText = (field) => {
+  const lines = [`字段：${field.name}`]
+  if (field.desc) lines.push('说明：' + field.desc)
+  const c = field.constraint
+  if (c?.mode === 'fixed') lines.push('约束：固定值 ' + c.value)
+  else if (c?.mode === 'enum') lines.push('约束：枚举 ' + (c.entries || []).map(e => e.label || e).join(' / '))
+  else if (c?.mode === 'range') lines.push('约束：范围 ' + c.min + ' ~ ' + c.max)
+  else lines.push('约束：无（自由值）')
+  return lines.join('\n')
+}
+
 const readonlyCellValue = (row, field) => {
   const value = row.values?.[field.name]
   if (value !== undefined && value !== null && value !== '') return value
@@ -635,29 +666,41 @@ const onDeleteSelectedHistoryRows = () => {
 /* ========== 智能生成 ========== */
 const showGenDialog = ref(false)
 const genCount = ref(5)
+const genMode = ref('normal') // normal | abnormal | mixed
 const genPreview = ref([])
 
 const onGenerate = () => {
-  const result = tdStore.generateTestData(ds.value.id, genCount.value)
+  const result = tdStore.generateTestData(ds.value.id, genCount.value, genMode.value)
   genPreview.value = result
   if (result.length === 0) {
     ElMessage.warning('未能生成新数据，请检查数据集是否包含有效数据行')
   } else {
-    ElMessage.success(`已生成 ${result.length} 条测试数据，请预览确认`)
+    const labelMap = { normal: '正常', abnormal: '异常', mixed: '混合' }
+    ElMessage.success(`已生成 ${result.length} 条${labelMap[genMode.value]}测试数据，请预览确认`)
   }
 }
 
 const onConfirmGenerate = () => {
   if (genPreview.value.length === 0) return
-  // 添加到本次数据矩阵（rows），而非历史数据
+  // 添加到本次数据矩阵（rows），供编辑 / 发送
   const newRows = genPreview.value.map(r => ({
     id: Date.now() + Math.random() * 1000,
     label: r.label,
-    values: { ...r.values }
+    values: { ...r.values },
+    source: r.source || '智能生成'
   }))
   tdStore.insertRowsAfter(ds.value.id, null, newRows)
+  // 同步写入历史数据：来源标记为「智能生成」，异常状态按字段定义实时判定，
+  // 以便后续在历史数据管理中按来源筛选、并按正常 / 异常分类查看
+  const historyPayload = newRows.map(r => ({
+    label: r.label,
+    values: r.values,
+    source: '智能生成',
+    abnormal: tdStore.computeAbnormal(r.values, ds.value.id)
+  }))
+  tdStore.addHistoryRows(ds.value.id, historyPayload)
   nextTick(() => takeSnapshot())
-  ElMessage.success(`已将 ${genPreview.value.length} 条智能生成数据添加到本次数据矩阵`)
+  ElMessage.success(`已将 ${genPreview.value.length} 条智能生成数据添加到本次数据矩阵，并同步至历史数据（来源：智能生成）`)
   genPreview.value = []
   showGenDialog.value = false
 }
@@ -1217,6 +1260,13 @@ const onKeydown = (e) => {
     color: var(--el-text-color-placeholder);
     font-family: 'Consolas', 'Monaco', monospace;
   }
+}
+
+/* 字段列头悬浮提示（支持多行） */
+.field-tip {
+  white-space: pre-line;
+  line-height: 1.6;
+  font-size: 12px;
 }
 
 .fixed-value {

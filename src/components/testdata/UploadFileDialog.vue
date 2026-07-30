@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="visible" title="导入测试资源文件" width="520px" destroy-on-close @close="onClose">
+  <el-dialog v-model="visible" title="导入数据文件" width="520px" destroy-on-close @close="onClose">
     <el-form :model="form" label-width="100px">
       <!-- 真实文件选择器 (优化点 13) -->
       <el-form-item label="选择文件" required>
@@ -62,7 +62,7 @@ import { UploadFilled, Document } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
-import { formatFileSize, inferFileFormat } from '@/services/testDataService'
+import { formatFileSize, inferFileFormat, readFileAsText } from '@/services/testDataService'
 
 const props = defineProps({ modelValue: Boolean })
 const emit = defineEmits(['update:modelValue', 'submitted'])
@@ -144,10 +144,15 @@ const onClose = () => {
   emit('update:modelValue', false)
 }
 
-const onSubmit = () => {
+const onSubmit = async () => {
   if (!selectedFile.value) {
     ElMessage.warning('请选择文件')
     return
+  }
+  // 文本类文件（≤1MB）读取内容保留，便于数据文件管理中「解析」为数据链
+  let content = ''
+  if (selectedFile.value.size <= 1024 * 1024) {
+    try { content = await readFileAsText(selectedFile.value) } catch { content = '' }
   }
   emit('submitted', {
     name: form.name || selectedFile.value.name,
@@ -157,6 +162,7 @@ const onSubmit = () => {
     moduleName: form.moduleName,
     desc: form.desc,
     file: selectedFile.value,
+    content,
     rowCount: form.format === 'bin' ? 0 : Math.floor(Math.random() * 200) + 10
   })
   visible.value = false

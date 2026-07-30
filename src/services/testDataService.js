@@ -131,7 +131,7 @@ export function readFileAsText(file) {
  */
 export function inferFileFormat(filename) {
   const ext = filename.split('.').pop()?.toLowerCase()
-  const map = { csv: 'csv', json: 'json', bin: 'bin', xml: 'xml', txt: 'csv' }
+  const map = { csv: 'csv', json: 'json', bin: 'bin', dat: 'bin', xml: 'xml', txt: 'csv' }
   return map[ext] || 'csv'
 }
 

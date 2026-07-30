@@ -1,7 +1,7 @@
 <template>
   <div class="resource-files">
     <div class="files-header">
-      <h3>测试资源文件</h3>
+      <h3>数据文件管理</h3>
       <div class="files-toolbar">
         <!-- 搜索 (优化点 15) -->
         <el-input
@@ -24,7 +24,7 @@
     </div>
 
     <!-- 空状态 (优化点 14) -->
-    <el-empty v-if="filteredFiles.length === 0 && !searchText && !filterFormat" description="暂无资源文件，点击上方按钮上传" :image-size="60" />
+    <el-empty v-if="filteredFiles.length === 0 && !searchText && !filterFormat" description="暂无数据文件，点击上方按钮上传" :image-size="60" />
     <el-empty v-else-if="filteredFiles.length === 0" description="没有匹配的文件" :image-size="60" />
 
     <!-- 文件表格 (优化点 15: 排序) -->
@@ -66,9 +66,14 @@
         </template>
       </el-table-column>
       <el-table-column label="上传时间" width="150" sortable="custom" prop="uploadedAt" />
-      <el-table-column label="操作" width="120" align="center">
+      <el-table-column label="操作" width="240" align="center">
         <template #default="{ row }">
           <el-button size="small" text type="primary" @click="$emit('download', row)">下载</el-button>
+          <el-tooltip :disabled="!!row.content" content="该文件未保留文本内容，无法解析" placement="top">
+            <span>
+              <el-button size="small" text type="success" :disabled="!row.content" @click="$emit('parse', row)">解析</el-button>
+            </span>
+          </el-tooltip>
           <el-popconfirm title="确认删除此文件？" @confirm="tdStore.removeFile(row.id)">
             <template #reference>
               <el-button size="small" text type="danger">删除</el-button>
@@ -86,7 +91,7 @@ import { Upload, Document, Search } from '@element-plus/icons-vue'
 import { useTestDataStore } from '@/stores/testData'
 import { formatFileSize } from '@/services/testDataService'
 
-defineEmits(['upload', 'download'])
+defineEmits(['upload', 'download', 'parse'])
 
 const tdStore = useTestDataStore()
 

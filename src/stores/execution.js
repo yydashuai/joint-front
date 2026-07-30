@@ -263,7 +263,7 @@ export const useExecutionStore = defineStore('execution', {
       const queue = []
       for (const item of this.planItems) {
         const fields = item.iface ? collectInterfaceFields(item.iface, protocolStore.protocols) : []
-        const rows = item.datasets.flatMap((ds) => (ds.rows || []).map((row) => ({ row, dsName: ds.name })))
+        const rows = item.datasets.flatMap((ds) => (ds.rows || []).map((row) => ({ row, dsName: ds.name, dsId: ds.id })))
         const count = Math.max(1, item.estimatedRequests)
         for (let i = 0; i < count; i += 1) {
           const src = rows.length ? rows[i % rows.length] : null
@@ -277,6 +277,7 @@ export const useExecutionStore = defineStore('execution', {
             proto: item.iface?.path?.startsWith('/') ? 'HTTP' : 'TCP',
             label: src?.row?.label || `样例数据 ${i + 1}`,
             datasetName: src?.dsName || '',
+            datasetId: src?.dsId || null,
             fields,
             values,
             variant: judge.abnormal ? 'abnormal' : 'normal', // 由字段定义自动判定

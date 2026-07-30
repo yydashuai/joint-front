@@ -180,6 +180,13 @@
       </template>
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>
+        <el-button
+          v-if="editEntry?.datasetId"
+          type="warning"
+          plain
+          :icon="Star"
+          @click="addToExcellent"
+        >加入优秀历史数据库</el-button>
         <el-button type="primary" @click="saveEdit">
           {{ editEntry?.status === 'sent' ? '保存并追加到队尾' : '保存修改' }}
         </el-button>
@@ -191,9 +198,12 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Star } from '@element-plus/icons-vue'
 import { useExecutionStore, judgeValues } from '@/stores/execution'
+import { useTestDataStore } from '@/stores/testData'
 
 const store = useExecutionStore()
+const tdStore = useTestDataStore()
 const autoScroll = ref(true)
 const consoleRef = ref()
 
@@ -281,6 +291,24 @@ const saveEdit = () => {
     ElMessage.info('数据未修改，保持不变')
   }
   editVisible.value = false
+}
+
+/* 执行暂停时：将当前测试数据加入对应数据集的「优秀历史数据库」 */
+const addToExcellent = () => {
+  const entry = editEntry.value
+  if (!entry?.datasetId) {
+    ElMessage.warning('该数据未关联到数据集，无法加入优秀历史')
+    return
+  }
+  tdStore.addHistoryRows(entry.datasetId, [{
+    label: entry.label,
+    values: JSON.parse(JSON.stringify(editValues.value)),
+    source: '执行采集',
+    remark: `执行暂停时手动加入（${entry.iface}）`,
+    abnormal: entry.variant === 'abnormal',
+    excellent: true,
+  }])
+  ElMessage.success(`已将「${entry.label}」加入优秀历史数据库`)
 }
 
 /* ---- 字段控件类型（参考数据集矩阵） ---- */

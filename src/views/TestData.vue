@@ -3,15 +3,18 @@
     <div class="page__header">
       <div>
         <h2>测试数据管理</h2>
-        <div class="page__desc">构造基于字段/报文的测试报文数据集，管理测试资源文件</div>
+        <div class="page__desc">构造基于字段/报文的测试报文数据集，管理数据文件</div>
       </div>
       <div class="header-actions">
-        <el-button-group>
+        <!-- 各视图专属按钮：放在切换组左侧，避免切换组左右浮动 -->
+        <el-button v-if="viewMode === 'dataset'" :icon="Upload" @click="openDataChainDialog()">导入数据链文件</el-button>
+        <el-button v-if="viewMode === 'dataset'" :icon="FolderChecked" @click="showCombineDialog = true">组合导出/存为方案</el-button>
+        <!-- 视图切换：固定靠右 -->
+        <el-button-group class="view-switch">
           <el-button :type="viewMode === 'dataset' ? 'primary' : ''" @click="viewMode = 'dataset'">数据集管理</el-button>
           <el-button :type="viewMode === 'history' ? 'primary' : ''" @click="viewMode = 'history'">历史数据管理</el-button>
-          <el-button :type="viewMode === 'files' ? 'primary' : ''" @click="viewMode = 'files'">测试资源文件</el-button>
+          <el-button :type="viewMode === 'files' ? 'primary' : ''" @click="viewMode = 'files'">数据文件管理</el-button>
         </el-button-group>
-        <el-button v-if="viewMode === 'files'" :icon="Upload" @click="showUploadDialog = true">导入文件</el-button>
       </div>
     </div>
 
@@ -32,6 +35,7 @@
           v-model="selectedKey"
           title="测试数据集"
           :leaf-groups="leafGroups"
+          :extra-system-children="extraSystemChildren"
           :leaf-context-actions="leafContextActions"
           :module-context-actions="moduleContextActions"
           @select="onTreeSelect"
@@ -44,13 +48,21 @@
 
       <!-- 右侧内容区 -->
       <el-card class="main" shadow="never">
+        <DatasetSchemeDetail
+          v-if="currentScheme"
+          :scheme="currentScheme"
+          @edit="openSchemeDialog"
+          @remove="onRemoveScheme"
+          @open-dataset="openDatasetFromScheme"
+          @remove-dataset="onRemoveDatasetFromScheme"
+        />
         <DatasetEditor
-          v-if="currentDs"
+          v-else-if="currentDs"
           :dataset="currentDs"
           @delete="onDeleteDataset"
           @duplicate="onDuplicateDataset"
         />
-        <el-empty v-else description="暂无数据集，请从左侧创建" :image-size="80" />
+        <el-empty v-else description="请选择左侧的数据集或数据集方案" :image-size="80" />
       </el-card>
     </div>
 
@@ -59,9 +71,9 @@
       <HistoryDataManager />
     </el-card>
 
-    <!-- ======== 测试资源文件视图 ======== -->
+    <!-- ======== 数据文件管理视图 ======== -->
     <el-card v-else class="main history-main" shadow="never">
-      <ResourceFiles @upload="showUploadDialog = true" @download="onDownloadFile" />
+      <ResourceFiles @upload="showUploadDialog = true" @download="onDownloadFile" @parse="onParseFile" />
     </el-card>
 
     <!-- ======== 对话框 ======== -->
@@ -74,12 +86,30 @@
       v-model="showUploadDialog"
       @submitted="onUploadFile"
     />
+    <DataChainImportDialog
+      v-model="showDataChainDialog"
+      :current-system-id="currentSystemId"
+      :current-module-name="currentModuleName"
+      :preset-file="dataChainPreset"
+      @imported="onDataChainImported"
+    />
+    <DatasetSchemeDialog
+      v-model="showSchemeDialog"
+      :system-id="schemeDialogSystemId"
+      :scheme="editingScheme"
+      @confirm="onConfirmScheme"
+    />
+    <CombineExportDialog
+      v-model="showCombineDialog"
+      :system-id="currentSystemId"
+      @saved="onCombineSaved"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { Upload, Search } from '@element-plus/icons-vue'
+import { Upload, Search, FolderChecked } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import DatasetEditor from '@/components/testdata/DatasetEditor.vue'
@@ -87,13 +117,22 @@ import ResourceFiles from '@/components/testdata/ResourceFiles.vue'
 import CreateDatasetDialog from '@/components/testdata/CreateDatasetDialog.vue'
 import UploadFileDialog from '@/components/testdata/UploadFileDialog.vue'
 import HistoryDataManager from '@/components/testdata/HistoryDataManager.vue'
+import DataChainImportDialog from '@/components/testdata/DataChainImportDialog.vue'
+import DatasetSchemeDialog from '@/components/testdata/DatasetSchemeDialog.vue'
+import DatasetSchemeDetail from '@/components/testdata/DatasetSchemeDetail.vue'
+import CombineExportDialog from '@/components/testdata/CombineExportDialog.vue'
 import { useTestDataStore } from '@/stores/testData'
+import { downloadBlob } from '@/services/testDataService'
+import { useDatasetSchemeStore } from '@/stores/datasetScheme'
 import { useProtocolStore } from '@/stores/protocol'
 import { useConnectionStore } from '@/stores/connection'
+import { useSystemStore } from '@/stores/system'
 
 const tdStore = useTestDataStore()
 const protoStore = useProtocolStore()
 const connStore = useConnectionStore()
+const systemStore = useSystemStore()
+const schemeStore = useDatasetSchemeStore()
 
 /* ========== 视图切换 ========== */
 const viewMode = ref('dataset') // 'dataset' | 'history' | 'files'
@@ -101,6 +140,32 @@ const viewMode = ref('dataset') // 'dataset' | 'history' | 'files'
 /* ========== 树选择 + 搜索 ========== */
 const selectedKey = ref('')
 const dsSearch = ref('')
+
+const selectedSchemeId = ref(null)
+const currentScheme = computed(() =>
+  schemeStore.schemes.find((s) => s.id === selectedSchemeId.value) || null
+)
+
+/* ========== 数据集方案：与「测试数据集」同级的树节点 ========== */
+const extraSystemChildren = (sys) => {
+  const schemes = schemeStore.schemesOfSystem(sys.id)
+  return [{
+    key: `dsSchemes-${sys.id}`,
+    kind: 'schemeGroup',
+    icon: 'FolderOpened',
+    label: '测试数据集方案',
+    ref: { id: `dsSchemes-${sys.id}`, systemId: sys.id },
+    addActions: [{ groupKind: 'datasetScheme', label: '+方案', type: 'warning' }],
+    children: schemes.map((s) => ({
+      key: `dsScheme-${s.id}`,
+      kind: 'scheme',
+      icon: 'Notebook',
+      label: s.name,
+      badge: `${s.datasetIds.length} 数据集`,
+      ref: s,
+    })),
+  }]
+}
 
 const leafGroups = (module) => {
   let datasets = tdStore.datasets.filter(d => d.moduleName === module.name && d.systemId === module.systemId)
@@ -130,9 +195,14 @@ const leafGroups = (module) => {
 }
 
 const onTreeSelect = (data) => {
-  if (data.kind === 'dataset' && data.ref) {
+  if (data.kind === 'scheme' && data.ref) {
+    selectedSchemeId.value = data.ref.id
+    tdStore.select(null)
+  } else if (data.kind === 'dataset' && data.ref) {
+    selectedSchemeId.value = null
     tdStore.select(data.ref.id)
   } else {
+    selectedSchemeId.value = null
     tdStore.select(null)
   }
 }
@@ -218,7 +288,11 @@ const onModuleAction = ({ action, data }) => {
 const showCreateDialog = ref(false)
 const createModule = ref(null)
 
-const onAddLeaf = ({ module }) => {
+const onAddLeaf = ({ groupKind, module }) => {
+  if (groupKind === 'datasetScheme') {
+    openSchemeDialog(module.systemId || module.id, null)
+    return
+  }
   createModule.value = { systemId: module.systemId, name: module.name }
   showCreateDialog.value = true
 }
@@ -299,9 +373,14 @@ const onDuplicateDataset = (dup) => {
   selectedKey.value = `ds-${dup.id}`
 }
 
-/* ========== 资源文件 ========== */
+/* ========== 数据文件 ========== */
 const onDownloadFile = (file) => {
-  ElMessage.success(`模拟下载：${file.name}`)
+  if (file.content) {
+    downloadBlob(new Blob([file.content], { type: 'text/plain;charset=utf-8' }), file.name)
+    ElMessage.success(`已下载：${file.name}`)
+  } else {
+    ElMessage.success(`模拟下载：${file.name}`)
+  }
 }
 
 const showUploadDialog = ref(false)
@@ -309,6 +388,89 @@ const showUploadDialog = ref(false)
 const onUploadFile = (data) => {
   tdStore.addFile(data)
   ElMessage.success('文件导入成功')
+}
+
+/* ========== 数据链文件导入 ========== */
+const showDataChainDialog = ref(false)
+const dataChainPreset = ref(null)
+
+// 默认归属：取连接树当前选中节点（系统 + 模块）
+const currentSystemId = computed(() => connStore.selected?.systemId ?? systemStore.currentId ?? '')
+const currentModuleName = computed(() => connStore.selected?.name ?? '')
+
+const openDataChainDialog = (preset = null) => {
+  dataChainPreset.value = preset
+  showDataChainDialog.value = true
+}
+
+// 数据文件管理 →「解析」：预载文件内容打开导入对话框
+const onParseFile = (file) => {
+  if (!file?.content) {
+    ElMessage.warning('该文件未保留文本内容，无法解析（仅通过数据链导入登记的文件支持解析）')
+    return
+  }
+  openDataChainDialog({
+    name: file.name,
+    content: file.content,
+    systemId: file.systemId || '',
+    moduleName: file.moduleName || ''
+  })
+}
+
+const onDataChainImported = (datasetIds) => {
+  if (datasetIds?.length) {
+    const firstId = datasetIds[0]
+    tdStore.select(firstId)
+    selectedKey.value = `ds-${firstId}`
+    viewMode.value = 'dataset'
+  }
+}
+
+/* ========== 组合导出 / 存为方案 ========== */
+const showCombineDialog = ref(false)
+
+const onCombineSaved = (scheme) => {
+  // 保存为方案后直接定位到该方案详情
+  selectedSchemeId.value = scheme.id
+  selectedKey.value = `dsScheme-${scheme.id}`
+  tdStore.select(null)
+}
+
+/* ========== 数据集方案 弹窗与操作 ========== */
+const showSchemeDialog = ref(false)
+const editingScheme = ref(null)
+const schemeDialogSystemId = ref(null)
+
+const openSchemeDialog = (systemId, scheme) => {
+  schemeDialogSystemId.value = systemId
+  editingScheme.value = scheme
+  showSchemeDialog.value = true
+}
+
+const onConfirmScheme = (payload) => {
+  if (editingScheme.value) {
+    schemeStore.update(editingScheme.value.id, payload)
+    ElMessage.success('数据集方案已更新')
+  } else {
+    schemeStore.add(payload)
+    ElMessage.success('数据集方案已创建')
+  }
+}
+
+const onRemoveScheme = (scheme) => {
+  schemeStore.remove(scheme.id)
+  if (selectedSchemeId.value === scheme.id) selectedSchemeId.value = null
+  ElMessage.success('数据集方案已删除')
+}
+
+const openDatasetFromScheme = (datasetId) => {
+  selectedSchemeId.value = null
+  tdStore.select(datasetId)
+  selectedKey.value = `ds-${datasetId}`
+}
+
+const onRemoveDatasetFromScheme = (datasetId) => {
+  if (selectedSchemeId.value) schemeStore.removeDataset(selectedSchemeId.value, datasetId)
 }
 
 /* ========== 初始化：自动选中第一个数据集 ========== */

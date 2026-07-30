@@ -10,6 +10,30 @@ let _fileSeq = 100
 
 const clone = (data) => JSON.parse(JSON.stringify(data))
 
+/**
+ * 将协议（protocol）的字段树扁平化为 { name, constraint } 列表，供异常判定使用。
+ * - byte 容器字段：取其位段子字段（如帧控制字节的按位定义），无子字段时按普通字段处理
+ * - bit 字段：直接取用（带约束）
+ * - repeat / 嵌套 struct：递归展开
+ */
+const flattenProtocolFields = (fields = [], out = []) => {
+  for (const f of fields || []) {
+    if (f.kind === 'byte') {
+      if (f.children?.length) flattenProtocolFields(f.children, out)
+      else out.push({ name: f.name, constraint: f.constraint || null })
+    } else if (f.kind === 'bit') {
+      out.push({ name: f.name, constraint: f.constraint || null })
+    } else if (f.kind === 'repeat') {
+      if (f.children?.length) flattenProtocolFields(f.children, out)
+    } else if (f.children?.length) {
+      flattenProtocolFields(f.children, out)
+    } else {
+      out.push({ name: f.name, constraint: f.constraint || null })
+    }
+  }
+  return out
+}
+
 const historyRowsFromDataset = (dataset) => {
   return (dataset.rows || []).map((row, index) => ({
     id: ++_historyRowSeq,
@@ -89,6 +113,41 @@ export const useTestDataStore = defineStore('testData', {
     historyOfDataset: (state) => (datasetId) => {
       const ds = state.datasets.find(d => d.id === datasetId)
       return ds?.historyRows || []
+    },
+
+    /**
+     * 按数据集解析其关联字段定义（含约束与说明），供编辑弹窗预填与悬浮提示使用。
+     * 解析优先级：linkedInterface（报文 → protocolRefs 字段）> linkedProtocol（协议字段）。
+     * 字段名去重，返回 [{ name, constraint, desc }]。
+     */
+    fieldDefsOfDataset: (state) => (datasetId) => {
+      const ds = state.datasets.find(d => d.id === datasetId)
+      if (!ds) return []
+      const protocolStore = useProtocolStore()
+      let fields = []
+      if (ds.linkedInterface) {
+        const iface = protocolStore.interfaces.find(
+          (i) => i.name === ds.linkedInterface || String(i.id) === String(ds.linkedInterface)
+        )
+        if (iface) fields = collectInterfaceFields(iface, protocolStore.protocols)
+      }
+      if (!fields.length && ds.linkedProtocol) {
+        const proto = protocolStore.protocols.find(
+          (p) => p.name === ds.linkedProtocol || String(p.id) === String(ds.linkedProtocol)
+        )
+        if (proto) fields = flattenProtocolFields(proto.fields?.length ? proto.fields : proto.config?.fields)
+      }
+      if (!fields.length) return []
+      const seen = new Set()
+      return fields.filter((f) => {
+        if (seen.has(f.name)) return false
+        seen.add(f.name)
+        return true
+      }).map((f) => ({
+        name: f.name,
+        constraint: f.constraint || null,
+        desc: f.desc || f.remark || ''
+      }))
     }
   },
 
@@ -313,20 +372,39 @@ export const useTestDataStore = defineStore('testData', {
     },
 
     /**
-     * 按数据集绑定的接口字段定义，自动判定一行数据是否异常。
+     * 按数据集绑定的字段定义，实时判定一行数据是否异常。
+     * 解析优先级：linkedInterface（报文 → protocolRefs 字段）> linkedProtocol（协议字段）。
+     * 字段名去重，避免协议内重复字段名（如双「保留位」）误报「字段缺失」。
      * 仅在字段名存在交集时校验，避免泛型 KV 数据被误判。
      * @returns {boolean} 是否异常
      */
     computeAbnormal(values = {}, datasetId) {
       const ds = this.datasets.find(d => d.id === datasetId)
-      if (!ds?.linkedInterface) return false
+      if (!ds) return false
       const protocolStore = useProtocolStore()
-      const iface = protocolStore.interfaces.find(
-        (i) => i.name === ds.linkedInterface || String(i.id) === String(ds.linkedInterface)
-      )
-      if (!iface) return false
-      const fields = collectInterfaceFields(iface, protocolStore.protocols)
+      let fields = []
+      // 1) 优先按接口（报文）解析字段
+      if (ds.linkedInterface) {
+        const iface = protocolStore.interfaces.find(
+          (i) => i.name === ds.linkedInterface || String(i.id) === String(ds.linkedInterface)
+        )
+        if (iface) fields = collectInterfaceFields(iface, protocolStore.protocols)
+      }
+      // 2) 退化：按协议（字段）解析
+      if (!fields.length && ds.linkedProtocol) {
+        const proto = protocolStore.protocols.find(
+          (p) => p.name === ds.linkedProtocol || String(p.id) === String(ds.linkedProtocol)
+        )
+        if (proto) fields = flattenProtocolFields(proto.fields?.length ? proto.fields : proto.config?.fields)
+      }
       if (!fields.length) return false
+      // 按字段名去重
+      const seen = new Set()
+      fields = fields.filter(f => {
+        if (seen.has(f.name)) return false
+        seen.add(f.name)
+        return true
+      })
       const overlap = fields.some(f => f.name in (values || {}))
       if (!overlap) return false
       return checkFieldConstraints(fields, values || {}).length > 0
@@ -349,91 +427,148 @@ export const useTestDataStore = defineStore('testData', {
     },
 
     /**
-     * 智能生成测试数据：分析现有数据模式，生成新的测试行
-     * 策略：边界值扩展 + 随机组合 + 交叉变异
+     * 智能生成测试数据：依据字段定义约束，生成新的测试行。
+     * @param {string|number} datasetId 目标数据集
+     * @param {number} count 生成数量
+     * @param {'normal'|'abnormal'|'mixed'} mode 生成类型
+     *   - normal：全部字段符合约束（正向功能测试）
+     *   - abnormal：每行至少一处字段违规（鲁棒性 / 排错测试）
+     *   - mixed：正常 / 异常交替（默认各半）
+     * 生成的行标记 source = '智能生成'，便于在历史数据管理中按来源筛选。
      */
-    generateTestData(datasetId, count = 5) {
+    generateTestData(datasetId, count = 5, mode = 'normal') {
       const ds = this.datasets.find(d => d.id === datasetId)
       if (!ds) return []
       const sourceRows = [...ds.rows, ...(ds.historyRows || [])]
       if (sourceRows.length === 0) return []
 
-      // 分析每个字段的值模式
+      // 解析字段定义（含约束），用于生成合规 / 违规数据
+      const protocolStore = useProtocolStore()
+      let defs = []
+      if (ds.linkedInterface) {
+        const iface = protocolStore.interfaces.find(
+          (i) => i.name === ds.linkedInterface || String(i.id) === String(ds.linkedInterface)
+        )
+        if (iface) defs = collectInterfaceFields(iface, protocolStore.protocols)
+      }
+      if (!defs.length && ds.linkedProtocol) {
+        const proto = protocolStore.protocols.find(
+          (p) => p.name === ds.linkedProtocol || String(p.id) === String(ds.linkedProtocol)
+        )
+        if (proto) defs = flattenProtocolFields(proto.fields?.length ? proto.fields : proto.config?.fields)
+      }
+      const seen = new Set()
+      defs = defs.filter((f) => {
+        if (seen.has(f.name)) return false
+        seen.add(f.name)
+        return true
+      })
+      const defMap = {}
+      defs.forEach((f) => { defMap[f.name] = f })
+
+      // 既有值分析（无约束字段 / 兜底使用）
       const fieldNames = Object.keys(sourceRows[0].values)
       const analysis = {}
-
-      fieldNames.forEach(field => {
+      fieldNames.forEach((field) => {
         const rawValues = sourceRows.map(r => r.values[field]).filter(v => v !== undefined && v !== null && v !== '')
         const numericVals = rawValues.filter(v => typeof v === 'number' && !isNaN(v)).sort((a, b) => a - b)
         const stringVals = rawValues.filter(v => typeof v === 'string')
-
         if (numericVals.length >= 1) {
           const min = numericVals[0]
           const max = numericVals[numericVals.length - 1]
           const range = max - min
-          const uniqueSet = new Set(numericVals)
           analysis[field] = {
             type: 'numeric',
             min, max, range,
-            mean: numericVals.reduce((a, b) => a + b, 0) / numericVals.length,
-            uniqueCount: uniqueSet.size,
-            allValues: numericVals,
-            isInteger: numericVals.every(v => Number.isInteger(v))
+            isInteger: numericVals.every(v => Number.isInteger(v)),
+            allValues: numericVals
           }
         } else if (stringVals.length >= 1) {
-          const unique = [...new Set(stringVals)]
-          analysis[field] = {
-            type: 'string',
-            uniqueValues: unique,
-            count: unique.length
-          }
+          analysis[field] = { type: 'string', uniqueValues: [...new Set(stringVals)] }
         } else {
           analysis[field] = { type: 'unknown' }
         }
       })
 
+      // 合规正常值
+      const makeNormal = (c, info) => {
+        if (c.mode === 'fixed') return c.value
+        if (c.mode === 'enum') { const e = (c.entries || [])[0]; return e?.value ?? e ?? '' }
+        if (c.mode === 'range') {
+          const { min, max } = c
+          if (info?.isInteger) return Math.round(min + Math.random() * (max - min))
+          return Math.round((min + Math.random() * (max - min)) * 100) / 100
+        }
+        return ''
+      }
+      // 违规异常值
+      const makeAbnormal = (c, info) => {
+        if (c.mode === 'fixed') {
+          const v = c.value
+          return typeof v === 'number' ? v + 1 : (String(v) + '_x')
+        }
+        if (c.mode === 'enum') {
+          const vals = new Set((c.entries || []).map(e => String(e.value ?? e)))
+          let cand = 9000
+          while (vals.has(String(cand))) cand++
+          return cand
+        }
+        if (c.mode === 'range') {
+          const { min, max } = c
+          const step = info?.isInteger ? (1 + Math.floor(Math.random() * 5)) : 1
+          return Math.random() < 0.5 ? min - step : max + step
+        }
+        return ''
+      }
+
       const generated = []
       const existingValueSets = sourceRows.map(r => JSON.stringify(r.values))
+      const violatable = defs.filter(
+        f => f.constraint && ['fixed', 'enum', 'range'].includes(f.constraint.mode) && fieldNames.includes(f.name)
+      )
 
       for (let i = 0; i < count; i++) {
+        const wantAbnormal = mode === 'abnormal' ? true : mode === 'mixed' ? (i % 2 === 1) : false
         const values = {}
-        const strategy = i % 4 // 轮换策略
+        const violIdx = violatable.length ? Math.floor(Math.random() * violatable.length) : -1
+        let abnormalDone = false
+        const strategy = i % 4
 
-        fieldNames.forEach(field => {
-          const info = analysis[field]
-          if (!info || info.type === 'unknown') {
-            values[field] = ''
+        fieldNames.forEach((field) => {
+          const def = defMap[field]
+          const c = def?.constraint
+          if (c && ['fixed', 'enum', 'range'].includes(c.mode)) {
+            const isViol = wantAbnormal && !abnormalDone && violatable[violIdx] === def
+            if (isViol) { values[field] = makeAbnormal(c, analysis[field]); abnormalDone = true }
+            else { values[field] = makeNormal(c, analysis[field]) }
             return
           }
-
+          // 无约束字段：沿用既有值模式的随机 / 交叉变异
+          const info = analysis[field]
+          if (!info || info.type === 'unknown') { values[field] = ''; return }
           if (info.type === 'numeric') {
             const { min, max, range, isInteger, allValues } = info
             const jitter = range > 0 ? range * 0.05 : 1
-
             if (strategy === 0) {
-              // 边界值扩展：略超出现有范围
               const extendLow = isInteger ? Math.max(min - Math.ceil(jitter), min - 1) : min - jitter
               values[field] = i % 2 === 0 ? extendLow : (isInteger ? max + Math.ceil(jitter) : max + jitter)
             } else if (strategy === 1) {
-              // 范围内随机值
               const raw = min + Math.random() * range
               values[field] = isInteger ? Math.round(raw) : Math.round(raw * 100) / 100
             } else if (strategy === 2) {
-              // 交叉变异：从两个不同行取不同字段组合
               const rowA = sourceRows[Math.floor(Math.random() * sourceRows.length)]
               values[field] = rowA.values[field] ?? 0
             } else {
-              // 边界 + 均值附近
               const nearBoundary = i % 2 === 0 ? min : max
-              values[field] = isInteger ? Math.round(nearBoundary + (Math.random() - 0.5) * jitter * 2) : Math.round((nearBoundary + (Math.random() - 0.5) * jitter * 2) * 100) / 100
+              values[field] = isInteger
+                ? Math.round(nearBoundary + (Math.random() - 0.5) * jitter * 2)
+                : Math.round((nearBoundary + (Math.random() - 0.5) * jitter * 2) * 100) / 100
             }
           } else if (info.type === 'string') {
             if (strategy === 2) {
-              // 交叉变异
               const rowA = sourceRows[Math.floor(Math.random() * sourceRows.length)]
               values[field] = rowA.values[field] ?? info.uniqueValues[0]
             } else {
-              // 随机选择已知值
               values[field] = info.uniqueValues[Math.floor(Math.random() * info.uniqueValues.length)]
             }
           }
@@ -443,10 +578,7 @@ export const useTestDataStore = defineStore('testData', {
         const valueKey = JSON.stringify(values)
         if (!existingValueSets.includes(valueKey)) {
           existingValueSets.push(valueKey)
-          generated.push({
-            label: `智能生成 #${i + 1}`,
-            values
-          })
+          generated.push({ label: `智能生成 #${i + 1}`, values, source: '智能生成' })
         }
       }
 
@@ -465,7 +597,9 @@ export const useTestDataStore = defineStore('testData', {
         moduleName: data.moduleName || '',
         desc: data.desc || '',
         uploadedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
-        rowCount: data.rowCount || 0
+        rowCount: data.rowCount || 0,
+        // 数据链等文本类文件保留原文，供「解析」再次导入
+        content: data.content || ''
       }
       this.files.unshift(file)
       return file

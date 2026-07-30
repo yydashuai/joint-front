@@ -120,7 +120,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="savedAt" label="保存日期" width="110" align="center" />
-        <el-table-column label="操作" width="180" align="center" fixed="right">
+        <el-table-column label="操作" width="270" align="center" fixed="right">
           <template #default="{ row }">
             <el-tooltip :content="row.excellent ? '移出优秀历史' : '加入优秀历史'">
               <el-button text :type="row.excellent ? 'warning' : 'info'" size="small" :icon="Star" @click="onToggleExcellent(row)" />
@@ -186,11 +186,24 @@
         <el-form-item label="数据内容">
           <div class="kv-editor">
             <div v-for="(item, idx) in formData.kvPairs" :key="idx" class="kv-row">
-              <el-input v-model="item.key" placeholder="字段名" style="width: 40%;" />
-              <el-input v-model="item.value" placeholder="值" style="width: 45%;" />
-              <el-button text type="danger" :icon="Delete" @click="removeKvPair(idx)" />
+              <el-tooltip v-if="!keyEditable" placement="top-start" :show-after="150">
+                <template #content>
+                  <div class="kv-tip">{{ fieldTooltipContent(item.key) }}</div>
+                </template>
+                <span class="kv-key-text">{{ item.key }}</span>
+              </el-tooltip>
+              <el-input v-else v-model="item.key" placeholder="字段名" class="kv-key" />
+              <el-input v-model="item.value" placeholder="值" class="kv-value" />
+              <el-button v-if="keyEditable" text type="danger" :icon="Delete" @click="removeKvPair(idx)" />
             </div>
-            <el-button text type="primary" :icon="Plus" @click="addKvPair">添加字段</el-button>
+            <el-button v-if="keyEditable" text type="primary" :icon="Plus" @click="addKvPair">添加字段</el-button>
+            <span v-else class="kv-readonly-hint">字段名由关联定义决定，仅可编辑取值</span>
+          </div>
+          <div class="kv-validation">
+            <span class="kv-validation__label">实时校验：</span>
+            <el-tag v-if="liveValidation === true" size="small" type="danger" effect="dark">异常</el-tag>
+            <el-tag v-else-if="liveValidation === false" size="small" type="success" effect="plain">正常</el-tag>
+            <span v-else class="text-ph">—</span>
           </div>
         </el-form-item>
         <el-form-item label="备注">
@@ -237,7 +250,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { Search, Delete, Right, Plus, Edit, Promotion, Star, FolderAdd } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTestDataStore } from '@/stores/testData'
@@ -367,6 +380,8 @@ const onAddNew = () => {
   isEditing.value = false
   editingRow.value = null
   resetForm()
+  // 按所选数据集的字段定义预填（仅取值可编辑）
+  formData.kvPairs = buildKvFromDefs(formData.datasetId, {})
   dialogVisible.value = true
 }
 
@@ -377,10 +392,8 @@ const onEditRow = (row) => {
   formData.label = row.label
   formData.source = normalizeSource(row.source)
   formData.remark = row.remark || ''
-  const entries = Object.entries(row.values || {})
-  formData.kvPairs = entries.length > 0
-    ? entries.map(([key, value]) => ({ key, value: String(value) }))
-    : [{ key: '', value: '' }]
+  // 按字段定义预填：标签只读，值取自该行现有数据
+  formData.kvPairs = buildKvFromDefs(row._datasetId, row.values || {})
   dialogVisible.value = true
 }
 
@@ -392,6 +405,80 @@ const removeKvPair = (idx) => {
   formData.kvPairs.splice(idx, 1)
   if (formData.kvPairs.length === 0) formData.kvPairs.push({ key: '', value: '' })
 }
+
+/* ========== 字段定义查询（按数据集） ========== */
+// 当前所选数据集的关联字段定义（含约束与说明），用于预填与悬浮提示
+const currentFieldDefs = computed(() => {
+  if (!formData.datasetId) return []
+  return tdStore.fieldDefsOfDataset(formData.datasetId) || []
+})
+// 有字段定义 → 标签（字段名）只读，仅取值可编辑；无定义（未关联）才允许手动增删字段
+const keyEditable = computed(() => currentFieldDefs.value.length === 0)
+const fieldMetaMap = computed(() => {
+  const m = {}
+  currentFieldDefs.value.forEach((f) => { m[f.name] = f })
+  return m
+})
+
+const constraintText = (c) => {
+  if (!c) return '无（自由值）'
+  if (c.mode === 'fixed') return `固定值 ${c.value}`
+  if (c.mode === 'enum') return '枚举：' + (c.entries || []).map((e) => e.label || e).join(' / ')
+  if (c.mode === 'range') return `范围 ${c.min} ~ ${c.max}`
+  return ''
+}
+
+// 悬浮提示：字段名 + 说明 + 约束范围，方便测试人员核对
+const fieldTooltipContent = (name) => {
+  const def = fieldMetaMap.value[name]
+  const lines = [`字段：${name}`]
+  if (def?.desc) lines.push('说明：' + def.desc)
+  lines.push('约束：' + constraintText(def?.constraint))
+  return lines.join('\n')
+}
+
+// 依据字段定义预填键值对：值取已有数据，缺失留空；并保留行内额外字段
+const buildKvFromDefs = (datasetId, existing = {}) => {
+  const defs = datasetId ? (tdStore.fieldDefsOfDataset(datasetId) || []) : []
+  if (!defs.length) {
+    const entries = Object.entries(existing || {})
+    return entries.length
+      ? entries.map(([k, v]) => ({ key: k, value: String(v) }))
+      : [{ key: '', value: '' }]
+  }
+  const result = defs.map((d) => ({
+    key: d.name,
+    value: existing[d.name] != null ? String(existing[d.name]) : ''
+  }))
+  const names = new Set(defs.map((d) => d.name))
+  Object.entries(existing || {}).forEach(([k, v]) => {
+    if (!names.has(k)) result.push({ key: k, value: String(v) })
+  })
+  return result.length ? result : [{ key: '', value: '' }]
+}
+
+// 新增模式下切换数据集时，按新定义重新预填键集合
+watch(() => formData.datasetId, (newId) => {
+  if (!isEditing.value && dialogVisible.value) {
+    formData.kvPairs = buildKvFromDefs(newId, {})
+  }
+})
+
+/* 实时校验：编辑过程中按字段定义即时重算正常/异常状态 */
+const buildValuesFromForm = () => {
+  const values = {}
+  formData.kvPairs.forEach(({ key, value }) => {
+    if (key && key.trim()) values[key.trim()] = value
+  })
+  return values
+}
+
+const liveValidation = computed(() => {
+  if (!formData.datasetId) return null
+  const values = buildValuesFromForm()
+  if (Object.keys(values).length === 0) return null
+  return tdStore.computeAbnormal(values, formData.datasetId)
+})
 
 const onSubmitForm = () => {
   if (!formData.datasetId) {
@@ -689,10 +776,52 @@ const formatValues = (values) => {
   gap: 8px;
 }
 
+/* 实时校验徽标 */
+.kv-validation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+
+  &__label { font-size: 13px; color: var(--el-text-color-regular); }
+}
+
 .kv-row {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 只读字段名（标签） */
+.kv-key-text {
+  flex: 0 0 40%;
+  max-width: 40%;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  background: var(--el-fill-color-lighter);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: help;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kv-key { flex: 0 0 40%; }
+
+.kv-value { flex: 1 1 auto; }
+
+.kv-readonly-hint {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+}
+
+/* 悬浮提示文本（支持多行） */
+.kv-tip {
+  white-space: pre-line;
+  line-height: 1.6;
+  font-size: 12px;
 }
 
 /* 直接发送对话框 */
