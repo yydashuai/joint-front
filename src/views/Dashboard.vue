@@ -127,51 +127,7 @@
               </div>
             </div>
 
-            <div class="target-route">
-              <span>
-                <small>系统</small>
-                <strong>{{ targetSystem?.name || '—' }}</strong>
-              </span>
-              <el-icon><ArrowRight /></el-icon>
-              <span>
-                <small>{{ selectedTarget.kind === 'scheme' ? '覆盖模块' : '目标模块' }}</small>
-                <strong>{{ targetModuleText }}</strong>
-              </span>
-              <el-icon><ArrowRight /></el-icon>
-              <span>
-                <small>{{ selectedTarget.kind === 'scheme' ? '接口范围' : '测试目标' }}</small>
-                <strong>{{ targetInterfaces.length }} 个接口</strong>
-              </span>
-            </div>
-
-            <div class="readiness-section">
-              <div class="readiness-section__head">
-                <div>
-                  <h4>测试就绪检查</h4>
-                  <p>进入监测前检查当前目标所需的链路、数据和字段。</p>
-                </div>
-                <el-tag :type="targetFullyReady ? 'success' : 'warning'" effect="plain">
-                  {{ targetFullyReady ? '可以开始测试' : '部分配置待完善' }}
-                </el-tag>
-              </div>
-
-              <div class="readiness-grid">
-                <div
-                  v-for="item in readinessItems"
-                  :key="item.label"
-                  class="readiness-item"
-                  :class="{ 'is-ready': item.ok }"
-                >
-                  <span class="readiness-item__icon">
-                    <el-icon><CircleCheck v-if="item.ok" /><Warning v-else /></el-icon>
-                  </span>
-                  <span>
-                    <small>{{ item.label }}</small>
-                    <strong>{{ item.value }}</strong>
-                  </span>
-                </div>
-              </div>
-            </div>
+          
 
             <div v-if="selectedTarget.kind === 'scheme'" class="scheme-interfaces">
               <div class="scheme-interfaces__head">
@@ -203,7 +159,6 @@
                 <el-icon><TopRight /></el-icon>
                 <span>
                   <strong>进入发送测试</strong>
-                  <small>载入所选{{ targetTypeText }}并配置发送</small>
                 </span>
               </el-button>
               <el-button
@@ -214,7 +169,6 @@
                 <el-icon><BottomLeft /></el-icon>
                 <span>
                   <strong>进入接收测试</strong>
-                  <small>载入所选{{ targetTypeText }}并开始监听</small>
                 </span>
               </el-button>
             </div>
@@ -923,8 +877,8 @@ const openTargetConfiguration = () => {
     justify-content: space-between;
     gap: 12px;
 
-    h4 { margin: 0; font-size: 12px; }
-    span { color: var(--el-text-color-secondary); font-size: 10px; }
+    h4 { margin: 0; font-size: 14px; }
+    span { color: var(--el-text-color-secondary); font-size: 14px; }
   }
 
   &__list {
@@ -941,7 +895,7 @@ const openTargetConfiguration = () => {
       border-radius: 5px;
       background: #f3f5f8;
       color: #516174;
-      font-size: 10px;
+      font-size: 14px;
     }
 
     i {

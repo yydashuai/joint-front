@@ -231,9 +231,8 @@
         </el-table>
       </div>
 
-      <el-tooltip content="添加一行新的测试数据 (Ctrl+N)"><el-button class="add-row-btn" text type="primary" :icon="Plus" @click="onAddRow">
+      <el-tooltip content="添加一行新的测试数据"><el-button class="add-row-btn" text type="primary" :icon="Plus" @click="onAddRow">
         添加测试行
-        <span class="shortcut-hint">Ctrl+N</span>
       </el-button></el-tooltip>
     </div>
 

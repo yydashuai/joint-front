@@ -43,7 +43,7 @@
               </div>
             </div>
             <div class="rule-head__desc">
-              <el-input v-model="editDesc" type="textarea" :rows="2" placeholder="规则集说明" @blur="commitDesc" />
+              <el-input v-model="editDesc" type="textarea" :rows="1" placeholder="规则集说明" @blur="commitDesc" />
             </div>
           </el-card>
 
