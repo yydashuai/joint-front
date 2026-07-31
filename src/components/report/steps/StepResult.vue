@@ -68,7 +68,7 @@
         </div>
         <div class="paper-info">
           <div>
-            <span>测试任务创建者</span>
+            <span>批次来源</span>
             <el-input v-if="editMode" v-model="cur.taskCreator" size="small" />
             <strong v-else>{{ cur.taskCreator || '—' }}</strong>
           </div>
@@ -188,7 +188,7 @@ const reportBodyHtml = () => {
       <span>${escapeHtml(cur.value.createdAt)}</span>
     </div>
     <table class="export-info">
-      <tr><th>测试任务创建者</th><td>${escapeHtml(cur.value.taskCreator || '—')}</td><th>报告生成者</th><td>${escapeHtml(cur.value.generatorName || '—')}</td></tr>
+      <tr><th>批次来源</th><td>${escapeHtml(cur.value.taskCreator || '—')}</td><th>报告生成者</th><td>${escapeHtml(cur.value.generatorName || '—')}</td></tr>
     </table>`
   return `<h1>${escapeHtml(cur.value.title)}</h1>${meta}${mdToHtml(store.reportMarkdown(cur.value, { includeTitle: false, includeMeta: false }))}`
 }

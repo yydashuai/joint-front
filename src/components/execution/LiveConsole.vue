@@ -200,13 +200,13 @@ const statusText = computed(() => ({
   running: '执行中',
   paused: '已暂停',
   done: '已完成',
-  stopped: '已停止',
+  stopped: '已完成',
 }[store.status]))
 const statusType = computed(() => ({
   running: 'primary',
   paused: 'warning',
   done: 'success',
-  stopped: 'info',
+  stopped: 'success',
   idle: 'info',
 }[store.status]))
 /* ---- 待发送行的数据预览（未发送时报文列显示字段值摘要） ---- */
@@ -236,7 +236,7 @@ const liveJudge = computed(() => {
 const isIssueField = (name) => liveJudge.value.issues.some((i) => i.name === name)
 
 const onRowClick = (entry) => {
-  if (store.status === 'running') return
+  if (store.status === 'running' || ['done', 'stopped'].includes(store.status)) return
   editEntry.value = entry
   // 回填该条数据当前的完整字段值；个别缺失字段按约束兜底，保证用户看到的是实际发送的数据
   const values = JSON.parse(JSON.stringify(entry.values || {}))

@@ -48,10 +48,8 @@
           v-if="selectedKind === 'interface' && curIf"
           :iface="curIf"
           :system-options="systemOptions"
-          :module-options="moduleOptions(curIf.systemId)"
           :protocol-options="store.protocolOptions"
           @delete="store.removeInterface(curIf.id)"
-          @system-change="onIfSystemChange"
           @navigate-protocol="onNavigateProtocol"
         />
 
@@ -110,8 +108,6 @@ const isByteStreamProtocol = (p) =>
   hasByteFields(p)
 
 const systemOptions = computed(() => systemStore.systems.map((s) => ({ label: s.name, value: s.id })))
-const moduleOptions = (systemId) => connStore.nodes.filter((n) => n.systemId === systemId).map((m) => ({ label: m.name, value: m.id }))
-const onIfSystemChange = () => { if (curIf.value) curIf.value.moduleId = null }
 const onNavigateProtocol = (protocolId) => {
   selectedKind.value = 'protocol'
   store.selectedProtocolId = protocolId
@@ -185,10 +181,10 @@ const onTypeSelected = (category) => {
     framing: isByteStream ? { mode: 'fixed', fixedLength: 0, lengthFieldId: null, lengthIncludesHeader: true, lengthIncludesSelf: true, headerBytes: '', footerBytes: '' } : null,
     checksum: isByteStream ? { type: 'none', fieldId: null, rangeStart: 0, rangeEnd: 0, polynomial: '0x1021', initValue: '0xFFFF', reflectIn: false, reflectOut: false, xorOut: '0x0000' } : null,
     fileConfig: category === 'file'
-      ? { mediaType: 'application/octet-stream', extension: '.bin', maxSizeMb: 100, checksum: 'sha256', chunkSizeKb: 64 }
+      ? { fileType: 'bin', maxSizeMb: 100, checksum: 'sha256', chunkSizeKb: 64 }
       : null,
     matrixConfig: category === 'matrix'
-      ? { fileType: 'binary-matrix', scalarType: 'float32', rows: 0, columns: 0, rowMajor: true, headerBytes: 0 }
+      ? { fileType: 'csv', rows: 0, columns: 0 }
       : null,
   })
   selectedKind.value = 'protocol'

@@ -24,35 +24,12 @@
     </div>
 
     <div v-else class="dci-body">
-      <!-- 归属选择 -->
-      <el-form :model="form" label-width="88px" size="default" class="dci-attr">
-        <el-form-item label="关联系统" required>
-          <el-select v-model="form.systemId" placeholder="选择系统" clearable filterable style="width: 100%;" @change="onSystemChange">
-            <el-option v-for="sys in systemStore.systems" :key="sys.id" :label="sys.name" :value="sys.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="关联模块" required>
-          <el-select v-model="form.moduleName" placeholder="选择模块" clearable filterable style="width: 100%;" :disabled="!form.systemId">
-            <el-option v-for="mod in moduleOptions" :key="mod.id" :label="mod.name" :value="mod.name" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-
-      <el-alert
-        :closable="false"
-        type="info"
-        class="dci-summary"
-        :title="`已解析 ${parsed.length} 个报文定义，共 ${totalRows} 条数据`"
-        description="字段类型默认按数据推断（数值→uint16，字符串→utf8），可逐字段修改。保存目标可自由勾选，文件本身始终登记到「数据文件管理」。"
-      />
-
       <div class="dci-view-toggle">
         <span class="dci-view-toggle__label">查看：</span>
         <el-radio-group v-model="viewMode" size="small">
           <el-radio-button value="fields">字段定义</el-radio-button>
           <el-radio-button value="matrix">数据矩阵</el-radio-button>
         </el-radio-group>
-        <span class="dci-view-toggle__hint">数据矩阵可直接修改单元格值，确认导入后生效</span>
       </div>
 
       <!-- 保存目标（可选、不互斥） -->
@@ -132,9 +109,56 @@
     <template #footer>
       <el-button v-if="parsed.length" text type="info" @click="resetAll">重新选择文件</el-button>
       <el-button @click="visible = false">取消</el-button>
-      <el-button v-if="parsed.length" type="primary" :disabled="!canImport" @click="onConfirm">
+      <el-button v-if="parsed.length" type="primary" :disabled="!canImport" @click="openAssignmentDialog">
         {{ confirmLabel }}
       </el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
+    v-model="assignmentVisible"
+    title="选择导入位置"
+    width="480px"
+    append-to-body
+    destroy-on-close
+  >
+    <el-alert
+      title="选择本次导入数据的所属系统和模块"
+      :description="`将导入 ${parsed.length} 个报文、${totalRows} 条数据，可选择任意系统及其模块。`"
+      type="info"
+      :closable="false"
+      show-icon
+      class="dci-assignment-hint"
+    />
+    <el-form :model="form" label-width="82px" class="dci-assignment-form">
+      <el-form-item label="所属系统" required>
+        <el-select
+          v-model="form.systemId"
+          placeholder="选择系统"
+          clearable
+          filterable
+          style="width: 100%;"
+          @change="onSystemChange"
+        >
+          <el-option v-for="sys in systemStore.systems" :key="sys.id" :label="sys.name" :value="sys.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="所属模块" required>
+        <el-select
+          v-model="form.moduleId"
+          placeholder="选择模块"
+          clearable
+          filterable
+          style="width: 100%;"
+          :disabled="!form.systemId"
+        >
+          <el-option v-for="mod in moduleOptions" :key="mod.id" :label="mod.name" :value="mod.id" />
+        </el-select>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="assignmentVisible = false">返回检查</el-button>
+      <el-button type="primary" :disabled="!canAssign" @click="performImport">确认导入</el-button>
     </template>
   </el-dialog>
 </template>
@@ -182,12 +206,19 @@ const saveDatasets = ref(true)
 // 查看模式：字段定义 / 数据矩阵（可编辑）
 const viewMode = ref('fields')
 
-const form = reactive({ systemId: '', moduleName: '' })
+const assignmentVisible = ref(false)
+const form = reactive({ systemId: '', moduleId: '' })
 
 const moduleOptions = computed(() => {
   if (!form.systemId) return []
-  return connStore.nodes.filter((n) => n.systemId === form.systemId)
+  return connStore.nodes.filter((module) => String(module.systemId) === String(form.systemId))
 })
+const selectedModule = computed(() =>
+  connStore.nodes.find((module) =>
+    String(module.id) === String(form.moduleId) &&
+    String(module.systemId) === String(form.systemId)
+  ) || null
+)
 
 const typeGroups = computed(() => {
   const groups = {}
@@ -201,12 +232,8 @@ const typeGroups = computed(() => {
 
 const totalRows = computed(() => parsed.value.reduce((s, p) => s + p.rows.length, 0))
 
-// 勾选了任一保存目标 → 必须选系统/模块；均未勾选（仅登记文件）→ 无强制要求
-const canImport = computed(() => {
-  if (!parsed.value.length) return false
-  if (saveFields.value || saveDatasets.value) return !!(form.systemId && form.moduleName)
-  return true
-})
+const canImport = computed(() => parsed.value.length > 0)
+const canAssign = computed(() => !!(form.systemId && form.moduleId && selectedModule.value))
 
 const confirmLabel = computed(() => {
   const targets = []
@@ -222,7 +249,7 @@ const applyText = (name, text) => {
   rawText.value = text
   const result = parseDataChain(text)
   if (!result.length) {
-    parseError.value = '未能解析出任何报文定义，请检查文件格式（段落标题需以「序号、名称」开头，如「一、SpaceMissions」）。'
+    parseError.value = '未能解析出任何报文定义，请检查文件格式（段落标题需以「序号、名称」开头，如「一、MonitoringStatus」）。'
     parsed.value = []
     return false
   }
@@ -259,14 +286,9 @@ watch(() => props.modelValue, (v) => {
     saveFields.value = true
     saveDatasets.value = true
     viewMode.value = 'fields'
-    // 初始化默认值（当前系统/模块）
-    form.systemId = props.currentSystemId || ''
-    form.moduleName = props.currentModuleName || ''
     // 从数据文件管理「解析」进入：预载文件内容
     if (props.presetFile?.content) {
       fromPreset.value = true
-      if (props.presetFile.systemId) form.systemId = props.presetFile.systemId
-      if (props.presetFile.moduleName) form.moduleName = props.presetFile.moduleName
       if (!applyText(props.presetFile.name || '数据链文件', props.presetFile.content)) {
         ElMessage.warning('该文件内容无法解析为数据链格式')
       }
@@ -274,7 +296,7 @@ watch(() => props.modelValue, (v) => {
   }
 })
 
-const onSystemChange = () => { form.moduleName = '' }
+const onSystemChange = () => { form.moduleId = '' }
 
 const onFileChange = async (file) => {
   parseError.value = ''
@@ -299,24 +321,38 @@ const resetAll = () => {
   rawText.value = ''
   fromPreset.value = false
   viewMode.value = 'fields'
+  assignmentVisible.value = false
+  form.systemId = ''
+  form.moduleId = ''
 }
 
-const onClose = () => emit('update:modelValue', false)
+const onClose = () => {
+  assignmentVisible.value = false
+  emit('update:modelValue', false)
+}
 
 /* ============ 构建并写入 stores ============ */
-const resolveModuleId = () => {
-  const mod = connStore.nodes.find((n) => n.name === form.moduleName && n.systemId === form.systemId)
-  return mod?.id ?? null
+const openAssignmentDialog = () => {
+  if (!canImport.value) return
+  const preferredSystemId = props.presetFile?.systemId || props.currentSystemId || ''
+  const preferredModuleName = props.presetFile?.moduleName || props.currentModuleName || ''
+  form.systemId = preferredSystemId
+  form.moduleId = connStore.nodes.find(
+    (module) =>
+      String(module.systemId) === String(preferredSystemId) &&
+      module.name === preferredModuleName
+  )?.id || ''
+  assignmentVisible.value = true
 }
 
-const onConfirm = () => {
-  if (!canImport.value) {
-    ElMessage.warning('请先选择关联系统并指定模块')
+const performImport = () => {
+  if (!canAssign.value) {
+    ElMessage.warning('请选择所属系统和模块')
     return
   }
   const systemId = form.systemId
-  const moduleName = form.moduleName
-  const moduleId = resolveModuleId()
+  const moduleId = form.moduleId
+  const moduleName = selectedModule.value.name
   const createdIds = []
 
   parsed.value.forEach((para) => {
@@ -413,6 +449,7 @@ const onConfirm = () => {
   if (!doneParts.length) doneParts.push('文件已登记到数据文件管理')
   ElMessage.success(`导入完成：${doneParts.join('，')}`)
   emit('imported', createdIds)
+  assignmentVisible.value = false
   visible.value = false
 }
 </script>
@@ -435,9 +472,6 @@ const onConfirm = () => {
   &__label { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
   &__help { color: var(--el-text-color-placeholder); cursor: help; }
 }
-.dci-attr { margin-bottom: 0; }
-.dci-summary { margin: 4px 0; }
-
 .dci-scroll { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 4px; }
 .dci-para { padding: 6px 4px; }
 .dci-para + .dci-para { border-top: 1px dashed var(--el-border-color-lighter); }
@@ -462,4 +496,10 @@ const onConfirm = () => {
 
 .mono { font-family: 'Consolas', 'Monaco', monospace; }
 .text-secondary { color: var(--el-text-color-secondary); }
+
+.dci-assignment-hint { margin-bottom: 18px; }
+.dci-assignment-form {
+  padding-right: 12px;
+  :deep(.el-form-item:last-child) { margin-bottom: 0; }
+}
 </style>

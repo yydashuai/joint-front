@@ -40,7 +40,7 @@ import StepGenerate from '@/components/report/steps/StepGenerate.vue'
 import StepResult from '@/components/report/steps/StepResult.vue'
 
 const step = ref(1)
-const form = reactive({ runId: null, title: '', templateId: null })
+const form = reactive({ batchId: null, title: '', templateId: null })
 const materials = reactive([])
 const regenerateFromId = ref(null)
 const autoGenerateTick = ref(0)
@@ -59,7 +59,7 @@ const onGenerated = () => {
 
 const regenerateReport = async (report) => {
   if (!report) return
-  form.runId = report.runId
+  form.batchId = report.batchId || report.runId
   form.title = report.title
   form.templateId = report.templateId
   materials.splice(0, materials.length, ...(report.materials || []).map((m) => ({ ...m })))
@@ -69,10 +69,10 @@ const regenerateReport = async (report) => {
   autoGenerateTick.value += 1
 }
 
-watch(() => route.query.runId, (value) => {
-  const runId = firstQueryValue(value)
-  if (!runId) return
-  form.runId = String(runId)
+watch(() => route.query.batchId || route.query.runId, (value) => {
+  const batchId = firstQueryValue(value)
+  if (!batchId) return
+  form.batchId = String(batchId)
 }, { immediate: true })
 </script>
 

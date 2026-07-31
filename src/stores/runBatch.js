@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { alerts, runHistory, systems } from '@/mock/seed-data'
+import { alerts, runHistory, testInterfaces } from '@/mock/seed-data'
 
 const round = (n) => Math.round(n)
 const sum = (arr, pick = (x) => x) => arr.reduce((total, item) => total + (pick(item) || 0), 0)
@@ -15,7 +15,35 @@ const mergeTypeCounts = (rows = []) => rows.reduce((acc, row) => {
 const normalizeDate = (text = '') => String(text).trim().split(' ')[0].replace(/\//g, '-')
 const normalizeDateTime = (text = '') => String(text).trim().replace(/\//g, '-')
 const batchIdOf = (systemId, dateKey) => `batch-${systemId}-${dateKey}`
-const systemNameOf = (systemId) => systems.find((item) => item.id === systemId)?.name || systemId || '未知系统'
+const receiveBatchIdOf = (systemId, dateKey) => `receive-batch-${systemId}-${dateKey}`
+const batchTypeLabel = (batchType) => batchType === 'receive' ? '接收批次' : '发送批次'
+
+export const buildBatchScope = ({ scheme = null, interfaces = [] } = {}) => {
+  const normalizedInterfaces = interfaces
+    .filter(Boolean)
+    .map((item) => ({
+      id: item.id || item.interfaceId || '',
+      name: item.name || item.iface || '未命名接口',
+    }))
+  const interfaceIds = [...new Set(normalizedInterfaces.map((item) => item.id).filter(Boolean))]
+  const interfaceNames = [...new Set(normalizedInterfaces.map((item) => item.name).filter(Boolean))]
+  const displayName = scheme?.name
+    || (interfaceNames.length === 1
+      ? interfaceNames[0]
+      : interfaceNames.length > 1
+        ? `${interfaceNames[0]}等${interfaceNames.length}个接口`
+        : '未命名接口范围')
+  return {
+    schemeId: scheme?.id || '',
+    schemeName: scheme?.name || '',
+    interfaceIds,
+    interfaceNames,
+    displayName,
+  }
+}
+
+const batchNameOf = (batchType, scope, startedAt) =>
+  `${scope?.displayName || '未命名接口范围'} · ${batchTypeLabel(batchType)} · ${normalizeDateTime(startedAt).slice(0, 16)}`
 
 export const seedExceptionCapturedTime = (index) =>
   `2026-06-${19 + (index % 7)} ${String(8 + (index % 16)).padStart(2, '0')}:${String(10 + (index % 50)).padStart(2, '0')}:00`
@@ -28,46 +56,12 @@ const seedGroups = (() => {
     if (!map.has(key)) map.set(key, { runId: key, systemId: row.systemId, dateKey, rows: [] })
     map.get(key).rows.push(row)
   })
-  const historySystems = new Set([...map.values()].map((group) => group.systemId))
-  alerts.forEach((alert, index) => {
-    if (historySystems.has(alert.systemId)) return
-    const dateKey = normalizeDate(alert.capturedTime || seedExceptionCapturedTime(index))
-    const key = batchIdOf(alert.systemId, dateKey)
-    if (!map.has(key)) map.set(key, { runId: key, systemId: alert.systemId, dateKey, rows: [] })
-    map.get(key).rows.push({
-      id: `seedrun-alert-${alert.id}`,
-      systemId: alert.systemId,
-      moduleId: alert.moduleId || '',
-      moduleName: '',
-      taskId: '',
-      taskName: `${alert.iface || '异常接口'} 联试`,
-      interfaceId: '',
-      iface: alert.iface || '异常接口',
-      proto: '',
-      startedAt: `${dateKey} 09:00:00`,
-      finishedAt: `${dateKey} 09:00:30`,
-      dateKey,
-      total: 1,
-      success: 1,
-      abnormal: 0,
-      abnormalTypes: {},
-      failed: 0,
-      error: 0,
-      avgMs: 100,
-      durations: [100],
-      executionTime: 1,
-      rps: 1,
-    })
-  })
   return map
 })()
 
 export const seedRunIdForAlert = (alert = {}, index = 0) => {
   const dateKey = normalizeDate(alert.capturedTime || seedExceptionCapturedTime(index))
-  const exact = batchIdOf(alert.systemId, dateKey)
-  if (seedGroups.has(exact)) return exact
-  const firstSameSystem = [...seedGroups.values()].find((group) => group.systemId === alert.systemId)
-  return firstSameSystem?.runId || exact
+  return receiveBatchIdOf(alert.systemId, dateKey)
 }
 
 const buildSummary = (rows = []) => {
@@ -117,7 +111,6 @@ const normalizeStep = (row) => ({
 const normalizeExceptionForBatch = (alert, index) => ({
   id: alert.id,
   type: alert.type,
-  level: alert.level || '中',
   time: alert.capturedTime || seedExceptionCapturedTime(index),
   capturedTime: alert.capturedTime || seedExceptionCapturedTime(index),
   iface: alert.iface || '未命名接口',
@@ -164,7 +157,12 @@ const buildBatch = ({ runId, systemId, dateKey, rows, state = 'done', startedAt,
   return {
     id: runId,
     runId,
-    name: `${systemNameOf(systemId)} ${normalizeDateTime(start)} 联试批次`,
+    batchId: runId,
+    batchType: 'send',
+    status: 'completed',
+    finishReason: 'natural',
+    scope: buildBatchScope({ interfaces: stepResults.map((item) => ({ id: item.interfaceId, name: item.iface })) }),
+    name: '',
     systemId,
     dateKey,
     tasks: stepResults.map((item) => ({
@@ -189,8 +187,159 @@ const buildBatch = ({ runId, systemId, dateKey, rows, state = 'done', startedAt,
   }
 }
 
+const seedInterfaceOfAlert = (alert) =>
+  testInterfaces.find((item) => item.systemId === alert.systemId && item.moduleId === alert.moduleId)
+  || testInterfaces.find((item) => item.systemId === alert.systemId)
+  || null
+
+const seedReceiveBatches = () => {
+  const groups = new Map()
+  alerts.forEach((alert, index) => {
+    const dateKey = normalizeDate(alert.capturedTime || seedExceptionCapturedTime(index))
+    const id = receiveBatchIdOf(alert.systemId, dateKey)
+    if (!groups.has(id)) groups.set(id, { id, systemId: alert.systemId, dateKey, alerts: [] })
+    groups.get(id).alerts.push({ alert, index })
+  })
+
+  return [...groups.values()].map((group) => {
+    const sortedAlerts = [...group.alerts].sort((a, b) =>
+      String(a.alert.capturedTime || '').localeCompare(String(b.alert.capturedTime || ''))
+    )
+    const interfaceMap = new Map()
+    sortedAlerts.forEach(({ alert }) => {
+      const iface = seedInterfaceOfAlert(alert)
+      const id = iface?.id || `${group.systemId}-${alert.iface}`
+      if (!interfaceMap.has(id)) {
+        interfaceMap.set(id, {
+          id,
+          name: iface?.name || alert.iface || '未命名接口',
+          moduleId: alert.moduleId || iface?.moduleId || '',
+        })
+      }
+    })
+    const interfaces = [...interfaceMap.values()]
+    const scope = buildBatchScope({ interfaces })
+    const records = []
+    let seq = 0
+    interfaces.forEach((iface, ifaceIndex) => {
+      const normalCount = 6 + ifaceIndex * 2
+      for (let index = 0; index < normalCount; index += 1) {
+        seq += 1
+        records.push({
+          id: `${group.id}-normal-${seq}`,
+          kind: 'recv',
+          seq,
+          time: `09:${String(12 + ifaceIndex * 8 + index).padStart(2, '0')}:00`,
+          interfaceId: iface.id,
+          iface: iface.name,
+          moduleId: iface.moduleId,
+          systemId: group.systemId,
+          transport: 'bin',
+          byteLength: 24 + (index % 4) * 4,
+          hex: '',
+          verdict: { status: 'ok', tag: '正常解析', issues: [] },
+          exceptionId: '',
+          savedToDataset: false,
+          forwardTarget: null,
+        })
+      }
+    })
+
+    const exceptions = sortedAlerts.map(({ alert, index }, alertIndex) => {
+      const iface = seedInterfaceOfAlert(alert)
+      const interfaceId = iface?.id || `${group.systemId}-${alert.iface}`
+      const interfaceName = iface?.name || alert.iface || '未命名接口'
+      const exception = {
+        ...normalizeExceptionForBatch(alert, index),
+        batchId: group.id,
+        runId: group.id,
+        interfaceId,
+        iface: interfaceName,
+        detail: {
+          ruleMessage: alert.remark || '',
+          fieldPath: alert.field || '',
+        },
+      }
+      seq += 1
+      const unparsed = alert.type === '无法解析'
+      records.push({
+        id: `${group.id}-abnormal-${alert.id}`,
+        kind: 'recv',
+        seq,
+        time: String(alert.capturedTime || '').split(' ')[1] || `10:${String(alertIndex).padStart(2, '0')}:00`,
+        interfaceId,
+        iface: interfaceName,
+        moduleId: alert.moduleId || iface?.moduleId || '',
+        systemId: group.systemId,
+        transport: 'bin',
+        byteLength: unparsed ? 18 : 32,
+        hex: '',
+        verdict: {
+          status: unparsed ? 'unparsed' : 'error',
+          tag: alert.type,
+          issues: [{ field: alert.field || '', message: alert.remark || '' }],
+        },
+        exceptionId: alert.id,
+        savedToDataset: alertIndex % 2 === 0,
+        forwardTarget: null,
+      })
+      return exception
+    })
+
+    const receiveRecords = records.filter((item) => item.kind === 'recv')
+    const start = `${group.dateKey} 09:10:00`
+    const finish = `${group.dateKey} 10:35:00`
+    const summary = {
+      totalReceived: receiveRecords.length,
+      parsedCount: receiveRecords.filter((item) => item.verdict.status !== 'unparsed').length,
+      normalCount: receiveRecords.filter((item) => item.verdict.status === 'ok').length,
+      validationAbnormalCount: receiveRecords.filter((item) => item.verdict.status === 'error').length,
+      unparsedCount: receiveRecords.filter((item) => item.verdict.status === 'unparsed').length,
+      forwardedCount: 0,
+      savedToDatasetCount: receiveRecords.filter((item) => item.savedToDataset).length,
+      interfaceCount: interfaces.length,
+      durationSeconds: 85 * 60,
+    }
+    return {
+      id: group.id,
+      batchId: group.id,
+      runId: group.id,
+      batchType: 'receive',
+      status: 'completed',
+      finishReason: 'terminated',
+      scope,
+      name: batchNameOf('receive', scope, start),
+      systemId: group.systemId,
+      dateKey: group.dateKey,
+      tasks: interfaces.map((item) => ({
+        moduleId: item.moduleId,
+        moduleName: '',
+        interfaceId: item.id,
+        iface: item.name,
+      })),
+      taskIds: [],
+      time: start,
+      startedAt: start,
+      finishedAt: finish,
+      durationText: `${summary.durationSeconds}s`,
+      state: 'done',
+      result: '已完成',
+      taskCreator: '接收监控示例',
+      summary,
+      records,
+      stepResults: [],
+      exceptions,
+    }
+  })
+}
+
 export const seedRunBatches = () => [...seedGroups.values()]
-  .map((group) => buildBatch({ ...group, state: 'done' }))
+  .map((group) => {
+    const batch = buildBatch({ ...group, state: 'done' })
+    batch.name = batchNameOf(batch.batchType, batch.scope, batch.startedAt)
+    return batch
+  })
+  .concat(seedReceiveBatches())
   .sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)))
 
 const rowsOfBatch = (batch) => (batch.stepResults || []).map((step) => {
@@ -198,6 +347,8 @@ const rowsOfBatch = (batch) => (batch.stepResults || []).map((step) => {
   return {
     id: `${batch.runId}-${step.taskId || step.interfaceId || step.iface}`,
     runId: batch.runId,
+    batchId: batch.id,
+    batchType: batch.batchType || 'send',
     batchName: batch.name,
     state: batch.state,
     systemId: batch.systemId,
@@ -230,26 +381,63 @@ export const useRunBatchStore = defineStore('runBatch', {
   }),
 
   getters: {
-    byId: (state) => (runId) => state.batches.find((item) => String(item.runId) === String(runId) || String(item.id) === String(runId)) || null,
+    byId: (state) => (batchId) => state.batches.find((item) =>
+      String(item.batchId || item.runId || item.id) === String(batchId)
+      || String(item.id) === String(batchId)
+    ) || null,
     ofSystem: (state) => (systemId) => (systemId == null ? state.batches : state.batches.filter((item) => item.systemId === systemId)),
-    statRows: (state) => state.batches.flatMap(rowsOfBatch),
+    reportable: (state) => state.batches.filter((item) =>
+      (item.status === 'completed' || ['done', 'stopped'].includes(item.state))
+      && item.finishedAt
+    ),
+    statRows: (state) => state.batches
+      .filter((item) => (item.batchType || 'send') === 'send')
+      .flatMap(rowsOfBatch),
   },
 
   actions: {
     upsertBatch(batch) {
-      const id = batch.runId || batch.id
-      const next = { ...batch, id, runId: id }
-      const index = this.batches.findIndex((item) => item.runId === id)
+      const id = batch.batchId || batch.runId || batch.id
+      const next = {
+        batchType: 'send',
+        status: batch.state === 'running' ? 'running' : 'completed',
+        finishReason: '',
+        scope: buildBatchScope(),
+        ...batch,
+        id,
+        batchId: id,
+        runId: id,
+      }
+      const index = this.batches.findIndex((item) => String(item.batchId || item.runId || item.id) === String(id))
       if (index >= 0) this.batches.splice(index, 1, { ...this.batches[index], ...next })
       else this.batches.unshift(next)
       return next
     },
 
-    startBatch({ runId, systemId, tasks = [], startedAt, config = {} }) {
+    startBatch({
+      batchId,
+      runId,
+      batchType = 'send',
+      systemId,
+      scope,
+      tasks = [],
+      records = [],
+      startedAt,
+      config = {},
+    }) {
+      const id = batchId || runId
+      const normalizedScope = scope?.displayName
+        ? { ...scope }
+        : buildBatchScope({ interfaces: tasks.map((item) => ({ id: item.interfaceId, name: item.iface })) })
       return this.upsertBatch({
-        id: runId,
-        runId,
-        name: `${systemNameOf(systemId)} ${normalizeDateTime(startedAt)} 联试批次`,
+        id,
+        batchId: id,
+        runId: id,
+        batchType,
+        status: 'running',
+        finishReason: '',
+        scope: normalizedScope,
+        name: batchNameOf(batchType, normalizedScope, startedAt),
         systemId,
         dateKey: normalizeDate(startedAt),
         tasks,
@@ -259,17 +447,62 @@ export const useRunBatchStore = defineStore('runBatch', {
         finishedAt: '',
         durationText: '',
         state: 'running',
-        result: '执行中',
-        taskCreator: '执行编排',
+        result: batchType === 'receive' ? '监听中' : '发送中',
+        taskCreator: batchType === 'receive' ? '接收监控' : '发送监控',
         config: { ...config },
-        summary: buildSummary([]),
+        summary: batchType === 'receive'
+          ? {
+              totalReceived: 0,
+              parsedCount: 0,
+              normalCount: 0,
+              validationAbnormalCount: 0,
+              unparsedCount: 0,
+              forwardedCount: 0,
+              savedToDatasetCount: 0,
+              interfaceCount: normalizedScope.interfaceIds.length,
+              durationSeconds: 0,
+            }
+          : {
+              ...buildSummary([]),
+              plannedCount: 0,
+              sentCount: 0,
+              unsentCount: 0,
+              interfaceCount: normalizedScope.interfaceIds.length,
+              datasetCount: 0,
+              durationSeconds: 0,
+            },
+        records,
         stepResults: [],
         exceptions: [],
       })
     },
 
-    finishBatch(runId, patch = {}) {
-      const existing = this.byId(runId)
+    updateBatchStatus(batchId, status) {
+      const existing = this.byId(batchId)
+      if (!existing || existing.status === 'completed') return existing
+      const state = status === 'paused' ? 'paused' : 'running'
+      return this.upsertBatch({
+        ...existing,
+        status,
+        state,
+        result: status === 'paused'
+          ? '已暂停'
+          : existing.batchType === 'receive' ? '监听中' : '发送中',
+      })
+    },
+
+    updateBatchScope(batchId, scope) {
+      const existing = this.byId(batchId)
+      if (!existing || existing.status === 'completed' || !scope?.displayName) return existing
+      return this.upsertBatch({
+        ...existing,
+        scope: { ...scope },
+        name: batchNameOf(existing.batchType || 'send', scope, existing.startedAt),
+      })
+    },
+
+    finishBatch(batchId, patch = {}) {
+      const existing = this.byId(batchId)
       if (!existing) return null
       const stepResults = patch.stepResults || existing.stepResults || []
       const rows = stepResults.map((step) => ({
@@ -277,21 +510,26 @@ export const useRunBatchStore = defineStore('runBatch', {
         executionTime: patch.summary?.executionTime || existing.summary?.executionTime || 1,
       }))
       const summary = patch.summary || buildSummary(rows)
+      const tasks = (patch.tasks || existing.tasks || stepResults).map((item) => ({
+        ...item,
+        taskId: item.taskId,
+        taskName: item.taskName,
+        moduleId: item.moduleId,
+        moduleName: item.moduleName,
+        interfaceId: item.interfaceId,
+        iface: item.iface,
+      }))
       return this.upsertBatch({
         ...existing,
         ...patch,
+        status: 'completed',
         state: patch.state || 'done',
-        result: patch.result || (summary.abnormalRequests > 0 ? '存在异常' : '成功'),
+        finishReason: patch.finishReason || existing.finishReason || 'natural',
+        result: '已完成',
         summary,
         stepResults,
-        tasks: (patch.tasks || existing.tasks || stepResults).map((item) => ({
-          taskId: item.taskId,
-          taskName: item.taskName,
-          moduleId: item.moduleId,
-          moduleName: item.moduleName,
-          interfaceId: item.interfaceId,
-          iface: item.iface,
-        })),
+        tasks,
+        taskIds: tasks.map((item) => item.taskId).filter(Boolean),
       })
     },
   },

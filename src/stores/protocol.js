@@ -13,6 +13,21 @@ const directionlessFieldName = (name, fallback = '新建字段') =>
 
 export const makeProtocolRef = (protocolId, role = 'send') => ({ protocolId, role })
 
+const datasetFieldType = (field = {}) => {
+  const category = {
+    bitstream: '位组序流',
+    '位组序流': '位组序流',
+    struct: '共识体',
+    '共识体': '共识体',
+    matrix: '结构矩阵',
+    '结构矩阵': '结构矩阵',
+    file: '流文件',
+    '流文件': '流文件',
+  }[field.type]
+  if (category) return category
+  return field.dataType || field.encoding || field.type || ''
+}
+
 // ─── 接口级执行策略（配置于接口，供编排计划/实时监控复用）───
 // trigger: manual 手动 / scheduled 定时 / periodic 周期
 export const defaultIfaceStrategy = () => ({
@@ -143,7 +158,7 @@ export const collectInterfaceDatasetFields = (iface, protocols = []) => {
       else out.push({
         id: f.id, name: f.name,
         desc: f.desc || '', remark: f.remark || '',
-        dataType: f.dataType || f.type || f.encoding || '',
+        dataType: datasetFieldType(f),
         constraint: f.constraint || null,
       })
     }
@@ -163,7 +178,7 @@ export const collectInterfaceDatasetFields = (iface, protocols = []) => {
       } else if (f.children?.length) {
         walkProto(f.children)
       } else {
-        out.push({ id: f.id, name: f.name, desc: f.desc || '', remark: f.remark || '', dataType: f.dataType || f.encoding || '', constraint: f.constraint || null })
+        out.push({ id: f.id, name: f.name, desc: f.desc || '', remark: f.remark || '', dataType: datasetFieldType(f), constraint: f.constraint || null })
       }
     }
   }

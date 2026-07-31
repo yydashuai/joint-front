@@ -5,6 +5,7 @@ import { useSystemStore } from '@/stores/system'
 import { useExceptionStore } from '@/stores/exception'
 import { useRuleStore } from '@/stores/rule'
 import { useTestDataStore } from '@/stores/testData'
+import { buildBatchScope, useRunBatchStore } from '@/stores/runBatch'
 import {
   buildMockFrame, bytesFromHex, hexFromBytes, rebuildFrame,
   tryParseHeaders, validateMessage,
@@ -19,14 +20,6 @@ const rnd = (min, max) => Math.round(min + Math.random() * (max - min))
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)]
 
 const MAX_QUEUE = 400
-
-/** 校验状态标签 → 异常等级 */
-const LEVEL_OF_TAG = {
-  '无法解析': '高',
-  '语义不一致': '高',
-  '字段越界': '中',
-  '规则校验失败': '中',
-}
 
 /** 按字段约束生成一个正常值 */
 const normalValueOf = (f) => {
@@ -67,6 +60,9 @@ export const useReceptionStore = defineStore('reception', {
     startedAt: null,
     startedAtMs: null,
     finishedAt: null,
+    finishedAtMs: null,
+    currentBatchId: null,
+    sourceScheme: null,
     _seq: 0,
   }),
 
@@ -103,10 +99,11 @@ export const useReceptionStore = defineStore('reception', {
     errorCount: (state) => state.recvQueue.filter((e) => e.kind === 'recv' && e.verdict.status === 'error').length,
     unparsedCount: (state) => state.recvQueue.filter((e) => e.kind === 'recv' && e.verdict.status === 'unparsed').length,
     forwardCount: (state) => state.recvQueue.filter((e) => e.kind === 'forward').length,
+    savedToDatasetCount: (state) => state.recvQueue.filter((e) => e.kind === 'recv' && e.savedToDataset).length,
 
     elapsedSeconds(state) {
       if (!state.startedAtMs) return 0
-      const end = state.finishedAt ? new Date(state.finishedAt.replace(/\//g, '-')).getTime() : Date.now()
+      const end = state.finishedAtMs || Date.now()
       return Math.max(1, Math.round((end - state.startedAtMs) / 1000))
     },
 
@@ -125,13 +122,31 @@ export const useReceptionStore = defineStore('reception', {
       const protocolStore = useProtocolStore()
       if (!protocolStore.testInterfaces.some((i) => String(i.id) === String(interfaceId))) return false
       this.plan.push({ id: uid('rplan'), interfaceId })
+      this.sourceScheme = null
+      this._syncActiveBatchScope()
       return true
     },
 
+    setPlanScheme(scheme) {
+      if (!scheme) {
+        this.sourceScheme = null
+        return
+      }
+      const plannedIds = new Set(this.planItems.map((item) => String(item.iface?.id || '')))
+      const schemeIds = new Set((scheme.interfaceIds || []).map(String))
+      const exact = plannedIds.size === schemeIds.size && [...plannedIds].every((id) => schemeIds.has(id))
+      this.sourceScheme = exact ? { id: scheme.id, name: scheme.name } : null
+      this._syncActiveBatchScope()
+    },
+
     removeFromPlan(id) {
+      if (['listening', 'paused'].includes(this.status)) return false
       const idx = this.plan.findIndex((p) => p.id === id)
       if (idx >= 0) this.plan.splice(idx, 1)
+      this.sourceScheme = null
+      this._syncActiveBatchScope()
       if (!this.plan.length && !['listening', 'paused'].includes(this.status)) this.reset()
+      return idx >= 0
     },
 
     reorder(from, to) {
@@ -151,7 +166,26 @@ export const useReceptionStore = defineStore('reception', {
       this.startedAt = nowText()
       this.startedAtMs = Date.now()
       this.finishedAt = null
+      this.finishedAtMs = null
+      this.currentBatchId = uid('receive-batch')
       this._seq = 0
+      const scope = buildBatchScope({
+        scheme: this.sourceScheme,
+        interfaces: this.planItems.map((item) => ({ id: item.iface?.id, name: item.iface?.name })),
+      })
+      useRunBatchStore().startBatch({
+        batchId: this.currentBatchId,
+        batchType: 'receive',
+        systemId: this.planItems[0]?.iface?.systemId || '',
+        scope,
+        startedAt: this.startedAt,
+        tasks: this.planItems.map((item) => ({
+          moduleId: item.module?.id || item.iface?.moduleId || '',
+          moduleName: item.module?.name || '',
+          interfaceId: item.iface?.id || '',
+          iface: item.iface?.name || '',
+        })),
+      })
       recvTimer = window.setInterval(() => this._tick(), this.recvInterval)
       return true
     },
@@ -160,11 +194,13 @@ export const useReceptionStore = defineStore('reception', {
       if (this.status !== 'listening') return
       this.status = 'paused'
       this._clearTimers()
+      useRunBatchStore().updateBatchStatus(this.currentBatchId, 'paused')
     },
 
     resume() {
       if (this.status !== 'paused') return
       this.status = 'listening'
+      useRunBatchStore().updateBatchStatus(this.currentBatchId, 'running')
       recvTimer = window.setInterval(() => this._tick(), this.recvInterval)
     },
 
@@ -172,10 +208,13 @@ export const useReceptionStore = defineStore('reception', {
       if (!['listening', 'paused'].includes(this.status)) return
       this.status = 'stopped'
       this.finishedAt = nowText()
+      this.finishedAtMs = Date.now()
       this._clearTimers()
+      this._archiveBatch('terminated')
     },
 
     reset() {
+      if (['listening', 'paused'].includes(this.status)) return false
       this._clearTimers()
       this.status = 'idle'
       this.recvQueue = []
@@ -183,12 +222,72 @@ export const useReceptionStore = defineStore('reception', {
       this.startedAt = null
       this.startedAtMs = null
       this.finishedAt = null
+      this.finishedAtMs = null
+      this.currentBatchId = null
       this._seq = 0
+      return true
     },
 
     _clearTimers() {
       if (recvTimer) window.clearInterval(recvTimer)
       recvTimer = null
+    },
+
+    _syncActiveBatchScope() {
+      if (!this.currentBatchId || !['listening', 'paused'].includes(this.status)) return
+      useRunBatchStore().updateBatchScope(this.currentBatchId, buildBatchScope({
+        scheme: this.sourceScheme,
+        interfaces: this.planItems.map((item) => ({ id: item.iface?.id, name: item.iface?.name })),
+      }))
+    },
+
+    _archiveBatch(finishReason = 'terminated') {
+      if (!this.currentBatchId) return null
+      const records = this.recvQueue.map((entry) => ({
+        id: entry.id,
+        kind: entry.kind,
+        seq: entry.seq,
+        time: entry.time,
+        interfaceId: entry.interfaceId,
+        iface: entry.iface,
+        moduleId: entry.moduleId,
+        systemId: entry.systemId,
+        transport: entry.transport,
+        byteLength: entry.byteLength,
+        hex: entry.hex,
+        verdict: entry.verdict,
+        exceptionId: entry.exceptionId,
+        savedToDataset: entry.savedToDataset,
+        forwardTarget: entry.forwardTarget,
+      }))
+      const receiveRecords = records.filter((entry) => entry.kind === 'recv')
+      const summary = {
+        totalReceived: receiveRecords.length,
+        parsedCount: receiveRecords.filter((entry) => entry.verdict?.status !== 'unparsed').length,
+        normalCount: receiveRecords.filter((entry) => entry.verdict?.status === 'ok').length,
+        validationAbnormalCount: receiveRecords.filter((entry) => entry.verdict?.status === 'error').length,
+        unparsedCount: receiveRecords.filter((entry) => entry.verdict?.status === 'unparsed').length,
+        forwardedCount: records.filter((entry) => entry.kind === 'forward').length,
+        savedToDatasetCount: receiveRecords.filter((entry) => entry.savedToDataset).length,
+        interfaceCount: new Set(this.planItems.map((item) => item.iface?.id).filter(Boolean)).size,
+        durationSeconds: this.elapsedSeconds,
+      }
+      return useRunBatchStore().finishBatch(this.currentBatchId, {
+        state: 'done',
+        finishReason,
+        startedAt: this.startedAt,
+        finishedAt: this.finishedAt || nowText(),
+        durationText: `${summary.durationSeconds}s`,
+        summary,
+        records,
+        tasks: this.planItems.map((item) => ({
+          moduleId: item.module?.id || item.iface?.moduleId || '',
+          moduleName: item.module?.name || '',
+          interfaceId: item.iface?.id || '',
+          iface: item.iface?.name || '',
+        })),
+        exceptions: [...this.exceptions],
+      })
     },
 
     /* ---------- 模拟接收 ---------- */
@@ -203,7 +302,7 @@ export const useReceptionStore = defineStore('reception', {
     },
 
     /**
-     * 构造一条模拟接收报文并完成两层校验。
+     * 构造一条模拟接收报文并完成结构、字段与规则校验。
      * 正常 ~68%；字段越界 ~15%；语义不一致 ~9%；无法解析 ~8%。
      */
     _fabricate(item) {
@@ -281,18 +380,25 @@ export const useReceptionStore = defineStore('reception', {
       }
     },
 
-    /** 异常写入共享台账（故障异常管理页同步可见），并记入会话异常流 */
+    /** 将接收侧解析/校验异常连同原始数据与字段快照写入异常样本库。 */
     _captureException(item, entry) {
       const exceptionStore = useExceptionStore()
       const firstIssue = entry.verdict.issues[0] || {}
       const ex = exceptionStore.capture({
         type: entry.verdict.tag,
-        level: LEVEL_OF_TAG[entry.verdict.tag] || '中',
         systemId: entry.systemId,
         moduleId: entry.moduleId,
         interfaceId: entry.interfaceId,
         iface: entry.iface,
         source: 'reception',
+        batchId: this.currentBatchId || '',
+        runId: this.currentBatchId || '',
+        sourceEntryId: entry.id,
+        transport: entry.transport,
+        rawHex: entry.hex,
+        fields: entry.fields,
+        values: entry.values,
+        issues: entry.verdict.issues,
         detail: {
           reqHex: entry.hex,
           ruleMessage: entry.verdict.issues.map((i) => (i.field ? `${i.field}：${i.message}` : i.message)).join('；'),
@@ -353,6 +459,7 @@ export const useReceptionStore = defineStore('reception', {
       })
       const saved = dataStore.addHistoryRows(ds.id, rows)
       entries.forEach((e) => { e.savedToDataset = true })
+      if (this.currentBatchId && ['stopped', 'done'].includes(this.status)) this._archiveBatch('terminated')
       return { saved: saved.length, dataset: ds }
     },
 
@@ -398,7 +505,7 @@ export const useReceptionStore = defineStore('reception', {
 
     /* ---------- 报文构造 / 直接发送（发送测试闭环） ---------- */
     /**
-     * 将用户构造或编辑后的报文作为「接收」条目注入数据流，复用两层校验与异常台账。
+     * 将用户构造或编辑后的报文作为「接收」条目注入数据流，复用结构、字段与规则校验。
      * 用于「直接发送」「作为异常数据发送测试」：用户手工改出异常 → 注入后由校验引擎判定并标红/入账。
      * @param payload { transport, bytes, fields=[], values={}, interfaceId, iface, moduleId, systemId, sentTest }
      */

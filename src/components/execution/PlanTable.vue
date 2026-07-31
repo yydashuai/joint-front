@@ -28,7 +28,7 @@
               </el-button>
             </el-tooltip>
             <el-popconfirm title="确认重置本次运行？所有运行状态将被清除" @confirm="$emit('reset-run')">
-              <template #reference><el-button :icon="RefreshRight">重置本次运行</el-button></template>
+              <template #reference><el-button :icon="RefreshRight" :disabled="['running', 'paused'].includes(store.status)">重置本次运行</el-button></template>
             </el-popconfirm>
           </div>
         </div>
@@ -73,7 +73,7 @@
         <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
             <el-popconfirm title="确认从计划中移除？" @confirm="store.removeFromPlan(row.id)">
-              <template #reference><el-button link type="danger" size="small">移除</el-button></template>
+              <template #reference><el-button link type="danger" size="small" :disabled="['running', 'paused'].includes(store.status)">移除</el-button></template>
             </el-popconfirm>
           </template>
         </el-table-column>

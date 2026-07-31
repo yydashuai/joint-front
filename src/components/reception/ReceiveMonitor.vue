@@ -125,7 +125,7 @@
             <span class="card-title">
               本次监听异常明细
             </span>
-            <el-button link type="primary" size="small" @click="router.push('/exception')">前往故障异常管理</el-button>
+            <el-button link type="primary" size="small" @click="router.push('/exception')">前往异常数据管理</el-button>
           </div>
         </template>
         <div class="exc-body">
@@ -139,11 +139,6 @@
             <el-table-column label="类型" width="100">
               <template #default="{ row }">
                 <el-tag size="small" type="danger" effect="plain">{{ row.type }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="等级" width="60" align="center">
-              <template #default="{ row }">
-                <el-tag size="small" :type="row.level === '高' ? 'danger' : 'warning'">{{ row.level }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column label="接口" prop="iface" width="130" show-overflow-tooltip />
@@ -216,13 +211,13 @@ const statusText = computed(() => ({
   idle: '待监听',
   listening: '监听中',
   paused: '已暂停',
-  stopped: '已停止',
+  stopped: '已完成',
   done: '已完成',
 }[store.status]))
 const statusType = computed(() => ({
   listening: 'primary',
   paused: 'warning',
-  stopped: 'info',
+  stopped: 'success',
   done: 'success',
   idle: 'info',
 }[store.status]))

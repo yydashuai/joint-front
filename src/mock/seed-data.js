@@ -455,18 +455,18 @@ const allProtocols = [
     ]
   }),
   _p({
-    name: '查询设备状态字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    desc: '流文件示例：作为报文尾部二进制数据体使用',
+    name: '数据流文件', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
+    desc: '流文件示例：作为报文尾部文本状态附件使用',
     category: 'file',
-    fields: [param({ name: 'statusPayloadFile', type: '流文件', desc: '设备状态二进制数据体' })],
-    fileConfig: { mediaType: 'application/octet-stream', extension: '.bin', maxSizeMb: 32, checksum: 'sha256', chunkSizeKb: 64 }
+    fields: [param({ name: 'statusPayloadFile', type: '流文件', desc: '设备状态文本附件' })],
+    fileConfig: { fileType: 'txt', maxSizeMb: 32, checksum: 'sha256', chunkSizeKb: 64 }
   }),
   _p({
-    name: '武器装订指令字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
+    name: '雷达数据文件', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
     desc: '结构矩阵示例：二维装订参数数据文件',
     category: 'matrix',
     fields: [param({ name: 'bindingMatrix', type: '结构矩阵', desc: '装订参数二维矩阵' })],
-    matrixConfig: { fileType: 'binary-matrix', scalarType: 'float32', rows: 16, columns: 4, rowMajor: true, headerBytes: 16 }
+    matrixConfig: { fileType: 'csv', rows: 16, columns: 4 }
   }),
   _p({
     name: '航迹位置字段', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'),
@@ -510,11 +510,11 @@ const allInterfaces = [
     transportConfig: { method: 'GET', contentType: 'application/json', headers: [{ key: 'Accept', value: 'application/json' }], auth: { type: 'basic', username: 'admin', password: '' } },
     protocolRefs: [
       protoByName('sys-weapon', '武器遥测广播字段'),
-      { protocolId: protoByName('sys-weapon', '查询设备状态字段'), role: 'send' },
-      { protocolId: protoByName('sys-weapon', '查询设备状态字段'), role: 'receive' },
+      { protocolId: protoByName('sys-weapon', '数据流文件'), role: 'send' },
+      { protocolId: protoByName('sys-weapon', '数据流文件'), role: 'receive' },
     ],
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    datasetIds: [2], // 模拟关联：设备状态查询-正常与异常
+    datasetIds: [2], // 模拟关联：遥测帧 + 状态附件
     desc: '发送设备状态，返回遥测帧',
   }),
   _i({
@@ -524,11 +524,11 @@ const allInterfaces = [
     protocolRefs: [
       protoByName('sys-weapon', '装订参数字段'),
       protoByName('sys-weapon', '帧控制字节字段'),
-      { protocolId: protoByName('sys-weapon', '武器装订指令字段'), role: 'send' },
-      { protocolId: protoByName('sys-weapon', '武器装订指令字段'), role: 'receive' },
+      { protocolId: protoByName('sys-weapon', '雷达数据文件'), role: 'send' },
+      { protocolId: protoByName('sys-weapon', '雷达数据文件'), role: 'receive' },
     ],
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    datasetIds: [4], // 模拟关联：武器装订-多参数组合
+    datasetIds: [4], // 模拟关联：共识体 + 位标志 + 结构矩阵
     desc: '下发武器装订参数并确认',
   }),
   // 报文示例：引用「帧控制字节字段」（字段被报文引用），数据集关联此报文
@@ -539,7 +539,7 @@ const allInterfaces = [
     transportConfig: { method: 'GET', contentType: 'application/json', headers: [], auth: { type: 'none' } },
     protocolRefs: [protoByName('sys-weapon', '帧控制字节字段')],
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    datasetIds: [1], // 模拟关联：帧控制字节-全场景
+    datasetIds: [1], // 模拟关联：帧控制位组合
     desc: '帧控制字节（按位标志）',
     request: [],
     response: []
@@ -570,6 +570,7 @@ const allInterfaces = [
     transportConfig: { port: 9200, timeout: 2000 },
     protocolRefs: [protoByName('sys-weapon', '武器挂载识别字段'), protoByName('sys-weapon', '武器状态字段')],
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'),
+    datasetIds: [5], // 模拟关联：挂点识别响应
     desc: '查询全部挂点挂载状态',
     request: [
       param({ name: 'aircraftId', type: '常量', dataType: 'uint16', desc: '飞机编号' }),
@@ -613,8 +614,8 @@ const allInterfaces = [
     transportConfig: { method: 'GET', contentType: 'application/json', headers: [], auth: { type: 'none' } },
     protocolRefs: [protoByName('sys-fire', '解算结果字段')],
     systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
-    datasetIds: [3], // 模拟关联：遥测帧-温度范围测试
-    desc: '遥测下行帧上报（帧头 + 设备ID + 温度）',
+    datasetIds: [3], // 模拟关联：标量解算结果码
+    desc: '上报火控解算结果码',
     request: [],
     response: []
   }),
@@ -642,6 +643,7 @@ const allInterfaces = [
     transportConfig: { port: 7070, timeout: 1000 },
     protocolRefs: [protoByName('sys-fire', '解算结果字段')],
     systemId: 'sys-fire', moduleId: byName('sys-fire', '指挥链路模块'),
+    datasetIds: [6], // 模拟关联：嵌套指挥指令
     desc: '从指挥所向下游下发作战指令',
     request: [
       param({ name: 'cmdType', type: '常量', dataType: 'uint8', desc: '指令类型' }),
@@ -1318,41 +1320,26 @@ const allRuleSets = [
 export const ruleSets = allRuleSets.filter(inSeedScope)
 
 /* ────────────────────────────────────────────
- *  七、异常告警 (Alerts)
+ *  七、接收异常数据 (Exception Samples)
+ *  只描述已经收到的数据本身，不包含超时、级别或处置状态。
  * ──────────────────────────────────────────── */
 const allAlerts = [
-  // 武器管理
-  { id: 'a01', type: '字段越界', iface: 'WM-003', level: '高', state: '已修复', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'), resolvedTime: '2026-06-24 10:05:00', remark: '温度字段值 256 超出 uint8 范围，已修正传感器标定参数' },
-  { id: 'a02', type: '格式错误', iface: 'WM-006', level: '高', state: '已转派', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '弹药状态模块'), resolvedTime: '2026-06-24 09:58:00', remark: '帧头校验码不匹配，已转派固件组排查版本一致性' },
-  { id: 'a03', type: '格式错误', iface: 'PY-012', level: '中', state: '已处理', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), resolvedTime: '2026-06-24 10:30:00', remark: '载荷类型字段偶发乱码，更换线缆后恢复' },
-  // 火控指挥
-  { id: 'a04', type: '接收超时', iface: 'FC-017', level: '中', state: '已记录', systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'), resolvedTime: '', remark: '连续 3 次超时 > 500ms，链路不稳定暂无法处理' },
-  { id: 'a05', type: '接收超时', iface: '指挥链路模块', level: '中', state: '自动恢复', systemId: 'sys-fire', moduleId: byName('sys-fire', '指挥链路模块'), resolvedTime: '2026-06-24 08:47:00', remark: '心跳自动恢复，根因待排查' },
-  { id: 'a06', type: '字段越界', iface: 'FC-025', level: '中', state: '已处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'), resolvedTime: '2026-06-24 10:22:00', remark: '重传机制触发后恢复正常' },
-  { id: 'a07', type: '字段越界', iface: 'TK-031', level: '高', state: '待处理', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), resolvedTime: '', remark: '距离字段值 520000 超过字段上限 500000' },
-  // 雷达探测
-  { id: 'a08', type: '格式错误', iface: 'RD-001', level: '高', state: '待处理', systemId: 'sys-radar', moduleId: byName('sys-radar', '信号处理模块'), resolvedTime: '', remark: '回波帧同步头 0xDEADBEEF 出现错位，疑似字节序问题' },
-  { id: 'a09', type: '接收超时', iface: 'AN-008', level: '中', state: '已处理', systemId: 'sys-radar', moduleId: byName('sys-radar', '天线控制模块'), resolvedTime: '2026-06-24 10:45:00', remark: '伺服接收超时 350ms，调整 PID 参数后恢复' },
-  { id: 'a10', type: '格式错误', iface: 'IR-015', level: '高', state: '已转派', systemId: 'sys-radar', moduleId: byName('sys-radar', '目标识别模块'), resolvedTime: '', remark: 'RCS 字段长度与字段定义不符，需固件升级' },
-  // 通信保障
-  { id: 'a11', type: '接收超时', iface: 'DL-003', level: '中', state: '自动恢复', systemId: 'sys-comm', moduleId: byName('sys-comm', '数据链模块'), resolvedTime: '2026-06-24 09:35:00', remark: '数据链心跳中断 12s 后自动恢复' },
-  { id: 'a12', type: '接收超时', iface: 'SAT-007', level: '高', state: '已记录', systemId: 'sys-comm', moduleId: byName('sys-comm', '卫星通信模块'), resolvedTime: '', remark: '卫通建链超时 > 30s，信号强度不足' },
-  // 导航定位
-  { id: 'a13', type: '字段越界', iface: 'INS-002', level: '中', state: '已修复', systemId: 'sys-nav', moduleId: byName('sys-nav', '惯性导航模块'), resolvedTime: '2026-06-24 09:15:00', remark: '陀螺 Z 轴零偏超限，重新校准后正常' },
-  { id: 'a14', type: '字段越界', iface: 'GNSS-005', level: '中', state: '已处理', systemId: 'sys-nav', moduleId: byName('sys-nav', '卫星定位模块'), resolvedTime: '2026-06-24 10:50:00', remark: '遮挡环境丢星 3 颗，切换到 BDS 优先后恢复' },
-  // 电子对抗
-  { id: 'a15', type: '字段越界', iface: 'EW-009', level: '高', state: '待处理', systemId: 'sys-ew', moduleId: byName('sys-ew', '侦察分析模块'), resolvedTime: '', remark: '中心频率字段值 19500MHz 超过字段上限 18000MHz' },
-  { id: 'a16', type: '格式错误', iface: 'JAM-004', level: '高', state: '已修复', systemId: 'sys-ew', moduleId: byName('sys-ew', '干扰执行模块'), resolvedTime: '2026-06-24 10:10:00', remark: '干扰模式字段编码与实际执行不一致，已同步' },
-  { id: 'a17', type: '字段越界', iface: 'SP-011', level: '中', state: '已处理', systemId: 'sys-ew', moduleId: byName('sys-ew', '频谱监测模块'), resolvedTime: '2026-06-24 10:25:00', remark: '频谱快照间歇丢帧，缓冲区溢出已扩容' },
-  // 无人机管控
-  { id: 'a18', type: '接收超时', iface: 'UAV-001', level: '高', state: '已处理', systemId: 'sys-uav', moduleId: byName('sys-uav', '飞行控制模块'), resolvedTime: '2026-06-24 10:35:00', remark: '遥测帧下行延迟 800ms，优化编码后降至 50ms' },
-  { id: 'a19', type: '接收超时', iface: 'PL-006', level: '中', state: '自动恢复', systemId: 'sys-uav', moduleId: byName('sys-uav', '任务载荷模块'), resolvedTime: '2026-06-24 09:50:00', remark: '载荷控制心跳短暂中断后自动恢复' },
-  { id: 'a20', type: '格式错误', iface: 'VID-003', level: '中', state: '已记录', systemId: 'sys-uav', moduleId: byName('sys-uav', '图像接收模块'), resolvedTime: '', remark: '图传码流偶发花屏，编码参数待优化' },
-  // 指挥控制
-  { id: 'a21', type: '字段越界', iface: 'SA-008', level: '中', state: '已修复', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'), resolvedTime: '2026-06-24 10:55:00', remark: '经度字段精度溢出，已扩展为 64 位' },
-  { id: 'a22', type: '接收超时', iface: 'PLN-002', level: '中', state: '已记录', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '作战筹划模块'), resolvedTime: '', remark: '方案生成超时 > 60s，算法优化中' },
-  { id: 'a23', type: '格式错误', iface: 'ORD-005', level: '高', state: '待处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '指令下发模块'), resolvedTime: '', remark: '指令帧 CRC 校验失败率 5%，排查链路质量' },
-  { id: 'a24', type: '字段越界', iface: 'LOG-012', level: '中', state: '已处理', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'), resolvedTime: '2026-06-24 11:00:00', remark: '日志写入高并发时偶发丢失，增加缓冲队列后恢复' },
+  { id: 'a01', type: '字段约束异常', iface: 'WM-003', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'), capturedTime: '2026-06-24 10:05:00', field: 'temperature', value: 256, remark: 'temperature=256，超出 uint8 允许范围 0~255' },
+  { id: 'a02', type: '结构异常', iface: 'WM-006', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '弹药状态模块'), capturedTime: '2026-06-24 09:58:00', field: 'checksum', value: '0x37', remark: '帧头声明校验码 0x37，重新计算结果为 0x3A' },
+  { id: 'a03', type: '规则校验异常', iface: 'PY-012', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'), capturedTime: '2026-06-24 10:30:00', field: 'loadType', value: 18, remark: 'loadType=18，不在接口规则允许的载荷类型集合内' },
+  { id: 'a04', type: '字段约束异常', iface: 'FC-025', systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'), capturedTime: '2026-06-24 10:22:00', field: 'resultCode', value: 511, remark: 'resultCode=511，超出字段上限 255' },
+  { id: 'a05', type: '字段约束异常', iface: 'TK-031', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'), capturedTime: '2026-06-24 11:02:00', field: 'distance', value: 520000, remark: 'distance=520000，超出字段上限 500000' },
+  { id: 'a06', type: '结构异常', iface: 'RD-001', systemId: 'sys-radar', moduleId: byName('sys-radar', '信号处理模块'), capturedTime: '2026-06-24 11:08:00', field: 'syncHeader', value: '0xDEADBEEF', remark: '同步头相对协议定义偏移 2 字节，后续字段无法按矩阵对齐' },
+  { id: 'a07', type: '无法解析', iface: 'IR-015', systemId: 'sys-radar', moduleId: byName('sys-radar', '目标识别模块'), capturedTime: '2026-06-24 11:14:00', field: 'frame', value: '', remark: '接收数据无法匹配当前接口绑定的任何报文结构' },
+  { id: 'a08', type: '规则校验异常', iface: 'DL-003', systemId: 'sys-comm', moduleId: byName('sys-comm', '数据链模块'), capturedTime: '2026-06-24 11:20:00', field: 'sequence', value: 104, remark: 'sequence=104，与上一帧序号 102 不连续' },
+  { id: 'a09', type: '结构异常', iface: 'SAT-007', systemId: 'sys-comm', moduleId: byName('sys-comm', '卫星通信模块'), capturedTime: '2026-06-24 11:26:00', field: 'totalLength', value: 84, remark: '报文头声明长度 84 字节，实际接收 80 字节' },
+  { id: 'a10', type: '字段约束异常', iface: 'INS-002', systemId: 'sys-nav', moduleId: byName('sys-nav', '惯性导航模块'), capturedTime: '2026-06-24 11:32:00', field: 'gyroBiasZ', value: 12.8, remark: 'gyroBiasZ=12.8，超出标定字段范围 -10~10' },
+  { id: 'a11', type: '规则校验异常', iface: 'GNSS-005', systemId: 'sys-nav', moduleId: byName('sys-nav', '卫星定位模块'), capturedTime: '2026-06-24 11:38:00', field: 'fixStatus', value: 1, remark: 'fixStatus=1 时 satCount 必须大于等于 4，实际为 2' },
+  { id: 'a12', type: '字段约束异常', iface: 'EW-009', systemId: 'sys-ew', moduleId: byName('sys-ew', '侦察分析模块'), capturedTime: '2026-06-24 11:44:00', field: 'centerFrequency', value: 19500, remark: 'centerFrequency=19500MHz，超出字段上限 18000MHz' },
+  { id: 'a13', type: '结构异常', iface: 'JAM-004', systemId: 'sys-ew', moduleId: byName('sys-ew', '干扰执行模块'), capturedTime: '2026-06-24 11:50:00', field: 'payloadLength', value: 64, remark: '载荷声明长度 64 字节，实际解析得到 60 字节' },
+  { id: 'a14', type: '无法解析', iface: 'VID-003', systemId: 'sys-uav', moduleId: byName('sys-uav', '图像接收模块'), capturedTime: '2026-06-24 11:56:00', field: 'frame', value: '', remark: '原始码流缺少已配置的帧同步标识，无法建立字段边界' },
+  { id: 'a15', type: '规则校验异常', iface: 'SA-008', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'), capturedTime: '2026-06-24 12:02:00', field: 'longitude', value: 181.2, remark: 'longitude=181.2，不满足经度范围规则 -180~180' },
+  { id: 'a16', type: '结构异常', iface: 'ORD-005', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '指令下发模块'), capturedTime: '2026-06-24 12:08:00', field: 'crc', value: '0xA18C', remark: '帧尾 CRC 声明值 0xA18C，与重算值 0xA19F 不一致' },
 ]
 export const alerts = allAlerts.filter(inSeedScope)
 

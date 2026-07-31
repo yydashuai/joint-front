@@ -29,17 +29,6 @@
         </el-select>
       </div>
 
-      <div class="meta-row">
-        <span class="meta-row__label req">所属系统</span>
-        <el-select v-model="iface.systemId" placeholder="选择系统" class="meta-sel" @change="$emit('systemChange')">
-          <el-option v-for="s in systemOptions" :key="s.value" :label="s.label" :value="s.value" />
-        </el-select>
-        <span class="meta-row__label req">模块</span>
-        <el-select v-model="iface.moduleId" placeholder="选择模块" class="meta-sel" :disabled="!iface.systemId">
-          <el-option v-for="m in moduleOptions" :key="m.value" :label="m.label" :value="m.value" />
-        </el-select>
-      </div>
-
       <!-- 传输配置（根据传输类型动态渲染） -->
       <TransportConfigForm
         :transport-config="iface.transportConfig"
@@ -151,10 +140,9 @@ import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 const props = defineProps({
   iface: { type: Object, required: true },
   systemOptions: { type: Array, default: () => [] },
-  moduleOptions: { type: Array, default: () => [] },
   protocolOptions: { type: Array, default: () => [] },
 })
-defineEmits(['delete', 'systemChange', 'navigateProtocol'])
+defineEmits(['delete', 'navigateProtocol'])
 
 const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }
 const protoStore = useProtocolStore()

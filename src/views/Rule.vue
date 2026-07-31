@@ -4,11 +4,7 @@
       <div>
         <h2>校验规则管理</h2>
       </div>
-      <div class="header-actions">
-        <el-select v-model="systemSelectValue" class="system-select">
-          <el-option v-for="item in systemOptions" :key="item.selectValue" :label="item.label" :value="item.selectValue" />
-        </el-select>
-      </div>
+      <el-button type="primary" :icon="Plus" @click="createRuleSetFromHeader">创建规则集</el-button>
     </div>
 
     <div class="split">
@@ -41,16 +37,8 @@
                   @blur="commitName"
                   @keyup.enter="$event.target.blur()"
                 />
-                <el-switch
-                  v-model="enabled"
-                  active-text="启用"
-                  inactive-text="草稿"
-                  @change="ruleStore.updateRuleSet(currentRuleSet.id, { status: $event ? 'enabled' : 'draft' })"
-                />
               </div>
               <div class="rule-head__right">
-                <el-button :icon="CopyDocument" @click="duplicate">复制</el-button>
-                <el-button :icon="Download" @click="exportJson">导出 JSON</el-button>
                 <el-button type="danger" plain :icon="Delete" @click="removeCurrent">删除</el-button>
               </div>
             </div>
@@ -79,7 +67,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CopyDocument, Delete, Download, Search } from '@element-plus/icons-vue'
+import { Delete, Plus, Search } from '@element-plus/icons-vue'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import RuleList from '@/components/rule/RuleList.vue'
 import GenerateRulesDialog from '@/components/rule/GenerateRulesDialog.vue'
@@ -103,6 +91,7 @@ ruleStore.normalizeRuleScope()
 onMounted(() => ruleStore.resolveInterfaceIds())
 
 const selectedKey = ref('')
+const selectedModuleId = ref('')
 const keyword = ref('')
 const editName = ref('')
 const editDesc = ref('')
@@ -111,24 +100,12 @@ const showEdit = ref(false)
 const editingRule = ref(null)
 const targetInterfaceId = ref(null)
 
-const ALL_SYSTEM_VALUE = '__all__'
-const systemOptions = computed(() => systemStore.options.map((item) => ({
-  ...item,
-  selectValue: item.value == null ? ALL_SYSTEM_VALUE : item.value,
-})))
-const systemSelectValue = computed({
-  get: () => systemStore.currentId ?? ALL_SYSTEM_VALUE,
-  set: (value) => systemStore.setCurrent(value === ALL_SYSTEM_VALUE ? null : value),
-})
 const currentRuleSet = computed(() => ruleStore.selectedRuleSet)
-const enabled = computed({
-  get: () => currentRuleSet.value?.status === 'enabled',
-  set: () => {},
-})
 
 watch(currentRuleSet, (ruleSet) => {
   if (!ruleSet) return
   selectedKey.value = `rule-${ruleSet.id}`
+  selectedModuleId.value = ruleSet.moduleId || ''
   editName.value = ruleSet.name
   editDesc.value = ruleSet.desc || ''
 }, { immediate: true })
@@ -164,11 +141,16 @@ const leafContextActions = (nodeData) => {
 }
 
 const onTreeSelect = (data) => {
+  if (data.kind === 'module' && data.ref) {
+    selectedModuleId.value = data.ref.id
+    return
+  }
   if (data.kind === 'rule-set' && data.ref) {
+    selectedModuleId.value = data.ref.moduleId || ''
     ruleStore.select(data.ref.id)
   }
 }
-const onAddLeaf = ({ module }) => {
+const createRuleSet = (module) => {
   const ruleSet = ruleStore.addRuleSet({
     name: nextUniqueName(`${module.name}规则集`),
     systemId: module.systemId,
@@ -176,7 +158,27 @@ const onAddLeaf = ({ module }) => {
     desc: '从报文字段自动生成后，可按现场需要微调阈值。',
   })
   selectedKey.value = `rule-${ruleSet.id}`
+  selectedModuleId.value = module.id
   ElMessage.success('规则集已创建')
+}
+const onAddLeaf = ({ module }) => createRuleSet(module)
+const createRuleSetFromHeader = () => {
+  const inCurrentSystem = (module) => module && (
+    systemStore.currentId == null || module.systemId === systemStore.currentId
+  )
+  let module = connStore.nodes.find((item) => item.id === selectedModuleId.value)
+  if (!inCurrentSystem(module)) {
+    module = connStore.nodes.find((item) => item.id === currentRuleSet.value?.moduleId)
+  }
+  if (!inCurrentSystem(module)) {
+    const modules = connStore.modulesOf(systemStore.currentId)
+    if (modules.length === 1) module = modules[0]
+  }
+  if (!module) {
+    ElMessage.warning('请先在左侧选择要创建规则集的模块')
+    return
+  }
+  createRuleSet(module)
 }
 const onDeleteLeaf = (data) => {
   if (data.kind === 'rule-set' && data.ref) ruleStore.removeRuleSet(data.ref.id)
@@ -274,8 +276,6 @@ watch(() => route.query.interfaceId, (ifaceId) => {
   min-height: 0;
   overflow: hidden;
 }
-.header-actions { display: flex; align-items: center; gap: 8px; }
-.system-select { width: 220px; }
 .split {
   display: flex;
   gap: 16px;

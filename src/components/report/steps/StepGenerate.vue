@@ -18,7 +18,7 @@
           <div class="prev__row"><span class="prev__k">数据批次</span><span>{{ run ? batchLabel : '未选择批次' }}</span></div>
           <div class="prev__row"><span class="prev__k">报告标题</span><span>{{ form.title || reportTitle || '—' }}</span></div>
           <div class="prev__row"><span class="prev__k">报告模板</span><span>{{ templateName }}</span></div>
-          <div class="prev__row"><span class="prev__k">任务创建者</span><span>{{ run?.taskCreator || '—' }}</span></div>
+          <div class="prev__row"><span class="prev__k">批次类型</span><span>{{ run?.batchType === 'receive' ? '接收批次' : '发送批次' }}</span></div>
           <div class="prev__row"><span class="prev__k">报告生成者</span><span>{{ generatorName }}</span></div>
           <div class="prev__row">
             <span class="prev__k">素材</span>
@@ -64,7 +64,7 @@ const batchStore = useRunBatchStore()
 const systemStore = useSystemStore()
 const authStore = useAuthStore()
 
-const run = computed(() => batchStore.byId(props.form.runId))
+const run = computed(() => batchStore.byId(props.form.batchId))
 const sysName = computed(() => systemStore.systems.find((s) => s.id === run.value?.systemId)?.name || '')
 const templateName = computed(() => store.templates.find((t) => t.id === props.form.templateId)?.name || '默认结构')
 const generatorName = computed(() => authStore.currentUser?.realName || authStore.currentUser?.username || '当前用户')
@@ -80,16 +80,18 @@ const formatDateTime = (text = '') => {
   if (!y || !m || !d) return text || '未记录时间'
   return `${y}-${pad(m)}-${pad(d)} ${pad(hh || '00')}:${pad(mm || '00')}`
 }
-const moduleCount = computed(() => new Set((run.value?.tasks || run.value?.stepResults || []).map((item) => item.moduleId || item.moduleName).filter(Boolean)).size)
-const taskCount = computed(() => run.value?.tasks?.length || run.value?.stepResults?.length || 0)
-const batchLabel = computed(() => run.value ? `${formatDateTime(run.value.startedAt || run.value.time)} · ${run.value.result} · ${moduleCount.value}模块/${taskCount.value}任务` : '')
-const reportTitle = computed(() => run.value ? `${sysName.value} ${formatDateTime(run.value.startedAt || run.value.time)} 联试报告` : '')
+const batchLabel = computed(() => run.value
+  ? `${run.value.scope?.displayName || '未命名接口范围'} · ${run.value.batchType === 'receive' ? '接收批次' : '发送批次'} · ${formatDateTime(run.value.startedAt || run.value.time)}`
+  : '')
+const reportTitle = computed(() => run.value
+  ? `${run.value.scope?.displayName || '接口联试'} ${run.value.batchType === 'receive' ? '接收' : '发送'}联试报告`
+  : '')
 
 const onGenerate = async () => {
   if (!run.value) return
   const rep = await store.generateReport({
     systemId: run.value.systemId,
-    runId: props.form.runId,
+    batchId: props.form.batchId,
     title: props.form.title.trim() || reportTitle.value,
     templateId: props.form.templateId,
     materials: props.materials,

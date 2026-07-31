@@ -344,7 +344,6 @@
         <div class="gen-form__row">
           <label class="gen-label">生成数量</label>
           <el-input-number v-model="genCount" :min="1" :max="20" :step="1" style="width: 140px;" />
-          <span class="gen-hint">基于现有数据的值范围和分布模式生成</span>
         </div>
         <div class="gen-form__row">
           <label class="gen-label">生成类型</label>
@@ -353,27 +352,24 @@
             <el-radio value="abnormal">异常数据</el-radio>
             <el-radio value="mixed">混合数据</el-radio>
           </el-radio-group>
-          <span class="gen-hint">正常=全部符合约束；异常=每行至少一处违规；混合=两者交替</span>
         </div>
-        <div class="gen-form__row">
-          <label class="gen-label">生成策略</label>
-          <div class="gen-strategies">
-            <el-tag size="small" type="info" effect="plain">边界值扩展</el-tag>
-            <el-tag size="small" type="info" effect="plain">范围内随机</el-tag>
-            <el-tag size="small" type="info" effect="plain">交叉变异</el-tag>
-            <el-tag size="small" type="info" effect="plain">边界扰动</el-tag>
-          </div>
-        </div>
+
         <div v-if="genPreview.length > 0" class="gen-preview">
           <div class="gen-preview__header">
             <span>生成预览</span>
             <el-tag size="small" type="success" effect="plain">{{ genPreview.length }} 条</el-tag>
           </div>
           <el-table :data="genPreview" size="small" border max-height="220" style="width: 100%;" :row-class-name="genPreviewRowClass">
-            <el-table-column prop="label" label="标签" width="120" />
-            <el-table-column label="数据内容" min-width="380">
+            <el-table-column prop="label" label="标签" width="120" fixed="left" />
+            <el-table-column
+              v-for="field in genPreviewFields"
+              :key="`gen-${field.name}`"
+              :label="field.name"
+              :min-width="fieldColWidth(field)"
+              show-overflow-tooltip
+            >
               <template #default="{ row }">
-                <div class="gen-values-scroll"><span class="mono text-secondary">{{ formatGenValues(row.values) }}</span></div>
+                <span class="mono gen-value">{{ formatGenValue(row.values?.[field.name]) }}</span>
               </template>
             </el-table-column>
           </el-table>
@@ -407,6 +403,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import Sortable from 'sortablejs'
 import { useTestDataStore } from '@/stores/testData'
 import { useProtocolStore, collectInterfaceDatasetFields } from '@/stores/protocol'
+import { useConnectionStore } from '@/stores/connection'
 import { exportCsvFile, exportJsonFile } from '@/services/testDataService'
 import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
@@ -418,6 +415,7 @@ const emit = defineEmits(['delete', 'duplicate'])
 
 const tdStore = useTestDataStore()
 const protoStore = useProtocolStore()
+const connStore = useConnectionStore()
 const { nextUniqueName, validateName } = useEntityNameGuard()
 const router = useRouter()
 
@@ -452,9 +450,34 @@ const jumpToPlan = () => {
   ElMessage.success('已跳转到编排计划，可快速配置与发送')
 }
 const sendTest = () => {
-  const iface = protoStore.interfaces.find(i => i.name === ds.value.linkedInterface)
-  if (!iface) { ElMessage.warning('未找到关联的报文定义'); return }
-  router.push({ path: '/execution', query: { interfaceId: String(iface.id), test: '1' } })
+  const message = protoStore.interfaces.find(i => i.name === ds.value.linkedInterface)
+  if (!message) {
+    ElMessage.warning('未找到关联的报文定义')
+    return
+  }
+  const systemId = ds.value.systemId || message.systemId
+  const module = connStore.nodes.find(item =>
+    String(item.systemId) === String(systemId) &&
+    item.name === ds.value.moduleName
+  )
+  const moduleId = module?.id || message.moduleId
+  if (!systemId || !moduleId) {
+    ElMessage.warning('当前数据集缺少所属系统或模块，无法创建发送接口')
+    return
+  }
+  const testInterface = protoStore.addTestInterface({
+    name: `${ds.value.name}发送接口`,
+    systemId,
+    moduleId,
+    datasetIds: [ds.value.id],
+    desc: `由数据集「${ds.value.name}」快捷发送测试自动创建`,
+    sendInterval: 500,
+  })
+  ElMessage.success(`已创建接口「${testInterface.name}」，正在加入发送监控`)
+  router.push({
+    path: '/execution',
+    query: { interfaceId: String(testInterface.id), test: '1' },
+  })
 }
 
 /* ========== 字段解析 ========== */
@@ -544,6 +567,7 @@ const isFieldNumeric = (f) => f.constraint?.mode === 'range'
 const fieldColWidth = (f) => {
   if (isFieldFixed(f)) return 80
   if (isFieldEnum(f)) return 140
+  if (['流文件', '结构矩阵', 'file', 'matrix'].includes(f.dataType || f.type)) return 240
   return isFieldNumeric(f) ? 150 : 130
 }
 
@@ -664,6 +688,16 @@ const showGenDialog = ref(false)
 const genCount = ref(5)
 const genMode = ref('normal') // normal | abnormal | mixed
 const genPreview = ref([])
+const genPreviewFields = computed(() => {
+  const keys = Object.keys(genPreview.value[0]?.values || {})
+  const keySet = new Set(keys)
+  const ordered = dynamicFields.value.filter(field => keySet.has(field.name))
+  const known = new Set(ordered.map(field => field.name))
+  return [
+    ...ordered,
+    ...keys.filter(name => !known.has(name)).map(name => ({ name, constraint: null })),
+  ]
+})
 
 const onGenerate = () => {
   const result = tdStore.generateTestData(ds.value.id, genCount.value, genMode.value)
@@ -701,9 +735,9 @@ const onConfirmGenerate = () => {
   showGenDialog.value = false
 }
 
-const formatGenValues = (values) => {
-  if (!values) return ''
-  return Object.entries(values).map(([k, v]) => `${k}: ${v}`).join(', ')
+const formatGenValue = (value) => {
+  if (value === undefined || value === null || value === '') return '—'
+  return typeof value === 'object' ? JSON.stringify(value) : value
 }
 
 // 生成预览中异常行标红（按字段定义实时判定）
@@ -1298,16 +1332,9 @@ const onKeydown = (e) => {
   font-family: 'Consolas', 'Monaco', monospace;
 }
 
-.gen-preview .text-secondary {
+.gen-preview .gen-value {
   color: var(--el-text-color-secondary);
   font-size: 12px;
-}
-
-/* 生成预览：数据内容不换行、可左右滚动，行高固定 */
-.gen-values-scroll {
-  overflow-x: auto;
-  white-space: nowrap;
-  max-width: 100%;
 }
 
 :deep(.gen-abnormal-row) > td {

@@ -1,174 +1,102 @@
 <template>
-  <el-drawer v-model="visible" size="520px" title="异常详情">
+  <el-drawer v-model="visible" size="620px" title="异常样本详情">
     <template v-if="exception">
       <div class="drawer-body">
-        <section class="panel">
-          <div class="panel-title">处置</div>
-          <el-segmented
-            v-model="currentState"
-            :options="stateOptions"
-            class="state-switch"
-            @update:model-value="setState"
-          />
-          <el-input v-model="note" type="textarea" :rows="3" placeholder="填写处置说明或复核结论" />
-          <div class="actions">
-            <el-button type="primary" :disabled="!note.trim()" @click="addTrace">保存处置记录</el-button>
+        <section class="summary-card">
+          <div class="summary-card__top">
+            <el-tag :type="typeMeta.tone" effect="dark">{{ exception.type }}</el-tag>
+            <span>{{ exception.capturedTime }}</span>
+          </div>
+          <h3>{{ exception.iface }}</h3>
+          <p>{{ primaryIssue.message || exception.detail?.ruleMessage || '接收数据未通过解析或校验。' }}</p>
+          <div class="summary-actions">
+            <el-button type="primary" @click="$emit('create-variant', exception)">修改副本并保存</el-button>
+            <el-button @click="$emit('save-dataset', [exception])">直接存入数据集</el-button>
           </div>
         </section>
 
-        <section class="panel tag-panel">
-          <div class="panel-title">标签分类</div>
-          <el-popover
-            v-model:visible="tagPickerVisible"
-            trigger="click"
-            placement="bottom-start"
-            width="430"
-            popper-class="exception-tag-popover"
-            @show="resetTagDraft"
-          >
-            <template #reference>
-              <button type="button" class="tag-summary" :title="tagSummary">
-                {{ tagSummary }}
-              </button>
-            </template>
-
-            <div class="tag-sheet">
-              <div class="tag-sheet__header">
-                <el-button text @click="cancelTagEdit">取消</el-button>
-                <strong>选择异常标签</strong>
-                <el-button type="primary" @click="saveTags">保存</el-button>
+        <section class="panel">
+          <div class="panel-title">
+            <span>异常判定</span>
+            <small>{{ exception.issues?.length || 1 }} 项</small>
+          </div>
+          <div class="issue-list">
+            <div v-for="(issue, index) in issueRows" :key="`${issue.field}-${index}`" class="issue-item">
+              <div>
+                <strong>{{ issue.field || '报文整体' }}</strong>
+                <el-tag size="small" effect="plain">{{ issue.layer || typeMeta.layer }}</el-tag>
               </div>
-
-              <el-input v-model="tagSearch" :prefix-icon="Search" clearable placeholder="搜索标签" class="tag-search" />
-
-              <div class="tag-section">
-                <div class="tag-section__title">推荐标签</div>
-                <div class="tag-chip-row">
-                  <button
-                    v-for="tag in suggestedTags"
-                    :key="tag"
-                    type="button"
-                    class="tag-chip"
-                    :class="{ 'is-selected': isTagSelected(tag) }"
-                    @click="toggleTag(tag)"
-                  >
-                    {{ tag }}
-                  </button>
-                </div>
-              </div>
-
-              <div class="tag-section">
-                <div class="tag-section__bar">
-                  <span>历史标签</span>
-                  <el-button text type="primary" @click="manageTags = !manageTags">{{ manageTags ? '完成整理' : '整理标签' }}</el-button>
-                </div>
-                <div class="tag-chip-row">
-                  <button
-                    v-for="tag in filteredTagOptions"
-                    :key="tag"
-                    type="button"
-                    class="tag-chip tag-chip--editable"
-                    :class="{ 'is-selected': isTagSelected(tag), 'is-managing': manageTags }"
-                    @click="manageTags ? null : toggleTag(tag)"
-                  >
-                    <span>{{ tag }}</span>
-                    <el-icon v-if="manageTags" class="tag-chip__delete" @click.stop="deleteTag(tag)"><Close /></el-icon>
-                  </button>
-                  <button v-if="!creatingTag" type="button" class="tag-chip tag-chip--new" @click="startCreateTag">
-                    <el-icon><Plus /></el-icon>
-                    <span>添加标签</span>
-                  </button>
-                </div>
-                <div v-if="creatingTag" class="new-tag-row">
-                  <el-input
-                    ref="newTagInput"
-                    v-model="newTagName"
-                    clearable
-                    placeholder="输入新标签"
-                    class="new-tag-input"
-                    @clear="cancelCreateTag"
-                    @blur="cancelCreateTag"
-                    @keyup.enter="createTag"
-                  />
-                  <el-button type="primary" class="new-tag-confirm" @mousedown.prevent @click="createTag">确定</el-button>
-                </div>
-              </div>
+              <p>{{ issue.message }}</p>
             </div>
-          </el-popover>
-          <div class="tag-hint">多个标签会用逗号展示；标签过长时自动省略。</div>
+          </div>
         </section>
 
         <section class="panel">
-          <div class="panel-title">基本信息</div>
+          <div class="panel-title">
+            <span>解析字段</span>
+            <small>{{ valueRows.length }} 个字段</small>
+          </div>
+          <el-table v-if="valueRows.length" :data="valueRows" size="small" border>
+            <el-table-column label="字段标签" min-width="150">
+              <template #default="{ row }">
+                <strong>{{ row.label }}</strong>
+                <small v-if="row.name !== row.label" class="field-name">{{ row.name }}</small>
+              </template>
+            </el-table-column>
+            <el-table-column label="接收值" min-width="170">
+              <template #default="{ row }"><code>{{ displayValue(row.value) }}</code></template>
+            </el-table-column>
+            <el-table-column label="判定" width="92" align="center">
+              <template #default="{ row }">
+                <el-tag v-if="issueFields.has(row.name)" type="danger" size="small">异常</el-tag>
+                <span v-else class="normal-value">—</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else description="该样本未能解析出字段，可保留原始报文用于复现" :image-size="58" />
+        </section>
+
+        <section class="panel">
+          <div class="panel-title"><span>原始接收数据</span></div>
+          <div class="raw-meta">
+            <span>格式</span><strong>{{ exception.transport || 'bin' }}</strong>
+            <span>长度</span><strong>{{ byteLength }} Bytes</strong>
+          </div>
+          <pre class="raw-data">{{ exception.rawHex || exception.detail?.reqHex || '未记录原始数据' }}</pre>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title"><span>样本信息</span></div>
           <el-descriptions :column="1" border size="small">
-            <el-descriptions-item label="异常类型">{{ exception.type }}</el-descriptions-item>
-            <el-descriptions-item label="级别">
-              <el-tag :type="store.levelMeta(exception.level).tag" size="small">{{ exception.level }}</el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="状态">
-              <el-tag :type="store.stateMeta(exception.state).tag" size="small">{{ exception.state }}</el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="来源">{{ sourceLabel(exception.source) }}</el-descriptions-item>
-            <el-descriptions-item label="接口">{{ exception.iface }}</el-descriptions-item>
-            <el-descriptions-item label="捕捉时间">{{ exception.capturedTime }}</el-descriptions-item>
-            <el-descriptions-item v-if="exception.runId" label="执行批次">
-              <el-popover placement="bottom-start" width="360" trigger="click" popper-class="batch-summary-popover">
-                <template #reference>
-                  <el-button link type="primary">{{ exception.runId }}</el-button>
-                </template>
-                <div v-if="batch" class="batch-summary">
-                  <div class="batch-summary__head">
-                    <strong>{{ batch.name }}</strong>
-                    <el-tag :type="batch.result === '成功' ? 'success' : 'danger'" size="small">{{ batch.result }}</el-tag>
-                  </div>
-                  <div class="batch-summary__grid">
-                    <span>开始时间</span><b>{{ batch.startedAt || batch.time }}</b>
-                    <span>任务数</span><b>{{ batch.tasks?.length || 0 }}</b>
-                    <span>总发送</span><b>{{ batch.summary?.totalRequests || 0 }}</b>
-                    <span>通过率</span><b>{{ batch.summary?.passRate || 0 }}%</b>
-                    <span>平均时延</span><b>{{ batch.summary?.avgResponseTime || 0 }}ms</b>
-                  </div>
-                  <div class="batch-summary__tasks">{{ batchTaskNames }}</div>
-                  <el-button type="primary" size="small" @click="openBatchSummary">查看执行摘要</el-button>
-                </div>
-                <div v-else class="batch-summary batch-summary--empty">
-                  <p>未找到该批次摘要。</p>
-                  <el-button type="primary" size="small" @click="openBatchSummary">打开执行页</el-button>
-                </div>
-              </el-popover>
+            <el-descriptions-item label="来源">{{ sourceLabel }}</el-descriptions-item>
+            <el-descriptions-item label="所属系统">{{ systemName }}</el-descriptions-item>
+            <el-descriptions-item label="所属模块">{{ moduleName }}</el-descriptions-item>
+            <el-descriptions-item label="关联接口">{{ exception.iface }}</el-descriptions-item>
+            <el-descriptions-item v-if="exception.batchId || exception.runId" label="关联批次">{{ exception.batchId || exception.runId }}</el-descriptions-item>
+            <el-descriptions-item label="数据集复用">
+              <el-tag v-if="exception.savedDatasetIds?.length" type="success" size="small">
+                已存入 {{ exception.savedDatasetIds.length }} 个数据集
+              </el-tag>
+              <span v-else>尚未入库</span>
+              <span v-if="exception.variantCount" class="variant-count"> · 已创建 {{ exception.variantCount }} 个变体</span>
             </el-descriptions-item>
           </el-descriptions>
         </section>
 
         <section class="panel">
-          <div class="panel-title">证据</div>
-          <div class="evidence">
-            <label>命中规则 / 现场说明</label>
-            <p>{{ exception.detail?.ruleMessage || exception.remark || '暂无说明' }}</p>
-            <label>字段路径</label>
-            <p class="mono">{{ exception.detail?.fieldPath || 'interface' }}</p>
-            <label>接收时延</label>
-            <p>{{ exception.detail?.recvMs == null ? '未记录' : `${exception.detail.recvMs}ms` }}</p>
-            <label>发送帧</label>
-            <pre>{{ exception.detail?.reqHex || '未记录' }}</pre>
-            <label>接收帧</label>
-            <pre>{{ exception.detail?.respHex || '未记录' }}</pre>
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-title">处理记录</div>
-          <el-timeline>
-            <el-timeline-item
-              v-for="(item, index) in exception.trace"
-              :key="index"
-              :timestamp="item.time"
-              placement="top"
-            >
-              <strong>{{ item.action }}</strong>
-              <p>{{ item.user }}：{{ item.note }}</p>
-            </el-timeline-item>
-          </el-timeline>
+          <div class="panel-title"><span>样本标签</span></div>
+          <el-select
+            v-model="tagDraft"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="选择或输入标签"
+            class="tag-select"
+            @change="saveTags"
+          >
+            <el-option v-for="tag in store.tagOptions" :key="tag" :label="tag" :value="tag" />
+          </el-select>
         </section>
       </div>
     </template>
@@ -176,331 +104,135 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Close, Plus, Search } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
-import { EXC_SOURCES, EXC_STATES, useExceptionStore } from '@/stores/exception'
-import { useRunBatchStore } from '@/stores/runBatch'
+import { computed, ref, watch } from 'vue'
+import { useExceptionStore, EXC_SOURCES } from '@/stores/exception'
+import { useSystemStore } from '@/stores/system'
+import { useConnectionStore } from '@/stores/connection'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   exception: { type: Object, default: null },
 })
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'save-dataset', 'create-variant'])
 
-const router = useRouter()
 const store = useExceptionStore()
-const batchStore = useRunBatchStore()
-const note = ref('')
-const currentState = ref('待处理')
+const systemStore = useSystemStore()
+const connStore = useConnectionStore()
 const tagDraft = ref([])
-const tagPickerVisible = ref(false)
-const tagSearch = ref('')
-const manageTags = ref(false)
-const creatingTag = ref(false)
-const newTagName = ref('')
-const newTagInput = ref(null)
 
 const visible = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value),
 })
+const typeMeta = computed(() => store.typeMeta(props.exception?.type))
+const primaryIssue = computed(() => issueRows.value[0] || {})
+const issueRows = computed(() => {
+  if (props.exception?.issues?.length) return props.exception.issues
+  return [{
+    field: props.exception?.detail?.fieldPath || '',
+    layer: typeMeta.value.layer,
+    message: props.exception?.detail?.ruleMessage || props.exception?.remark || '',
+  }]
+})
+const fieldLabelMap = computed(() => new Map((props.exception?.fields || []).map((field) => [
+  field.name,
+  field.label || field.desc || field.name,
+])))
+const valueRows = computed(() => Object.entries(props.exception?.values || {}).map(([name, value]) => ({
+  name,
+  label: fieldLabelMap.value.get(name) || name,
+  value,
+})))
+const issueFields = computed(() => new Set(issueRows.value.map((issue) => issue.field).filter(Boolean)))
+const byteLength = computed(() => {
+  const compact = String(props.exception?.rawHex || props.exception?.detail?.reqHex || '').replace(/[^0-9a-f]/gi, '')
+  return Math.floor(compact.length / 2)
+})
+const sourceLabel = computed(() => EXC_SOURCES.find((item) => item.value === props.exception?.source)?.label || '接收数据自动捕获')
+const systemName = computed(() => systemStore.systems.find((item) => item.id === props.exception?.systemId)?.name || '未归属系统')
+const moduleName = computed(() => connStore.nodes.find((item) => item.id === props.exception?.moduleId)?.name || '未归属模块')
 
 watch(() => props.exception?.id, () => {
-  note.value = props.exception?.remark || ''
-  currentState.value = props.exception?.state || '待处理'
   tagDraft.value = [...(props.exception?.tags || [])]
 }, { immediate: true })
 
-watch(() => props.exception?.state, (state) => {
-  currentState.value = state || '待处理'
-})
-
-watch(() => props.exception?.remark, (remark) => {
-  note.value = remark || ''
-})
-
-watch(() => props.exception?.tags, (tags) => {
-  tagDraft.value = [...(tags || [])]
-}, { deep: true })
-
-const sourceLabel = (source) => EXC_SOURCES.find((item) => item.value === source)?.label || source
-const stateOptions = EXC_STATES.map((item) => ({ label: item.label, value: item.value }))
-const tagSummary = computed(() => props.exception?.tags?.length ? props.exception.tags.join(', ') : '未设置标签')
-const batch = computed(() => props.exception?.runId ? batchStore.byId(props.exception.runId) : null)
-const batchTaskNames = computed(() => {
-  const names = (batch.value?.tasks || []).map((item) => item.taskName || item.iface).filter(Boolean)
-  return names.length ? names.slice(0, 4).join('、') : '暂无任务清单'
-})
-const filteredTagOptions = computed(() => {
-  const keyword = tagSearch.value.trim().toLowerCase()
-  if (!keyword) return store.tagOptions
-  return store.tagOptions.filter((tag) => tag.toLowerCase().includes(keyword))
-})
-const suggestedTags = computed(() => {
-  return store.tagOptions.slice(0, 5)
-})
-const setState = (state) => {
-  if (!props.exception) return
-  props.exception.state = state
-  store.updateState(props.exception.id, state, note.value || '更新处置状态')
-  ElMessage.success(`已更新为${state}`)
+const displayValue = (value) => {
+  if (value === null) return 'null'
+  if (value === undefined || value === '') return '空值'
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
 }
-const addTrace = () => {
-  if (!props.exception || !note.value.trim()) return
-  store.addTrace(props.exception.id, note.value.trim())
-  ElMessage.success('处理记录已添加')
-}
-const saveTags = () => {
-  if (!props.exception) return
-  store.setTags(props.exception.id, tagDraft.value)
-  tagPickerVisible.value = false
-  manageTags.value = false
-  ElMessage.success('标签已更新')
-}
-const resetTagDraft = () => {
-  tagDraft.value = [...(props.exception?.tags || [])]
-  tagSearch.value = ''
-  newTagName.value = ''
-  creatingTag.value = false
-}
-const cancelTagEdit = () => {
-  resetTagDraft()
-  manageTags.value = false
-  tagPickerVisible.value = false
-}
-const isTagSelected = (tag) => tagDraft.value.includes(tag)
-const toggleTag = (tag) => {
-  tagDraft.value = isTagSelected(tag)
-    ? tagDraft.value.filter((item) => item !== tag)
-    : [...tagDraft.value, tag]
-}
-const startCreateTag = () => {
-  creatingTag.value = true
-  nextTick(() => newTagInput.value?.focus?.())
-}
-const createTag = () => {
-  const name = newTagName.value.trim()
-  if (!name || !props.exception) {
-    cancelCreateTag()
-    return
-  }
-  const nextTags = tagDraft.value.includes(name) ? tagDraft.value : [...tagDraft.value, name]
-  tagDraft.value = nextTags
-  store.setTags(props.exception.id, nextTags)
-  newTagName.value = ''
-  creatingTag.value = false
-  ElMessage.success('标签已添加')
-}
-const cancelCreateTag = () => {
-  newTagName.value = ''
-  creatingTag.value = false
-}
-const deleteTag = (tag) => {
-  ElMessageBox.confirm(`确认删除标签「${tag}」？`, '删除确认', {
-    confirmButtonText: '确定删除',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
-    store.deleteTag(tag)
-    tagDraft.value = tagDraft.value.filter((item) => item !== tag)
-    ElMessage.success('标签已删除')
-  }).catch(() => {})
-}
-const openBatchSummary = () => {
-  if (!props.exception?.runId) return
-  router.push({ path: '/execution', query: { runId: props.exception.runId } })
+const saveTags = (tags) => {
+  if (props.exception) store.setTags(props.exception.id, tags)
 }
 </script>
 
 <style scoped lang="scss">
 .drawer-body { display: flex; flex-direction: column; gap: 14px; }
+.summary-card,
 .panel {
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 12px;
+  border-radius: 10px;
   background: var(--el-bg-color);
 }
-.panel-title {
-  margin-bottom: 10px;
-  font-weight: 650;
-  color: var(--el-text-color-primary);
+.summary-card {
+  padding: 16px;
+  background:
+    linear-gradient(135deg, rgba(245, 108, 108, .11), transparent 55%),
+    var(--el-bg-color);
 }
-.evidence {
+.summary-card__top,
+.panel-title,
+.issue-item > div {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
-.evidence label {
+.summary-card__top span { color: var(--el-text-color-secondary); font-size: 12px; }
+.summary-card h3 { margin: 14px 0 6px; font-size: 20px; }
+.summary-card p { margin: 0; color: var(--el-text-color-regular); line-height: 1.6; }
+.summary-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.immutable-note {
+  margin-top: 12px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
-.evidence p,
-.evidence pre {
-  margin: 0 0 6px;
-  padding: 8px;
-  border-radius: 6px;
+.panel { padding: 14px; }
+.panel-title { margin-bottom: 12px; font-weight: 700; }
+.panel-title small { color: var(--el-text-color-secondary); font-weight: 400; }
+.issue-list { display: flex; flex-direction: column; gap: 8px; }
+.issue-item {
+  padding: 10px;
+  border-left: 3px solid var(--el-color-danger);
+  border-radius: 4px 8px 8px 4px;
   background: var(--el-fill-color-extra-light);
-  font-size: 14px;
-  line-height: 1.5;
 }
-.evidence pre {
+.issue-item p { margin: 6px 0 0; color: var(--el-text-color-regular); font-size: 13px; line-height: 1.5; }
+.field-name { display: block; margin-top: 2px; color: var(--el-text-color-secondary); font-family: Consolas, monospace; }
+.normal-value { color: var(--el-text-color-placeholder); }
+.raw-meta {
+  display: grid;
+  grid-template-columns: 50px 1fr 50px 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.raw-meta span { color: var(--el-text-color-secondary); }
+.raw-data {
+  max-height: 180px;
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 7px;
+  background: #111827;
+  color: #d1fae5;
+  font: 12px/1.7 Consolas, Monaco, monospace;
   white-space: pre-wrap;
   word-break: break-all;
 }
-.mono,
-.evidence pre { font-family: Consolas, Monaco, monospace; }
-.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.tag-panel { background: linear-gradient(90deg, rgba(64, 158, 255, .06), transparent 52%), var(--el-bg-color); }
-.tag-summary {
-  width: 100%;
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 6px;
-  background: var(--el-fill-color-blank);
-  color: var(--el-text-color-primary);
-  cursor: pointer;
-  line-height: 32px;
-  overflow: hidden;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tag-summary:hover { border-color: var(--el-color-primary); }
-.tag-hint { margin-top: 8px; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
-:deep(.el-timeline) { padding-left: 2px; }
-:deep(.el-timeline-item__content p) { margin: 4px 0 0; color: var(--el-text-color-secondary); }
-
-:global(.exception-tag-popover) {
-  padding: 0 !important;
-  border-radius: 14px !important;
-}
-.tag-sheet { padding: 14px; }
-.tag-sheet__header {
-  display: grid;
-  grid-template-columns: 72px 1fr 72px;
-  align-items: center;
-  margin-bottom: 12px;
-  text-align: center;
-}
-.tag-sheet__header strong { font-size: 16px; font-weight: 700; }
-.tag-search { margin-bottom: 14px; }
-.tag-section { margin-top: 14px; }
-.tag-section__title,
-.tag-section__bar {
-  margin-bottom: 10px;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-}
-.tag-section__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.tag-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px;
-}
-.tag-chip {
-  display: inline-flex;
-  align-items: center;
-  max-width: 150px;
-  min-height: 32px;
-  padding: 0 13px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-regular);
-  cursor: pointer;
-  font-size: 13px;
-  gap: 6px;
-}
-.tag-chip span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tag-chip.is-selected {
-  border-color: rgba(103, 194, 58, .28);
-  background: rgba(103, 194, 58, .12);
-  color: var(--el-color-success);
-  font-weight: 650;
-}
-.tag-chip.is-managing { padding-right: 8px; cursor: default; }
-.tag-chip__delete {
-  flex-shrink: 0;
-  color: var(--el-color-danger);
-  cursor: pointer;
-}
-.tag-chip--new {
-  border-color: var(--el-border-color);
-  background: var(--el-bg-color);
-}
-.new-tag-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 68px;
-  gap: 8px;
-  margin-top: 10px;
-  width: 100%;
-}
-.new-tag-input {
-  width: 100%;
-  :deep(.el-input__wrapper) { min-height: 32px; }
-}
-.new-tag-confirm {
-  height: 32px;
-  padding: 0 14px;
-}
-
-:global(.batch-summary-popover) {
-  border-radius: 10px !important;
-}
-.batch-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.batch-summary__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.batch-summary__head strong {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.batch-summary__grid {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: 7px 10px;
-  font-size: 13px;
-}
-.batch-summary__grid span {
-  color: var(--el-text-color-secondary);
-}
-.batch-summary__grid b {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 650;
-}
-.batch-summary__tasks {
-  padding: 8px;
-  border-radius: 6px;
-  background: var(--el-fill-color-extra-light);
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.batch-summary--empty p {
-  margin: 0;
-  color: var(--el-text-color-secondary);
-}
+.variant-count { color: var(--el-text-color-secondary); }
+.tag-select { width: 100%; }
+.tag-hint { margin: 8px 0 0; color: var(--el-text-color-secondary); font-size: 12px; }
+code { font-family: Consolas, Monaco, monospace; }
 </style>

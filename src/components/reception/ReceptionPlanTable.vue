@@ -26,7 +26,7 @@
               </el-button>
             </el-tooltip>
             <el-popconfirm title="确认重置本次监听？接收数据流将被清空" @confirm="$emit('reset-run')">
-              <template #reference><el-button :icon="RefreshRight">重置本次监听</el-button></template>
+              <template #reference><el-button :icon="RefreshRight" :disabled="['listening', 'paused'].includes(store.status)">重置本次监听</el-button></template>
             </el-popconfirm>
           </div>
         </div>
@@ -71,7 +71,7 @@
         <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
             <el-popconfirm title="确认从编排中移除？" @confirm="store.removeFromPlan(row.id)">
-              <template #reference><el-button link type="danger" size="small">移除</el-button></template>
+              <template #reference><el-button link type="danger" size="small" :disabled="['listening', 'paused'].includes(store.status)">移除</el-button></template>
             </el-popconfirm>
           </template>
         </el-table-column>

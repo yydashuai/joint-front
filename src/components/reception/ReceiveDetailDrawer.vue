@@ -209,14 +209,14 @@ const headerSize = computed(() => {
   if (entry.value.verdict.status === 'unparsed') return entry.value.headerParse?.size || 0
   return HEADER_DEFS[entry.value.transport]?.size || 0
 })
-// 语义不一致等 L1 异常：按 issue.field 匹配头字段定义，高亮对应字节区间
+// 结构异常：按 issue.field 匹配头字段定义，高亮对应字节区间
 const badByteSet = computed(() => {
   const set = new Set()
   if (!entry.value) return set
   const def = HEADER_DEFS[entry.value.transport]
   if (!def) return set
   entry.value.verdict.issues
-    .filter((i) => i.layer === 'L1' && i.field)
+    .filter((i) => i.layer === '结构' && i.field)
     .forEach((i) => {
       const f = def.fields.find((x) => x.key === i.field)
       if (f) for (let k = f.offset; k < f.offset + f.len; k += 1) set.add(k)
@@ -234,7 +234,7 @@ const constraintHint = (f) => {
 }
 const fieldRows = computed(() => {
   if (!entry.value) return []
-  const issues = entry.value.verdict.issues.filter((i) => i.layer === 'L2')
+  const issues = entry.value.verdict.issues.filter((i) => ['字段', '规则'].includes(i.layer))
   return entry.value.fields.map((f) => {
     const hit = issues.find((i) => i.field === f.name)
     return {

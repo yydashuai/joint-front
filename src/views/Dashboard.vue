@@ -18,15 +18,15 @@
       <div class="header-actions">
         <el-tooltip content="创建一个新的测试任务"><el-button type="primary" :icon="Plus" @click="$router.push('/task')">创建测试任务</el-button></el-tooltip>
         <el-tooltip content="导入或管理协议模板"><el-button :icon="Upload" @click="$router.push('/protocol')">导入协议模板</el-button></el-tooltip>
-        <el-tooltip content="查看异常告警详情">
+        <el-tooltip content="查看接收异常数据">
           <el-button
             :icon="WarningFilled"
             @click="$router.push('/exception')"
-            :type="totalPending > 0 ? 'danger' : ''"
+            :type="totalExceptions > 0 ? 'danger' : ''"
             plain
           >
-          异常详情
-          <el-badge v-if="totalPending > 0" :value="totalPending" :max="99" class="btn-badge" />
+          异常数据
+          <el-badge v-if="totalExceptions > 0" :value="totalExceptions" :max="99" class="btn-badge" />
         </el-button></el-tooltip>
         <el-tooltip content="进入报告生成流程"><el-button :icon="Tickets" @click="$router.push('/report')">生成报告</el-button></el-tooltip>
       </div>
@@ -128,7 +128,7 @@
       </el-table>
     </el-card>
 
-    <!-- ======== 联试任务 / 异常告警联动区 ======== -->
+    <!-- ======== 联试任务 / 异常数据联动区 ======== -->
     <div class="dashboard-workspace">
       <el-card shadow="never" class="scope-tree-card" :body-style="{ padding: '0' }">
         <template #header>
@@ -169,38 +169,35 @@
           <template #header>
             <div class="panel-head">
               <div>
-                <span class="panel-title">异常告警</span>
+                <span class="panel-title">异常数据</span>
               </div>
-              <el-button size="small" text type="primary" @click="$router.push('/exception')">全部异常 →</el-button>
+              <el-button size="small" text type="primary" @click="$router.push('/exception')">管理样本 →</el-button>
             </div>
           </template>
-          <el-table :data="scopedAlerts" size="small" height="100%" empty-text="当前范围暂无异常告警">
-            <el-table-column label="异常名称" min-width="180" show-overflow-tooltip>
+          <el-table :data="scopedAlerts" size="small" height="100%" empty-text="当前范围暂无异常数据">
+            <el-table-column label="异常样本" min-width="210" show-overflow-tooltip>
               <template #default="{ row }">
                 <div class="name-cell">
                   <el-icon><Warning /></el-icon>
-                  <span>{{ row.type }} · {{ row.iface }}</span>
+                  <span>{{ row.iface }} · {{ row.issues?.[0]?.field || '报文整体' }}</span>
                 </div>
               </template>
             </el-table-column>
             <el-table-column label="模块" min-width="130" show-overflow-tooltip>
               <template #default="{ row }">{{ moduleName(row.moduleId) }}</template>
             </el-table-column>
-            <el-table-column label="级别" width="78" align="center">
+            <el-table-column label="类型" width="126" align="center">
               <template #default="{ row }">
-                <el-tag :type="row.level === '高' ? 'danger' : row.level === '中' ? 'warning' : 'info'" size="small" effect="dark">{{ row.level }}</el-tag>
+                <el-tag :type="exceptionStore.typeMeta(row.type).tone" size="small">{{ row.type }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="处理状态" width="106" align="center">
+            <el-table-column label="入库情况" width="108" align="center">
               <template #default="{ row }">
-                <el-tag :type="stateTag(row.state)" size="small">{{ row.state }}</el-tag>
+                <el-tag v-if="row.savedDatasetIds?.length" type="success" size="small">已入库</el-tag>
+                <span v-else class="text-ph">未入库</span>
               </template>
             </el-table-column>
-            <el-table-column label="备注" min-width="220">
-              <template #default="{ row }">
-                <RemarkCell v-model="row.remark" />
-              </template>
-            </el-table-column>
+            <el-table-column prop="capturedTime" label="捕获时间" width="168" />
             <el-table-column label="操作" width="76" align="center" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="openAlert(row)">查看</el-button>
@@ -302,9 +299,9 @@ const visibleAlerts = computed(() =>
   isAll.value ? exceptionStore.exceptions : exceptionStore.exceptions.filter(a => a.systemId === currentId.value)
 )
 
-const totalPending = computed(() => {
+const totalExceptions = computed(() => {
   const pool = isAll.value ? exceptionStore.exceptions : exceptionStore.exceptions.filter(a => a.systemId === currentId.value)
-  return pool.filter(a => a.state === '待处理' || a.state === '处理中').length
+  return pool.length
 })
 
 /* ========== 统一树：系统 → 模块 → 任务目录 / 异常目录 → 条目 ========== */
@@ -413,12 +410,9 @@ const scopedAlerts = computed(() => {
   if (scope.systemId) list = list.filter(a => a.systemId === scope.systemId)
   if (scope.moduleId) list = list.filter(a => a.moduleId === scope.moduleId)
   if (scope.kind === 'alert' && scope.itemId) list = list.filter(a => a.id === scope.itemId)
-  return [...list].sort((a, b) => {
-    const pa = a.state === '待处理' || a.state === '处理中' ? 1 : 0
-    const pb = b.state === '待处理' || b.state === '处理中' ? 1 : 0
-    if (pa !== pb) return pb - pa
-    return String(b.capturedTime || '').localeCompare(String(a.capturedTime || ''), 'zh-CN')
-  }).slice(0, 20)
+  return [...list]
+    .sort((a, b) => String(b.capturedTime || '').localeCompare(String(a.capturedTime || ''), 'zh-CN'))
+    .slice(0, 20)
 })
 
 /* ========== 系统健康卡片（全局视图） ========== */
@@ -467,7 +461,6 @@ const openAlert = (row) => router.push({
 const modTag = s => ({ online: 'success', pinging: 'warning', offline: 'info' }[s] || 'info')
 const modText = s => ({ online: '在线', pinging: '检测中', offline: '离线' }[s] || '离线')
 const taskTag = s => ({ '执行中': '', '已完成': 'success', '异常': 'danger', '待确认': 'warning' }[s] || 'info')
-const stateTag = s => ({ '待处理': 'danger', '已处理': 'success', '已修复': 'success', '自动恢复': '', '已转派': 'warning', '已记录': 'info', '已忽略': 'info' }[s] || 'info')
 </script>
 
 <style scoped lang="scss">

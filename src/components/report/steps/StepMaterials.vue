@@ -15,7 +15,7 @@
         <div class="upload-tip">
           <div class="upload-tip__text">
             <strong>用途说明必填</strong>
-            <span>例如“插入到关键指标章节，用于说明 P95 延迟分布”。说明越明确，报告回填位置越稳定。</span>
+            <span>例如“插入到接口明细章节，用于说明各接口接收数据分布”。说明越明确，报告回填位置越稳定。</span>
           </div>
           <el-upload :auto-upload="false" :show-file-list="false" accept="image/*,.xlsx,.xls,.csv" multiple :on-change="onPick">
             <el-button type="primary" plain :icon="Upload">上传图片 / 表格</el-button>
@@ -90,14 +90,14 @@ onMounted(() => {
   if (!props.materials.length) {
     props.materials.push(
       { name: '系统拓扑图.png', type: 'image', note: '插入到「联试概述」章节', url: '' },
-      { name: '延迟分布图.png', type: 'image', note: '插入到「关键指标」章节', url: '' },
+      { name: '接口数据分布图.png', type: 'image', note: '插入到「接口明细」章节', url: '' },
       {
-        name: '服务成功率统计表.xlsx', type: 'table', note: '插入到「接口测试结果」章节', url: '',
+        name: '接口批次统计表.xlsx', type: 'table', note: '插入到「批次规模」章节', url: '',
         rows: [
-          ['服务', '成功率', '平均延迟'],
-          ['任务分配服务', '99.8%', '98 ms'],
-          ['武器载荷服务', '93.9%', '187 ms'],
-          ['情报融合服务', '99.8%', '203 ms']
+          ['接口', '发送数量', '接收数量'],
+          ['任务分配接口', '120', '—'],
+          ['武器载荷接口', '80', '—'],
+          ['情报融合接口', '64', '—']
         ]
       }
     )

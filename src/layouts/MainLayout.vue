@@ -108,7 +108,7 @@
         <el-tabs v-model="activeNotifyTab" class="notify-tabs">
           <el-tab-pane name="alert">
             <template #label>
-              <span class="notify-tab-label">异常告警 <b>{{ alertNotificationItems.length }}</b></span>
+              <span class="notify-tab-label">异常数据 <b>{{ alertNotificationItems.length }}</b></span>
             </template>
           </el-tab-pane>
           <el-tab-pane name="offline">
@@ -189,12 +189,12 @@ const alertNotificationItems = computed(() => {
   if (!configStore.notification.alertNotify) return []
   return exceptionStore.exceptions
     .filter((item) => inCurrentScope(item.systemId))
-    .filter((item) => item.state === '待处理')
+    .filter((item) => !item.savedDatasetIds?.length)
     .map((item) => ({
       id: `alert-${item.id}`,
       kind: 'alert',
-      tone: item.level === '高' ? 'danger' : 'warning',
-      title: `${item.level}级 ${item.type}`,
+      tone: item.type === '无法解析' ? 'danger' : 'warning',
+      title: item.type,
       desc: `${systemName(item.systemId)} / ${moduleName(item.moduleId)} / ${item.iface}`,
       time: item.capturedTime || '待记录',
       target: item,
@@ -223,7 +223,7 @@ const visibleNotificationItems = computed(() =>
 
 const notifyEmptyText = computed(() => {
   if (activeNotifyTab.value === 'alert') {
-    return configStore.notification.alertNotify ? '当前范围暂无异常告警' : '异常告警通知已关闭'
+    return configStore.notification.alertNotify ? '当前范围暂无未入库异常数据' : '异常数据通知已关闭'
   }
   return configStore.notification.offlineNotify ? '当前范围暂无离线告警' : '离线告警通知已关闭'
 })

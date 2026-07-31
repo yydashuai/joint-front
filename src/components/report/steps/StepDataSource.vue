@@ -4,15 +4,15 @@
       <div class="step__inner">
         <div class="step-head">
           <div>
-            <div class="blk__title"><el-icon><Coin /></el-icon> 选择执行批次（报告数据来源）</div>
+            <div class="blk__title"><el-icon><Coin /></el-icon> 选择联试批次（报告数据来源）</div>
           </div>
           <div class="step-actions">
-            <el-button type="primary" :icon="ArrowRight" :disabled="!form.runId" @click="$emit('next')">下一步</el-button>
+            <el-button type="primary" :icon="ArrowRight" :disabled="!form.batchId" @click="$emit('next')">下一步</el-button>
           </div>
         </div>
         <el-select
-          v-model="form.runId"
-          placeholder="选择一轮联试执行批次"
+          v-model="form.batchId"
+          placeholder="选择已完成的发送或接收批次"
           class="w-full"
           popper-class="report-batch-select-popper"
           @change="onRunChange"
@@ -20,13 +20,13 @@
           <el-option v-for="r in runs" :key="r.id" :label="batchSelectLabel(r)" :value="r.id">
             <div class="batch-option">
               <div class="batch-option__main">
-                <strong>{{ batchTime(r) }}</strong>
-                <el-tag size="small" :type="r.result === '成功' ? 'success' : r.state === 'running' ? 'primary' : 'warning'">
-                  {{ r.result }}
+                <strong>{{ r.scope?.displayName || '未命名接口范围' }}</strong>
+                <el-tag size="small" :type="r.batchType === 'receive' ? 'success' : 'primary'">
+                  {{ batchTypeLabel(r) }}
                 </el-tag>
               </div>
               <div class="batch-option__sub">
-                {{ systemName(r) }} · {{ batchScope(r) }} · {{ batchMetrics(r) }}
+                {{ batchTime(r) }} · {{ systemName(r) }} · {{ batchMetrics(r) }}
               </div>
             </div>
           </el-option>
@@ -36,34 +36,62 @@
           <template #header>
             <div class="ov-card__head">
               <span class="ov-card__title">批次概览</span>
-              <el-tag size="small" :type="run.result === '成功' ? 'success' : 'warning'" effect="dark">{{ run.result }}</el-tag>
+              <el-tag size="small" type="success" effect="dark">已完成</el-tag>
             </div>
           </template>
-          <div class="source-band">
+          <div class="source-band" :class="`source-band--${run.batchType || 'send'}`">
             <div class="source-band__label">数据来源</div>
             <div class="source-band__main">{{ batchSourceTitle }}</div>
-            <div class="source-band__sub">{{ batchTime(run) }} · {{ batchScope(run) }} · {{ run.startedAt }} — {{ run.finishedAt || '执行中' }} · {{ run.durationText || '未结束' }}</div>
+            <div class="source-band__sub">{{ batchTime(run) }} · {{ run.startedAt }} — {{ run.finishedAt }} · {{ finishReasonLabel }}</div>
           </div>
-          <div class="stat-grid">
-            <div class="stat-card stat-card--blue">
-              <span class="stat-card__label">发送总量</span>
-              <strong>{{ run.summary.totalRequests }}</strong>
-              <span>成功 {{ run.summary.successRequests }} / 异常 {{ abnormalRequests }}</span>
+          <div v-if="run.batchType !== 'receive'" class="stat-grid">
+            <div class="stat-card">
+              <span class="stat-card__label">已发送</span>
+              <strong>{{ sendSummary.sentCount }}</strong>
+              <span>计划 {{ sendSummary.plannedCount }} · 未发送 {{ sendSummary.unsentCount }}</span>
             </div>
-            <div class="stat-card stat-card--green">
-              <span class="stat-card__label">通过率</span>
-              <strong>{{ run.summary.passRate }}%</strong>
-              <span>覆盖 {{ run.stepResults.length }} 个任务</span>
+            <div class="stat-card">
+              <span class="stat-card__label">覆盖接口</span>
+              <strong>{{ sendSummary.interfaceCount }}</strong>
+              <span>{{ interfaceText }}</span>
             </div>
-            <div class="stat-card stat-card--orange">
-              <span class="stat-card__label">接收延迟</span>
-              <strong>{{ run.summary.avgResponseTime }} ms</strong>
-              <span>P95 {{ run.summary.p95 }} ms</span>
+            <div class="stat-card">
+              <span class="stat-card__label">使用数据集</span>
+              <strong>{{ sendSummary.datasetCount }}</strong>
+              <span>批次内发送数据来源</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card__label">批次时长</span>
+              <strong>{{ sendSummary.durationSeconds }}s</strong>
+              <span>{{ finishReasonLabel }}</span>
+            </div>
+          </div>
+          <div v-else class="stat-grid">
+            <div class="stat-card">
+              <span class="stat-card__label">接收总量</span>
+              <strong>{{ receiveSummary.totalReceived }}</strong>
+              <span>覆盖 {{ receiveSummary.interfaceCount }} 个接口</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card__label">正常解析</span>
+              <strong>{{ receiveSummary.normalCount }}</strong>
+              <span>已解析 {{ receiveSummary.parsedCount }} 条</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card__label">校验异常</span>
+              <strong>{{ receiveSummary.validationAbnormalCount }}</strong>
+              <span>无法解析 {{ receiveSummary.unparsedCount }} 条</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card__label">数据留存</span>
+              <strong>{{ receiveSummary.savedToDatasetCount }}</strong>
+              <span>已转发 {{ receiveSummary.forwardedCount }} 条</span>
             </div>
           </div>
           <div class="ov">
-            <div class="ov__row"><span class="ov__k">任务创建者</span><span class="ov__v">{{ run.taskCreator || '—' }}</span></div>
-            <div class="ov__row"><span class="ov__k">接口覆盖</span><span class="ov__v">{{ ifaceCount }} 个接口 · {{ run.stepResults.map(r => r.iface).join('、') }}</span></div>
+            <div class="ov__row"><span class="ov__k">所属系统</span><span class="ov__v">{{ sysName }}</span></div>
+            <div class="ov__row"><span class="ov__k">接口范围</span><span class="ov__v">{{ interfaceText }}</span></div>
+            <div class="ov__row"><span class="ov__k">归档方式</span><span class="ov__v">{{ finishReasonLabel }}</span></div>
           </div>
         </el-card>
       </div>
@@ -83,17 +111,49 @@ defineEmits(['next'])
 const batchStore = useRunBatchStore()
 const systemStore = useSystemStore()
 
-const run = computed(() => batchStore.byId(props.form.runId))
+const run = computed(() => batchStore.byId(props.form.batchId))
 const runs = computed(() => {
-  const list = batchStore.ofSystem(systemStore.currentId)
+  const list = batchStore.reportable.filter((item) =>
+    systemStore.currentId == null || item.systemId === systemStore.currentId
+  )
   if (run.value && !list.some((item) => item.id === run.value.id)) return [run.value, ...list]
   return list
 })
 const sysName = computed(() => systemStore.systems.find((s) => s.id === run.value?.systemId)?.name || '—')
-const ifaceCount = computed(() => new Set(run.value?.stepResults.map((r) => r.iface) || []).size)
-const abnormalRequests = computed(() => run.value?.summary.abnormalRequests ?? ((run.value?.summary.failedRequests || 0) + (run.value?.summary.errorRequests || 0)))
-const reportTitle = computed(() => run.value ? `${sysName.value} ${batchTime(run.value)} 联试报告` : '')
-const batchSourceTitle = computed(() => run.value ? `${sysName.value} ${batchTime(run.value)} 执行批次` : '')
+const interfaceNames = computed(() => run.value?.scope?.interfaceNames?.length
+  ? run.value.scope.interfaceNames
+  : [...new Set((run.value?.tasks || run.value?.stepResults || []).map((item) => item.iface).filter(Boolean))])
+const interfaceText = computed(() => interfaceNames.value.length ? interfaceNames.value.join('、') : '未记录接口')
+const reportTitle = computed(() => run.value
+  ? `${run.value.scope?.displayName || '接口联试'} ${run.value.batchType === 'receive' ? '接收' : '发送'}联试报告`
+  : '')
+const batchSourceTitle = computed(() => run.value
+  ? `${run.value.scope?.displayName || '未命名接口范围'} · ${batchTypeLabel(run.value)}`
+  : '')
+const finishReasonLabel = computed(() => run.value?.finishReason === 'terminated' ? '手动终止归档' : '自然完成归档')
+const sendSummary = computed(() => {
+  const summary = run.value?.summary || {}
+  const sentCount = summary.sentCount ?? summary.totalRequests ?? 0
+  const plannedCount = summary.plannedCount ?? sentCount
+  return {
+    sentCount,
+    plannedCount,
+    unsentCount: summary.unsentCount ?? Math.max(0, plannedCount - sentCount),
+    interfaceCount: summary.interfaceCount ?? interfaceNames.value.length,
+    datasetCount: summary.datasetCount ?? new Set((run.value?.tasks || []).flatMap((item) => item.datasetIds || [])).size,
+    durationSeconds: summary.durationSeconds ?? summary.executionTime ?? 0,
+  }
+})
+const receiveSummary = computed(() => ({
+  totalReceived: run.value?.summary?.totalReceived || 0,
+  parsedCount: run.value?.summary?.parsedCount || 0,
+  normalCount: run.value?.summary?.normalCount || 0,
+  validationAbnormalCount: run.value?.summary?.validationAbnormalCount || 0,
+  unparsedCount: run.value?.summary?.unparsedCount || 0,
+  forwardedCount: run.value?.summary?.forwardedCount || 0,
+  savedToDatasetCount: run.value?.summary?.savedToDatasetCount || 0,
+  interfaceCount: run.value?.summary?.interfaceCount ?? interfaceNames.value.length,
+}))
 
 const pad = (value) => String(value || '').padStart(2, '0')
 const formatDateTime = (text = '') => {
@@ -105,25 +165,28 @@ const formatDateTime = (text = '') => {
 }
 const batchTime = (batch) => formatDateTime(batch?.startedAt || batch?.time)
 const systemName = (batch) => systemStore.systems.find((s) => s.id === batch?.systemId)?.name || '未知系统'
-const moduleCount = (batch) => new Set((batch?.tasks || batch?.stepResults || []).map((item) => item.moduleId || item.moduleName).filter(Boolean)).size
-const taskCount = (batch) => batch?.tasks?.length || batch?.stepResults?.length || 0
-const batchScope = (batch) => `${moduleCount(batch)}模块/${taskCount(batch)}任务`
-const batchAbnormal = (batch) => batch?.summary?.abnormalRequests ?? ((batch?.summary?.failedRequests || 0) + (batch?.summary?.errorRequests || 0))
-const batchMetrics = (batch) => `${batch?.summary?.totalRequests || 0}次发送 / ${batchAbnormal(batch)}异常`
-const batchSelectLabel = (batch) => `${batchTime(batch)} · ${batch?.result || '未完成'} · ${batchScope(batch)}`
+const batchTypeLabel = (batch) => batch?.batchType === 'receive' ? '接收批次' : '发送批次'
+const batchMetrics = (batch) => batch?.batchType === 'receive'
+  ? `${batch?.summary?.totalReceived || 0}条接收 / ${batch?.summary?.unparsedCount || 0}条无法解析`
+  : `${batch?.summary?.sentCount ?? batch?.summary?.totalRequests ?? 0}次发送 / ${(batch?.scope?.interfaceIds || []).length}个接口`
+const batchSelectLabel = (batch) => `${batch?.scope?.displayName || '未命名接口范围'} · ${batchTypeLabel(batch)} · ${batchTime(batch)}`
 
 const onRunChange = () => {
   if (run.value) props.form.title = reportTitle.value
 }
 const ensureRun = () => {
   const list = runs.value
-  if (!list.some((r) => r.id === props.form.runId)) {
-    props.form.runId = list[0]?.id || null
+  if (!list.some((r) => r.id === props.form.batchId)) {
+    props.form.batchId = list[0]?.id || null
     onRunChange()
   }
 }
-onMounted(ensureRun)
+onMounted(() => {
+  ensureRun()
+  onRunChange()
+})
 watch(() => systemStore.currentId, ensureRun)
+watch(() => props.form.batchId, onRunChange)
 </script>
 
 <style scoped lang="scss">
@@ -188,23 +251,22 @@ watch(() => systemStore.currentId, ensureRun)
 .ov-card__title { font-weight: 600; }
 .source-band {
   border-radius: 8px; padding: 14px 16px; margin-bottom: 14px;
-  background: linear-gradient(135deg, #eef6ff, #f5f8ff 48%, #fff7ed);
+  background: linear-gradient(135deg, #eef6ff, #f7faff);
   border: 1px solid #dbeafe;
 }
+.source-band--receive { background: linear-gradient(135deg, #ecfdf5, #f7fffb); border-color: #bbf7d0; }
+.source-band--receive .source-band__label { color: #047857; }
 .source-band__label { font-size: 12px; color: #2563eb; font-weight: 700; margin-bottom: 4px; }
 .source-band__main { font-size: 18px; font-weight: 700; color: #111827; }
 .source-band__sub { margin-top: 4px; font-size: 12px; color: #64748b; }
-.stat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
 .stat-card {
   min-height: 98px; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between;
-  border: 1px solid transparent; color: #0f172a;
+  border: 1px solid var(--el-border-color-lighter); color: #0f172a; background: var(--el-fill-color-extra-light);
   strong { font-size: 22px; line-height: 1.1; }
   span:last-child { font-size: 12px; color: #64748b; }
 }
-.stat-card__label { font-size: 12px; font-weight: 700; }
-.stat-card--blue { background: #eff6ff; border-color: #bfdbfe; .stat-card__label { color: #2563eb; } }
-.stat-card--green { background: #ecfdf5; border-color: #bbf7d0; .stat-card__label { color: #059669; } }
-.stat-card--orange { background: #fff7ed; border-color: #fed7aa; .stat-card__label { color: #ea580c; } }
+.stat-card__label { font-size: 12px; font-weight: 700; color: var(--el-text-color-secondary); }
 .ov { display: flex; flex-direction: column; }
 .ov__row {
   display: flex; align-items: center; gap: 12px; font-size: 13px; padding: 7px 0;

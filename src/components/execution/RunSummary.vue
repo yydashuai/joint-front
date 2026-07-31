@@ -7,8 +7,8 @@
             <span class="card-title">本次执行摘要</span>
             <span class="card-sub">深度趋势分析可继续进入统计与可视化模块</span>
           </div>
-          <el-tag :type="summary.abnormalRequests > 0 ? 'danger' : 'success'" effect="dark">
-            {{ summary.abnormalRequests > 0 ? '存在异常' : '成功' }}
+          <el-tag type="success" effect="dark">
+            已完成
           </el-tag>
         </div>
       </template>
@@ -18,8 +18,8 @@
           <span class="summary-item__label">{{ item.label }}</span>
         </div>
         <div class="pass-rate">
-          <el-progress type="circle" :percentage="summary.passRate" :width="92" />
-          <span>通过率</span>
+          <el-progress type="circle" :percentage="summary.progress" :width="92" />
+          <span>发送进度</span>
         </div>
       </div>
     </el-card>
@@ -42,17 +42,9 @@
         <el-table-column label="任务" prop="taskName" min-width="180" />
         <el-table-column label="接口" prop="iface" min-width="150" />
         <el-table-column label="发送" prop="total" width="80" align="center" />
-        <el-table-column label="成功" prop="success" width="80" align="center" />
-        <el-table-column label="异常" width="80" align="center">
+        <el-table-column label="常规数据" prop="success" width="90" align="center" />
+        <el-table-column label="异常构造数据" width="110" align="center">
           <template #default="{ row }">{{ abnormalCount(row) }}</template>
-        </el-table-column>
-        <el-table-column label="平均时延" width="100" align="center">
-          <template #default="{ row }">{{ row.avgMs }}ms</template>
-        </el-table-column>
-        <el-table-column label="结果" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.result === '成功' ? 'success' : 'danger'" size="small">{{ row.result }}</el-tag>
-          </template>
         </el-table-column>
       </el-table>
     </el-card>
@@ -86,7 +78,7 @@
         {{ store.savedRunToTasks ? '已存为执行记录' : '存为执行记录' }}
       </el-button>
       <el-button :icon="TrendCharts" @click="router.push({ path: '/statistics', query: { runId: store.currentRunId } })">查看统计可视化</el-button>
-      <el-button :icon="Tickets" @click="router.push({ path: '/report', query: { runId: store.currentRunId } })">生成联试报告</el-button>
+      <el-button :icon="Tickets" @click="router.push({ path: '/report', query: { batchId: store.currentRunId } })">生成联试报告</el-button>
       <el-button :icon="Download" @click="exportCsv">导出结果 CSV</el-button>
     </el-card>
   </div>
@@ -105,11 +97,11 @@ const summary = computed(() => store.summary)
 const abnormalCount = (row) => row.abnormal ?? ((row.failed || 0) + (row.error || 0))
 const summaryItems = computed(() => [
   { label: '总发送', value: summary.value.totalRequests },
-  { label: '成功', value: summary.value.successRequests, cls: 'summary-item--ok' },
-  { label: '异常', value: summary.value.abnormalRequests, cls: 'summary-item--bad' },
+  { label: '常规数据', value: summary.value.successRequests, cls: 'summary-item--ok' },
+  { label: '异常构造数据', value: summary.value.abnormalRequests, cls: 'summary-item--bad' },
   { label: '总耗时', value: `${summary.value.executionTime}s` },
-  { label: '平均时延', value: `${summary.value.avgResponseTime}ms` },
   { label: 'RPS', value: summary.value.rps },
+  { label: '待发送', value: store.pendingCount },
 ])
 
 const detailText = (row) => row.detail?.ruleMessage || row.detail || row.remark || ''
@@ -119,9 +111,9 @@ const saveRecord = () => {
 }
 
 const exportCsv = () => {
-  const header = '任务,接口,发送,成功,异常,平均时延,结果'
+  const header = '任务,接口,发送,常规数据,异常构造数据'
   const rows = store.stepResults.map((row) =>
-    [row.taskName, row.iface, row.total, row.success, abnormalCount(row), `${row.avgMs}ms`, row.result].join(',')
+    [row.taskName, row.iface, row.total, row.success, abnormalCount(row)].join(',')
   )
   const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)

@@ -127,7 +127,7 @@ const config = computed(() => store.config)
 
 const modeHint = computed(() => ({
   smoke: '快速验证接口能不能跑通，适合联试前的第一轮确认。',
-  stress: '高并发反复发送，观察吞吐、平均时延与失败率。',
+  stress: '高并发反复发送，观察发送规模与队列处理情况。',
   endurance: '长时间持续运行，观察链路和被测模块是否越跑越不稳定。',
 }[config.value.mode]))
 

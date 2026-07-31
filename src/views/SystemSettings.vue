@@ -63,9 +63,9 @@
               <span class="card-title">通知配置</span>
             </template>
             <el-form :model="notifConfig" label-width="140px" class="settings-form">
-              <el-form-item label="异常告警通知">
+              <el-form-item label="异常数据通知">
                 <el-switch v-model="notifConfig.alertNotify" />
-                <span class="form-hint">当出现异常告警时发送通知</span>
+                <span class="form-hint">捕获到新的接收异常数据时发送通知</span>
               </el-form-item>
               <el-form-item label="离线告警通知">
                 <el-switch v-model="notifConfig.offlineNotify" />
@@ -83,40 +83,6 @@
         <ModelConfig />
       </el-tab-pane>
 
-      <el-tab-pane label="异常设置" name="exception">
-        <div class="settings-section">
-          <el-card shadow="never" class="settings-card">
-            <template #header>
-              <span class="card-title">达标率指标</span>
-            </template>
-            <el-form :model="exceptionConfig" label-width="150px" class="settings-form">
-              <el-form-item label="异常达标率目标">
-                <el-input-number v-model="exceptionConfig.targetSlaRate" :min="0" :max="100" :step="1" />
-                <span class="form-unit">%</span>
-              </el-form-item>
-              <el-form-item label="高级别 SLA">
-                <el-input-number v-model="exceptionConfig.highSlaHours" :min="1" :max="168" />
-                <span class="form-unit">h</span>
-              </el-form-item>
-              <el-form-item label="中级别 SLA">
-                <el-input-number v-model="exceptionConfig.mediumSlaHours" :min="1" :max="168" />
-                <span class="form-unit">h</span>
-              </el-form-item>
-              <el-form-item label="低级别 SLA">
-                <el-input-number v-model="exceptionConfig.lowSlaHours" :min="1" :max="168" />
-                <span class="form-unit">h</span>
-              </el-form-item>
-              <el-form-item label="临期提醒提前量">
-                <el-input-number v-model="exceptionConfig.warningLeadHours" :min="0" :max="72" />
-                <span class="form-unit">h</span>
-              </el-form-item>
-              <el-form-item>
-                <el-tooltip content="保存异常达标率配置"><el-button type="primary" @click="onSaveConfig('exception')">保存</el-button></el-tooltip>
-              </el-form-item>
-            </el-form>
-          </el-card>
-        </div>
-      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -125,22 +91,18 @@
 import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import ModelConfig from '@/components/report/ModelConfig.vue'
-import { useExceptionStore } from '@/stores/exception'
 import { useConfigStore } from '@/stores/config'
 
 const activeTab = ref('system')
-const exceptionStore = useExceptionStore()
 const configStore = useConfigStore()
 const netConfig = reactive({ ...configStore.network })
 const logConfig = reactive({ ...configStore.log })
 const notifConfig = reactive(configStore.notification)
-const exceptionConfig = reactive({ ...exceptionStore.settings })
 
 const onSaveConfig = (group) => {
   if (group === 'network') configStore.saveGroup('network', netConfig)
   if (group === 'log') configStore.saveGroup('log', logConfig)
   if (group === 'notification') configStore.saveGroup('notification', notifConfig)
-  if (group === 'exception') exceptionStore.updateExceptionSettings(exceptionConfig)
   ElMessage.success('配置已保存')
 }
 </script>

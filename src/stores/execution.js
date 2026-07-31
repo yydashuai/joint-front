@@ -4,7 +4,7 @@ import { useProtocolStore, collectTestInterfaceFields } from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
 import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
-import { useRunBatchStore } from '@/stores/runBatch'
+import { buildBatchScope, useRunBatchStore } from '@/stores/runBatch'
 import { bus, EVENTS } from '@/utils/bus'
 
 let runTimer = null
@@ -139,6 +139,7 @@ export const useExecutionStore = defineStore('execution', {
     startedAt: null,
     finishedAt: null,
     savedRunToTasks: false,
+    sourceScheme: null,
     _stepStats: {},
     _requestCursor: 0,
     // 发送队列：本轮全部数据（待发送/已发送），实时监控窗口从上往下逐条发送
@@ -213,8 +214,22 @@ export const useExecutionStore = defineStore('execution', {
       const taskStore = useTestTaskStore()
       if (!taskStore.tasks.some((task) => task.id === taskId)) return false
       this.plan.push({ id: uid('plan'), taskId })
+      this.sourceScheme = null
       this.loadConfigFromTasks()
+      this._syncActiveBatchScope()
       return true
+    },
+
+    setPlanScheme(scheme) {
+      if (!scheme) {
+        this.sourceScheme = null
+        return
+      }
+      const plannedIds = new Set(this.planItems.map((item) => String(item.iface?.id || '')))
+      const schemeIds = new Set((scheme.interfaceIds || []).map(String))
+      const exact = plannedIds.size === schemeIds.size && [...plannedIds].every((id) => schemeIds.has(id))
+      this.sourceScheme = exact ? { id: scheme.id, name: scheme.name } : null
+      this._syncActiveBatchScope()
     },
 
     addModuleTasks(moduleId) {
@@ -227,9 +242,13 @@ export const useExecutionStore = defineStore('execution', {
     },
 
     removeFromPlan(id) {
+      if (['running', 'paused'].includes(this.status)) return false
       const idx = this.plan.findIndex((item) => item.id === id)
       if (idx >= 0) this.plan.splice(idx, 1)
+      this.sourceScheme = null
+      this._syncActiveBatchScope()
       if (!this.plan.length) this.reset()
+      return idx >= 0
     },
 
     reorder(from, to) {
@@ -357,11 +376,6 @@ export const useExecutionStore = defineStore('execution', {
         hex: '',
       })
       this.targetTotal = Math.max(1, this.targetTotal + 1)
-      // 若本轮已结束，回到暂停态，用户点「继续」即可发送新追加的数据
-      if (['done', 'stopped'].includes(this.status)) {
-        this.status = 'paused'
-        this.finishedAt = null
-      }
       this._updateCounters()
       return 'appended'
     },
@@ -375,7 +389,7 @@ export const useExecutionStore = defineStore('execution', {
       this.logLines = []
       this.stepResults = []
       this.exceptions = []
-      this.currentRunId = uid('run')
+      this.currentRunId = uid('send-batch')
       this.startedAtMs = Date.now()
       this.startedAt = nowText()
       this.finishedAt = null
@@ -388,9 +402,15 @@ export const useExecutionStore = defineStore('execution', {
       }]))
       this._requestCursor = 0
       this.savedRunToTasks = false
+      const batchScope = buildBatchScope({
+        scheme: this.sourceScheme,
+        interfaces: this.planItems.map((item) => ({ id: item.iface?.id, name: item.iface?.name })),
+      })
       useRunBatchStore().startBatch({
-        runId: this.currentRunId,
+        batchId: this.currentRunId,
+        batchType: 'send',
         systemId: this.planItems[0]?.task?.systemId || '',
+        scope: batchScope,
         startedAt: this.startedAt,
         config: this.config,
         tasks: this.planItems.map((item) => ({
@@ -401,11 +421,13 @@ export const useExecutionStore = defineStore('execution', {
           moduleName: item.module?.name || '',
           interfaceId: item.iface?.id || item.task?.bindings?.interfaceId || '',
           iface: item.iface?.name || '',
+          datasetIds: item.datasets.map((dataset) => dataset.id),
+          datasetNames: item.datasets.map((dataset) => dataset.name),
         })),
       })
       this._markTasksRunning()
       this._tick()
-      runTimer = window.setInterval(() => this._tick(), this.tickInterval())
+      if (this.status === 'running') runTimer = window.setInterval(() => this._tick(), this.tickInterval())
       bus.emit(EVENTS.TASK_RUN_STARTED, { runId: this.currentRunId, taskIds: this.plan.map((p) => p.taskId) })
       return true
     },
@@ -414,23 +436,26 @@ export const useExecutionStore = defineStore('execution', {
       if (this.status !== 'running') return
       this.status = 'paused'
       this._clearTimers()
+      useRunBatchStore().updateBatchStatus(this.currentRunId, 'paused')
     },
 
     resume() {
       if (this.status !== 'paused') return
       this.status = 'running'
+      useRunBatchStore().updateBatchStatus(this.currentRunId, 'running')
       this._tick()
-      runTimer = window.setInterval(() => this._tick(), this.tickInterval())
+      if (this.status === 'running') runTimer = window.setInterval(() => this._tick(), this.tickInterval())
     },
 
     stop() {
       if (!['running', 'paused'].includes(this.status)) return
       this.status = 'stopped'
       this._clearTimers()
-      this.finalize('stopped')
+      this.finalize('stopped', 'terminated')
     },
 
     reset() {
+      if (['running', 'paused'].includes(this.status)) return false
       this._clearTimers()
       this.status = 'idle'
       this.progress = 0
@@ -449,6 +474,7 @@ export const useExecutionStore = defineStore('execution', {
       this._stepStats = {}
       this._requestCursor = 0
       this.sendQueue = []
+      return true
     },
 
     loadBatchSnapshot(batch) {
@@ -527,7 +553,7 @@ export const useExecutionStore = defineStore('execution', {
       }
       if (isAbnormal) {
         // 发送侧只统计「发送了异常构造数据」，不写入异常台账 ——
-        // 异常台账与故障异常管理页共享，异常仅由接收校验（reception store）产生。
+        // 异常样本库与异常数据管理页共享，异常仅由接收校验（reception store）产生。
         if (step) {
           step.failed += 1
           step.abnormalTypes['异常数据'] = (step.abnormalTypes['异常数据'] || 0) + 1
@@ -550,7 +576,7 @@ export const useExecutionStore = defineStore('execution', {
       this.progress = clamp(Math.round((this.counters.totalRequests / this.targetTotal) * 100), 0, 100)
     },
 
-    finalize(finalStatus = 'done') {
+    finalize(finalStatus = 'done', finishReason = 'natural') {
       this._clearTimers()
       this.status = finalStatus
       this.finishedAt = nowText()
@@ -575,23 +601,45 @@ export const useExecutionStore = defineStore('execution', {
           failed: abnormal,
           error: 0,
           avgMs,
-          result: abnormal > 0 ? '异常' : '成功',
+          result: abnormal > 0 ? '含异常构造数据' : '已发送',
           traces: stat.traces,
         }
       })
       useRunBatchStore().finishBatch(this.currentRunId, {
         state: finalStatus === 'done' ? 'done' : 'stopped',
+        finishReason,
         startedAt: this.startedAt,
         finishedAt: this.finishedAt,
         durationText: `${this.counters.executionTime}s`,
-        result: this.counters.failedRequests + this.counters.errorRequests > 0 ? '存在异常' : '成功',
         summary: {
           ...this.summary,
-          p95: (() => {
-            const durations = Object.values(this._stepStats).flatMap((item) => item.durations || []).sort((a, b) => a - b)
-            return durations.length ? durations[Math.min(durations.length - 1, Math.floor(durations.length * 0.95))] : this.counters.avgResponseTime
-          })(),
+          plannedCount: this.targetTotal,
+          sentCount: this.sentCount,
+          unsentCount: this.pendingCount,
+          interfaceCount: new Set(this.planItems.map((item) => item.iface?.id).filter(Boolean)).size,
+          datasetCount: new Set(this.planItems.flatMap((item) => item.datasets.map((dataset) => dataset.id))).size,
+          durationSeconds: this.counters.executionTime,
         },
+        records: this.sendQueue.map((entry) => ({
+          id: entry.id,
+          taskId: entry.taskId,
+          interfaceName: entry.iface,
+          datasetName: entry.datasetName,
+          label: entry.label,
+          status: entry.status,
+          time: entry.time,
+        })),
+        tasks: this.planItems.map((item) => ({
+          taskId: item.taskId,
+          taskName: item.task?.name || '',
+          systemId: item.task?.systemId || '',
+          moduleId: item.module?.id || item.task?.moduleId || '',
+          moduleName: item.module?.name || '',
+          interfaceId: item.iface?.id || item.task?.bindings?.interfaceId || '',
+          iface: item.iface?.name || '',
+          datasetIds: item.datasets.map((dataset) => dataset.id),
+          datasetNames: item.datasets.map((dataset) => dataset.name),
+        })),
         stepResults: this.stepResults,
         exceptions: this.exceptions,
       })
@@ -600,12 +648,12 @@ export const useExecutionStore = defineStore('execution', {
         id: this.currentRunId,
         startedAt: this.startedAt,
         finishedAt: this.finishedAt,
-        result: this.counters.failedRequests + this.counters.errorRequests > 0 ? '存在异常' : '成功',
+        result: '已完成',
         ...this.summary,
       })
       bus.emit(EVENTS.TASK_RUN_FINISHED, {
         runId: this.currentRunId,
-        result: this.counters.failedRequests + this.counters.errorRequests > 0 ? '存在异常' : '成功',
+        result: '已完成',
         exceptions: this.exceptions.length,
         taskIds: this.plan.map((p) => p.taskId),
       })
@@ -614,7 +662,7 @@ export const useExecutionStore = defineStore('execution', {
     saveRunRecord() {
       if (!this.currentRunId || this.savedRunToTasks) return false
       const taskStore = useTestTaskStore()
-      const result = this.counters.failedRequests + this.counters.errorRequests > 0 ? '存在异常' : '成功'
+      const result = '已完成'
       this.planItems.forEach((item) => {
         const task = taskStore.tasks.find((t) => t.id === item.taskId)
         if (!task) return
@@ -624,11 +672,11 @@ export const useExecutionStore = defineStore('execution', {
           id: `${this.currentRunId}-${item.taskId}`,
           startedAt: this.startedAt,
           finishedAt: this.finishedAt,
-          result: step?.result || result,
+          result,
           duration: `${this.counters.executionTime}s`,
-          log: `本次执行发送 ${step?.total || 0} 次，成功 ${step?.success || 0} 次，异常 ${abnormal} 次`,
+          log: `本次执行发送 ${step?.total || 0} 条，其中常规数据 ${step?.success || 0} 条、异常构造数据 ${abnormal} 条`,
         })
-        task.status = result === '成功' ? 'completed' : 'error'
+        task.status = 'completed'
         task.time = this.finishedAt
       })
       this.savedRunToTasks = true
@@ -637,6 +685,14 @@ export const useExecutionStore = defineStore('execution', {
 
     clearLog() {
       this.logLines = []
+    },
+
+    _syncActiveBatchScope() {
+      if (!this.currentRunId || !['running', 'paused'].includes(this.status)) return
+      useRunBatchStore().updateBatchScope(this.currentRunId, buildBatchScope({
+        scheme: this.sourceScheme,
+        interfaces: this.planItems.map((item) => ({ id: item.iface?.id, name: item.iface?.name })),
+      }))
     },
 
     _markTasksRunning() {

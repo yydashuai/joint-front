@@ -1,374 +1,449 @@
 /**
- * 统计与可视化 —— 数据聚合层（纯函数 + 只读 store 访问）
+ * 统计与可视化 —— 客观数据聚合层
  *
- * 原则：所有指标都能在真实数据结构里找到来源，绝不杜撰。
- *   - 执行 / 发送 / 性能 / 接口：来自统一执行批次 store（种子批次 + 执行编排实时批次）
- *   - 异常：来自 exceptionStore（种子 alerts + 执行实时捕捉）
- *   - 接口覆盖：来自 protocolStore.testInterfaces（独立接口总数）
- * 禁列（无数据源）：被测系统 CPU/内存/带宽、业务正确率、真实并发用户、SLA、真实链路拓扑时延。
+ * 发送与接收是两条独立通道：
+ * - 发送侧只统计执行批次、任务执行项、已发送报文和涉及接口；
+ * - 接收侧只统计当前监听会话收到的数据及解析/校验分类；
+ * - 异常样本、接口使用和测试数据资产分别统计。
+ *
+ * 不计算请求/响应通过率、响应时延、待处理异常或处置效率。
  */
+import { useConnectionStore } from '@/stores/connection'
 import { useExceptionStore } from '@/stores/exception'
 import { useProtocolStore } from '@/stores/protocol'
-import { useConnectionStore } from '@/stores/connection'
+import { useReceptionStore } from '@/stores/reception'
 import { useRunBatchStore } from '@/stores/runBatch'
-import { RULE_TYPES } from '@/utils/ruleEngine'
+import { useSystemStore } from '@/stores/system'
+import { useTestDataStore } from '@/stores/testData'
 
-/* ========== 工具 ========== */
-const sum = (arr, pick = (x) => x) => arr.reduce((a, b) => a + (pick(b) || 0), 0)
-const round = (n) => Math.round(n)
-const pct = (a, b) => (b ? round((a / b) * 100) : 0)
-const abnormalOf = (row = {}) => row.abnormal ?? ((row.failed || 0) + (row.error || 0))
-const rulePalette = ['var(--el-color-danger)', 'var(--el-color-warning)', '#9254de', '#36a2eb', '#13c2c2', '#ff9f40', '#73d13d', '#f759ab']
+const SEND_COLOR = '#2f6bff'
+const RECEIVE_COLOR = '#00a7b5'
+const EXCEPTION_COLOR = '#d97706'
+const UNPARSED_COLOR = '#dc2626'
+const ASSET_COLOR = '#6d5bd0'
 
-/** 把各种时间文本归一为 YYYY-MM-DD */
+const sum = (arr, pick = (item) => item) => arr.reduce((total, item) => total + Number(pick(item) || 0), 0)
+const uniqueCount = (arr) => new Set(arr.filter((item) => item !== '' && item != null).map(String)).size
+
 function normalizeDate(text) {
   if (!text) return ''
   const head = String(text).trim().split(' ')[0]
   if (head.includes('-')) return head
   if (head.includes('/')) {
-    const [y, m, d] = head.split('/')
-    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const [year, month, day] = head.split('/')
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
   }
   return head
 }
 
-/** 时间范围预设 → 截止日期（含）*/
 function cutoffOf(range) {
   if (!range || range === 'all') return ''
   const days = range === '1d' ? 0 : range === '3d' ? 2 : 6
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  // 锚定到种子数据所在日期窗口（演示数据截止 2026-06-25）
   const anchor = new Date('2026-06-25')
   anchor.setDate(anchor.getDate() - days)
   return `${anchor.getFullYear()}-${String(anchor.getMonth() + 1).padStart(2, '0')}-${String(anchor.getDate()).padStart(2, '0')}`
 }
 
-/* ========== 归一化执行记录（种子 + 实时） ========== */
-function allRuns() {
-  return useRunBatchStore().statRows
+function groupBy(items, keyOf) {
+  const groups = new Map()
+  items.forEach((item) => {
+    const key = keyOf(item)
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(item)
+  })
+  return groups
 }
 
-/** 按筛选条件过滤执行记录 */
+function countBars(items, keyOf, labelOf = (key) => key, color = SEND_COLOR, limit = 8) {
+  return [...groupBy(items, keyOf).entries()]
+    .map(([key, rows]) => ({ label: labelOf(key), value: rows.length, color }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit)
+}
+
+function sumBars(items, keyOf, valueOf, labelOf = (key) => key, color = SEND_COLOR, limit = 8) {
+  return [...groupBy(items, keyOf).entries()]
+    .map(([key, rows]) => ({ label: labelOf(key), value: sum(rows, valueOf), color }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit)
+}
+
+function trendOf(items, dateOf, valueOf = () => 1) {
+  const groups = groupBy(items.filter((item) => normalizeDate(dateOf(item))), (item) => normalizeDate(dateOf(item)))
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([date, rows]) => ({ x: date.slice(5), y: sum(rows, valueOf) }))
+}
+
+const moduleNameOf = (moduleId) => useConnectionStore().nodes.find((item) => item.id === moduleId)?.name || '未归属模块'
+const systemNameOf = (systemId) => useSystemStore().systems.find((item) => item.id === systemId)?.name || '未归属系统'
+
 export function getRuns(filters = {}) {
   const cutoff = cutoffOf(filters.timeRange)
-  return allRuns().filter((r) => {
-    if (filters.runId && r.runId !== filters.runId && r.id !== filters.runId) return false
-    if (filters.systemId && r.systemId !== filters.systemId) return false
-    if (filters.moduleId && r.moduleId !== filters.moduleId) return false
-    if (filters.interfaceId && r.interfaceId !== filters.interfaceId) return false
-    if (cutoff && normalizeDate(r.dateKey) < cutoff) return false
+  return useRunBatchStore().statRows.filter((row) => {
+    if (filters.runId && String(row.runId || row.id) !== String(filters.runId)) return false
+    if (filters.systemId && row.systemId !== filters.systemId) return false
+    if (filters.moduleId && row.moduleId !== filters.moduleId) return false
+    if (filters.interfaceId && String(row.interfaceId) !== String(filters.interfaceId)) return false
+    if (cutoff && normalizeDate(row.dateKey || row.startedAt) < cutoff) return false
     return true
   })
 }
 
-/** 异常筛选（注意：异常无 interfaceId，故不按接口过滤） */
-export function getExceptions(filters = {}) {
-  const exc = useExceptionStore()
+export function getBatches(filters = {}) {
   const cutoff = cutoffOf(filters.timeRange)
-  return exc.exceptions.filter((e) => {
-    if (filters.runId && e.runId !== filters.runId) return false
-    if (filters.systemId && e.systemId !== filters.systemId) return false
-    if (filters.moduleId && e.moduleId !== filters.moduleId) return false
-    if (cutoff && normalizeDate(e.capturedTime) < cutoff) return false
+  const batchType = filters.batchType || 'send'
+  return useRunBatchStore().batches.filter((batch) => {
+    if ((batch.batchType || 'send') !== batchType) return false
+    if (filters.runId && String(batch.runId || batch.id) !== String(filters.runId)) return false
+    if (filters.systemId && batch.systemId !== filters.systemId) return false
+    if (filters.moduleId && !(batch.tasks || batch.stepResults || []).some((item) => item.moduleId === filters.moduleId)) return false
+    if (filters.interfaceId && !(batch.tasks || batch.stepResults || []).some((item) => String(item.interfaceId) === String(filters.interfaceId))) return false
+    if (cutoff && normalizeDate(batch.dateKey || batch.startedAt) < cutoff) return false
     return true
   })
 }
 
-/* ========== 分组辅助 ========== */
-function groupBy(arr, keyFn) {
-  const map = new Map()
-  arr.forEach((item) => {
-    const k = keyFn(item)
-    if (!map.has(k)) map.set(k, [])
-    map.get(k).push(item)
+export function getExceptions(filters = {}) {
+  const cutoff = cutoffOf(filters.timeRange)
+  const selectedInterface = filters.interfaceId
+    ? useProtocolStore().testInterfaces.find((item) => String(item.id) === String(filters.interfaceId))
+    : null
+  return useExceptionStore().exceptions.filter((item) => {
+    if (filters.runId && String(item.batchId || item.runId) !== String(filters.runId)) return false
+    if (filters.systemId && item.systemId !== filters.systemId) return false
+    if (filters.moduleId && item.moduleId !== filters.moduleId) return false
+    if (
+      filters.interfaceId
+      && String(item.interfaceId) !== String(filters.interfaceId)
+      && item.iface !== selectedInterface?.name
+    ) return false
+    if (cutoff && normalizeDate(item.capturedTime) < cutoff) return false
+    return true
   })
-  return map
 }
 
-function dayBuckets(runs, valueFn) {
-  const days = [...new Set(allRuns().map((r) => normalizeDate(r.dateKey)))].sort()
-  const map = groupBy(runs, (r) => normalizeDate(r.dateKey))
-  return days
-    .filter((d) => map.has(d))
-    .map((d) => ({ x: d.slice(5), y: valueFn(map.get(d)) }))
+export function getReceptionEntries(filters = {}) {
+  return useReceptionStore().recvQueue.filter((item) => {
+    if (item.kind !== 'recv') return false
+    if (filters.systemId && item.systemId !== filters.systemId) return false
+    if (filters.moduleId && item.moduleId !== filters.moduleId) return false
+    if (filters.interfaceId && String(item.interfaceId) !== String(filters.interfaceId)) return false
+    return true
+  })
 }
 
-const moduleNameOf = (moduleId) => {
-  const conn = useConnectionStore()
-  return conn.nodes.find((n) => n.id === moduleId)?.name || '未知模块'
-}
-
-function abnormalTypeBars(runs) {
-  const counts = {}
-  runs.forEach((row) => {
-    const typedTotal = sum(Object.values(row.abnormalTypes || {}))
-    if (typedTotal) {
-      Object.entries(row.abnormalTypes).forEach(([label, value]) => {
-        counts[label] = (counts[label] || 0) + (value || 0)
-      })
-      return
+function getDatasets(filters = {}) {
+  const moduleName = filters.moduleId ? moduleNameOf(filters.moduleId) : ''
+  return useTestDataStore().datasets.filter((dataset) => {
+    if (filters.systemId && dataset.systemId !== filters.systemId) return false
+    if (moduleName && dataset.moduleName !== moduleName) return false
+    if (filters.interfaceId && String(dataset.linkedInterface || '') !== String(filters.interfaceId)) {
+      const iface = useProtocolStore().testInterfaces.find((item) => String(item.id) === String(filters.interfaceId))
+      if (dataset.linkedInterface !== iface?.name) return false
     }
-    const abnormal = abnormalOf(row)
-    if (abnormal) counts['响应超时'] = (counts['响应超时'] || 0) + abnormal
+    return true
   })
-  return RULE_TYPES
-    .map((type, i) => ({ label: type.label, value: counts[type.label] || 0, color: rulePalette[i % rulePalette.length] }))
-    .filter((item) => item.value > 0)
-    .sort((a, b) => b.value - a.value)
 }
 
-/* ========== 维度聚合 ========== */
+function getFiles(filters = {}) {
+  const moduleName = filters.moduleId ? moduleNameOf(filters.moduleId) : ''
+  return useTestDataStore().files.filter((file) => {
+    if (filters.systemId && file.systemId !== filters.systemId) return false
+    if (filters.moduleId && file.moduleId && file.moduleId !== filters.moduleId) return false
+    if (moduleName && !file.moduleId && file.moduleName !== moduleName) return false
+    return true
+  })
+}
+
+function receiveSnapshot(filters = {}) {
+  const store = useReceptionStore()
+  const entries = getReceptionEntries(filters)
+  const parsed = entries.filter((item) => item.verdict?.status !== 'unparsed').length
+  const normal = entries.filter((item) => item.verdict?.status === 'ok').length
+  const abnormal = entries.filter((item) => item.verdict?.status === 'error').length
+  const unparsed = entries.filter((item) => item.verdict?.status === 'unparsed').length
+  return {
+    entries,
+    total: entries.length,
+    parsed,
+    normal,
+    abnormal,
+    unparsed,
+    forwarded: store.recvQueue.filter((item) => item.kind === 'forward').length,
+    monitoredInterfaces: uniqueCount(store.plan.map((item) => item.interfaceId)),
+    rate: store.recvRate,
+    status: store.status,
+    elapsedSeconds: store.elapsedSeconds,
+  }
+}
+
+function interfaceScope(filters = {}) {
+  return useProtocolStore().testInterfaces.filter((item) => {
+    if (filters.systemId && item.systemId !== filters.systemId) return false
+    if (filters.moduleId && item.moduleId !== filters.moduleId) return false
+    if (filters.interfaceId && String(item.id) !== String(filters.interfaceId)) return false
+    return true
+  })
+}
+
+function scopeBars(runs, exceptions, filters) {
+  if (filters.systemId) {
+    return {
+      sendByScope: sumBars(runs, (item) => item.moduleId, (item) => item.total, moduleNameOf, SEND_COLOR),
+      exceptionByScope: countBars(exceptions, (item) => item.moduleId, moduleNameOf, EXCEPTION_COLOR),
+      axisName: '模块',
+    }
+  }
+  return {
+    sendByScope: sumBars(runs, (item) => item.systemId, (item) => item.total, systemNameOf, SEND_COLOR),
+    exceptionByScope: countBars(exceptions, (item) => item.systemId, systemNameOf, EXCEPTION_COLOR),
+    axisName: '系统',
+  }
+}
+
 export function aggregateOverview(filters = {}) {
   const runs = getRuns(filters)
-  const exc = getExceptions(filters)
-  const total = sum(runs, (r) => r.total)
-  const success = sum(runs, (r) => r.success)
-  const abnormal = sum(runs, abnormalOf)
-  const allDur = runs.flatMap((r) => r.durations || [])
-  const pending = exc.filter((e) => e.state === '待处理' || e.state === '处理中').length
+  const batches = getBatches(filters)
+  const exceptions = getExceptions(filters)
+  const reception = receiveSnapshot(filters)
+  const datasets = getDatasets(filters)
+  const files = getFiles(filters)
+  const interfaces = interfaceScope(filters)
+  const moduleIds = new Set(useConnectionStore().nodes
+    .filter((item) => !filters.systemId || item.systemId === filters.systemId)
+    .filter((item) => !filters.moduleId || item.id === filters.moduleId)
+    .map((item) => item.id))
+  const onlineModules = useConnectionStore().nodes.filter((item) => moduleIds.has(item.id) && item.status === 'online').length
+  const dataRows = sum(datasets, (item) => (item.rows?.length || 0) + (item.historyRows?.length || 0))
+
   return {
-    runCount: runs.length,
-    totalRequests: total,
-    passRate: pct(success, total),
-    avgResponseTime: allDur.length ? round(sum(allDur) / allDur.length) : 0,
-    exceptionTotal: exc.length,
-    pending,
-    composition: [
-      { label: '成功', value: success, color: 'var(--el-color-success)' },
-      { label: '异常', value: abnormal, color: 'var(--el-color-danger)' },
-    ],
-    passRateTrend: dayBuckets(runs, (rs) => pct(sum(rs, (r) => r.success), sum(rs, (r) => r.total))),
+    send: {
+      batches: batches.length,
+      tasks: runs.length,
+      messages: sum(runs, (item) => item.total),
+      interfaces: uniqueCount(runs.map((item) => item.interfaceId || item.iface)),
+    },
+    receive: reception,
+    assets: {
+      exceptionSamples: exceptions.length,
+      datasets: datasets.length,
+      dataRows,
+      files: files.length,
+      definedInterfaces: interfaces.length,
+      onlineModules,
+      moduleTotal: moduleIds.size,
+    },
+    sendTrend: trendOf(runs, (item) => item.dateKey || item.startedAt, (item) => item.total),
+    exceptionTrend: trendOf(exceptions, (item) => item.capturedTime),
+    ...scopeBars(runs, exceptions, filters),
   }
 }
 
-export function aggregateExecution(filters = {}) {
+export function aggregateSend(filters = {}) {
   const runs = getRuns(filters)
-  const success = sum(runs, (r) => r.success)
-  const abnormal = sum(runs, abnormalOf)
-  const total = success + abnormal
-  const durations = runs.flatMap((r) => r.durations || []).filter((d) => d > 0)
-  const ifaceGroup = groupBy(runs, (r) => r.iface)
+  const batches = getBatches(filters)
   return {
     kpis: {
-      runCount: runs.length,
-      ifaceCount: new Set(runs.map((r) => r.interfaceId)).size,
-      passRate: pct(success, total),
-      avgRunTime: durations.length ? round(sum(durations) / durations.length) : 0,
+      batches: batches.length,
+      tasks: runs.length,
+      messages: sum(runs, (item) => item.total),
+      interfaces: uniqueCount(runs.map((item) => item.interfaceId || item.iface)),
+      durationSeconds: sum(batches, (item) => item.summary?.durationSeconds ?? item.summary?.executionTime),
     },
-    composition: [
-      { label: '成功', value: success, color: 'var(--el-color-success)' },
-      { label: '异常', value: abnormal, color: 'var(--el-color-danger)' },
-    ],
-    runsPerDay: dayBuckets(runs, (rs) => rs.length),
-    passRateTrend: dayBuckets(runs, (rs) => pct(sum(rs, (r) => r.success), sum(rs, (r) => r.total))),
-    runsByIface: [...ifaceGroup.entries()]
-      .map(([label, rs]) => ({ label, value: rs.length }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 8),
+    messagesByDay: trendOf(runs, (item) => item.dateKey || item.startedAt, (item) => item.total),
+    batchesByDay: trendOf(batches, (item) => item.dateKey || item.startedAt),
+    byInterface: sumBars(runs, (item) => item.iface || '未命名接口', (item) => item.total),
+    byModule: sumBars(runs, (item) => item.moduleId, (item) => item.total, moduleNameOf),
+    recentBatches: [...batches]
+      .sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')))
+      .slice(0, 20)
+      .map((batch) => ({
+        id: batch.runId || batch.id,
+        name: batch.name,
+        startedAt: batch.startedAt,
+        state: batch.state,
+        taskCount: (batch.tasks || batch.stepResults || []).length,
+        interfaceCount: uniqueCount((batch.tasks || batch.stepResults || []).map((item) => item.interfaceId || item.iface)),
+        messages: batch.summary?.sentCount ?? batch.summary?.totalRequests ?? 0,
+        duration: batch.summary?.durationSeconds ?? batch.summary?.executionTime ?? 0,
+      })),
   }
 }
 
-export function aggregateRequest(filters = {}) {
-  const runs = getRuns(filters)
-  const total = sum(runs, (r) => r.total)
-  const success = sum(runs, (r) => r.success)
-  const abnormal = sum(runs, abnormalOf)
-  const ifaceGroup = groupBy(runs, (r) => r.iface)
+export function aggregateReceive(filters = {}) {
+  const snapshot = receiveSnapshot(filters)
+  const byInterface = countBars(snapshot.entries, (item) => item.iface || '未命名报文', (key) => key, RECEIVE_COLOR)
+  const composition = [
+    { label: '解析正常', value: snapshot.normal, color: RECEIVE_COLOR },
+    { label: '校验异常', value: snapshot.abnormal, color: EXCEPTION_COLOR },
+    { label: '无法解析', value: snapshot.unparsed, color: UNPARSED_COLOR },
+  ]
   return {
-    kpis: {
-      total,
-      success,
-      abnormal,
-      successRate: pct(success, total),
-    },
-    requestByDay: dayBuckets(runs, (rs) => sum(rs, (r) => r.total)),
-    resultStack: dayBucketsStack(runs),
-    requestByIface: [...ifaceGroup.entries()]
-      .map(([label, rs]) => ({ label, value: sum(rs, (r) => r.total) }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 8),
-    failReasons: abnormalTypeBars(runs),
-  }
-}
-
-/** 成功/异常按天堆叠 */
-function dayBucketsStack(runs) {
-  const days = [...new Set(allRuns().map((r) => normalizeDate(r.dateKey)))].sort()
-  const map = groupBy(runs, (r) => normalizeDate(r.dateKey))
-  return days
-    .filter((d) => map.has(d))
-    .map((d) => {
-      const rs = map.get(d)
-      return {
-        label: d.slice(5),
-        parts: [
-          { value: sum(rs, (r) => r.success), color: 'var(--el-color-success)', name: '成功' },
-          { value: sum(rs, abnormalOf), color: 'var(--el-color-danger)', name: '异常' },
-        ],
-      }
-    })
-}
-
-export function aggregatePerformance(filters = {}) {
-  const runs = getRuns(filters)
-  const durations = runs.flatMap((r) => r.durations || []).filter((d) => d > 0)
-  const sorted = [...durations].sort((a, b) => a - b)
-  const percentile = (p) => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))] : 0)
-  const ifaceGroup = groupBy(runs, (r) => r.iface)
-  const avgRps = runs.length ? Number((sum(runs, (r) => r.rps) / runs.length).toFixed(1)) : 0
-  return {
-    kpis: {
-      avgMs: sorted.length ? round(sum(sorted) / sorted.length) : 0,
-      p90: percentile(90),
-      p95: percentile(95),
-      maxMs: sorted.length ? sorted[sorted.length - 1] : 0,
-      avgRps,
-    },
-    histogram: sorted,
-    latencyTrend: dayBuckets(runs, (rs) => {
-      const ds = rs.flatMap((r) => r.durations || [])
-      return ds.length ? round(sum(ds) / ds.length) : 0
-    }),
-    throughputTrend: dayBuckets(runs, (rs) => (rs.length ? Number((sum(rs, (r) => r.rps) / rs.length).toFixed(1)) : 0)),
-    latencyByIface: [...ifaceGroup.entries()]
-      .map(([label, rs]) => {
-        const ds = rs.flatMap((r) => r.durations || [])
-        return { label, value: ds.length ? round(sum(ds) / ds.length) : 0 }
-      })
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 8),
+    ...snapshot,
+    composition,
+    byInterface,
+    latest: [...snapshot.entries]
+      .sort((a, b) => Number(b.seq || 0) - Number(a.seq || 0))
+      .slice(0, 30)
+      .map((item) => ({
+        ...item,
+        verdictLabel: item.verdict?.status === 'ok' ? '解析正常' : item.verdict?.tag || '校验异常',
+        issue: item.verdict?.issues?.[0]?.message || '',
+      })),
   }
 }
 
 export function aggregateException(filters = {}) {
-  const exc = getExceptions(filters)
-  const total = exc.length
-  const pending = exc.filter((e) => e.state === '待处理' || e.state === '处理中').length
-  const high = exc.filter((e) => e.level === '高').length
-  const byType = groupBy(exc, (e) => e.type)
-  const byLevel = groupBy(exc, (e) => e.level)
-  const byState = groupBy(exc, (e) => e.state)
-  const byModule = groupBy(exc, (e) => e.moduleId)
-  const typePalette = ['var(--el-color-danger)', 'var(--el-color-warning)', '#9254de', '#36a2eb', '#13c2c2', '#ff9f40', '#73d13d', '#f759ab']
-  const levelColor = { 高: 'var(--el-color-danger)', 中: 'var(--el-color-warning)', 低: 'var(--el-color-info)' }
+  const exceptions = getExceptions(filters)
+  const saved = exceptions.filter((item) => item.savedDatasetIds?.length).length
   return {
     kpis: {
-      total,
-      pending,
-      resolvedRate: pct(total - pending, total),
-      high,
+      total: exceptions.length,
+      unparsed: exceptions.filter((item) => item.type === '无法解析').length,
+      saved,
+      unsaved: exceptions.length - saved,
+      variants: sum(exceptions, (item) => item.variantCount),
+      interfaces: uniqueCount(exceptions.map((item) => item.interfaceId || item.iface)),
     },
-    byType: [...byType.entries()]
-      .map(([label, items], i) => ({ label, value: items.length, color: typePalette[i % typePalette.length] }))
-      .sort((a, b) => b.value - a.value),
-    byLevel: ['高', '中', '低']
-      .filter((l) => byLevel.has(l))
-      .map((l) => ({ label: l, value: byLevel.get(l).length, color: levelColor[l] })),
-    byState: [...byState.entries()].map(([label, items]) => ({ label, value: items.length })),
-    byModule: [...byModule.entries()]
-      .map(([moduleId, items]) => ({ label: moduleNameOf(moduleId), value: items.length }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 8),
-    trend: (() => {
-      const days = [...new Set(exc.map((e) => normalizeDate(e.capturedTime)))].sort()
-      const map = groupBy(exc, (e) => normalizeDate(e.capturedTime))
-      return days.map((d) => ({ x: d.slice(5), y: map.get(d).length }))
-    })(),
-  }
-}
-
-export function aggregateInterface(filters = {}) {
-  const proto = useProtocolStore()
-  const runs = getRuns(filters)
-  // 接口总数（受系统/模块过滤）
-  const allIfaces = proto.testInterfaces.filter((i) => {
-    if (filters.systemId && i.systemId !== filters.systemId) return false
-    if (filters.moduleId && i.moduleId !== filters.moduleId) return false
-    return true
-  })
-  const testedIds = new Set(runs.map((r) => r.interfaceId))
-  const ifaceGroup = groupBy(runs, (r) => r.interfaceId)
-  const ranking = [...ifaceGroup.entries()].map(([interfaceId, rs]) => {
-    const total = sum(rs, (r) => r.total)
-    const success = sum(rs, (r) => r.success)
-    const abnormal = sum(rs, abnormalOf)
-    const ds = rs.flatMap((r) => r.durations || [])
-    return {
-      interfaceId,
-      iface: rs[0].iface,
-      module: rs[0].moduleName,
-      req: total,
-      successRate: pct(success, total),
-      avgMs: ds.length ? round(sum(ds) / ds.length) : 0,
-      abnormal,
-      errors: abnormal,
-    }
-  }).sort((a, b) => b.req - a.req)
-  return {
-    kpis: {
-      tested: testedIds.size,
-      totalIfaces: allIfaces.length,
-      coverage: pct(testedIds.size, allIfaces.length),
-      problemIfaces: ranking.filter((r) => r.abnormal > 0).length,
-    },
-    coverageDonut: [
-      { label: '已测', value: testedIds.size, color: 'var(--el-color-primary)' },
-      { label: '未测', value: Math.max(0, allIfaces.length - testedIds.size), color: 'var(--el-fill-color-darker)' },
+    byType: countBars(exceptions, (item) => item.type, (key) => key, EXCEPTION_COLOR),
+    bySaved: [
+      { label: '已存入数据集', value: saved, color: '#16a34a' },
+      { label: '尚未入库', value: exceptions.length - saved, color: EXCEPTION_COLOR },
     ],
-    topErrorIfaces: [...ranking]
-      .filter((r) => r.abnormal > 0)
-      .sort((a, b) => b.abnormal - a.abnormal)
-      .slice(0, 8)
-      .map((r) => ({ label: r.iface, value: r.abnormal })),
-    ranking,
+    byModule: countBars(exceptions, (item) => item.moduleId, moduleNameOf, EXCEPTION_COLOR),
+    trend: trendOf(exceptions, (item) => item.capturedTime),
+    latest: [...exceptions]
+      .sort((a, b) => String(b.capturedTime || '').localeCompare(String(a.capturedTime || '')))
+      .slice(0, 30),
   }
 }
 
-export function aggregateTrend(filters = {}) {
+export function aggregateAssets(filters = {}) {
+  const interfaces = interfaceScope(filters)
   const runs = getRuns(filters)
-  const exc = getExceptions(filters)
-  // 综合趋势：发送量 / 通过率 / 异常记录数 随时间
-  const reqTrend = dayBuckets(runs, (rs) => sum(rs, (r) => r.total))
-  const passTrend = dayBuckets(runs, (rs) => pct(sum(rs, (r) => r.success), sum(rs, (r) => r.total)))
-  const excDays = [...new Set(exc.map((e) => normalizeDate(e.capturedTime)))].sort()
-  const excMap = groupBy(exc, (e) => normalizeDate(e.capturedTime))
-  const excTrend = excDays.map((d) => ({ x: d.slice(5), y: excMap.get(d).length }))
-  // 各系统横向对比
-  const sysGroup = groupBy(runs, (r) => r.systemId)
-  const systemCompare = [...sysGroup.entries()].map(([systemId, rs]) => {
-    const total = sum(rs, (r) => r.total)
-    const success = sum(rs, (r) => r.success)
-    return { systemId, passRate: pct(success, total), runs: rs.length, total }
+  const exceptions = getExceptions(filters)
+  const reception = getReceptionEntries(filters)
+  const datasets = getDatasets(filters)
+  const files = getFiles(filters)
+  const historyRows = datasets.flatMap((dataset) => dataset.historyRows || [])
+  const preparedRows = datasets.flatMap((dataset) => dataset.rows || [])
+  const activeKeys = new Set([
+    ...runs.map((item) => String(item.interfaceId || item.iface)),
+    ...reception.map((item) => String(item.interfaceId || item.iface)),
+    ...exceptions.map((item) => String(item.interfaceId || item.iface)),
+  ])
+  const interfaceRows = interfaces.map((iface) => {
+    const ifaceRuns = runs.filter((item) => String(item.interfaceId || item.iface) === String(iface.id) || item.iface === iface.name)
+    const ifaceReceive = reception.filter((item) => String(item.interfaceId || item.iface) === String(iface.id) || item.iface === iface.name)
+    const ifaceExceptions = exceptions.filter((item) => String(item.interfaceId || item.iface) === String(iface.id) || item.iface === iface.name)
+    const activityTimes = [
+      ...ifaceRuns.map((item) => item.startedAt),
+      ...ifaceExceptions.map((item) => item.capturedTime),
+    ].filter(Boolean).sort()
+    return {
+      interfaceId: iface.id,
+      iface: iface.name,
+      module: moduleNameOf(iface.moduleId),
+      executions: ifaceRuns.length,
+      sent: sum(ifaceRuns, (item) => item.total),
+      received: ifaceReceive.length,
+      exceptionSamples: ifaceExceptions.length,
+      lastActivity: activityTimes.at(-1) || '暂无记录',
+    }
   })
-  return { reqTrend, passTrend, excTrend, systemCompare }
+  const activeCount = interfaces.filter((iface) => activeKeys.has(String(iface.id)) || activeKeys.has(iface.name)).length
+  const sourceGroups = groupBy(historyRows, (item) => item.source || '未标注来源')
+
+  return {
+    kpis: {
+      interfaces: interfaces.length,
+      activeInterfaces: activeCount,
+      datasets: datasets.length,
+      preparedRows: preparedRows.length,
+      historyRows: historyRows.length,
+      files: files.length,
+    },
+    interfaceUsage: [
+      { label: '已有观测记录', value: activeCount, color: SEND_COLOR },
+      { label: '暂无观测记录', value: Math.max(0, interfaces.length - activeCount), color: '#cbd5e1' },
+    ],
+    datasetsByModule: countBars(datasets, (item) => item.moduleName || '未归属模块', (key) => key, ASSET_COLOR),
+    historyBySource: [...sourceGroups.entries()]
+      .map(([label, rows], index) => ({
+        label,
+        value: rows.length,
+        color: [ASSET_COLOR, RECEIVE_COLOR, EXCEPTION_COLOR, SEND_COLOR, '#16a34a'][index % 5],
+      }))
+      .sort((a, b) => b.value - a.value),
+    interfaceRows: interfaceRows.sort((a, b) => b.sent - a.sent || b.exceptionSamples - a.exceptionSamples),
+  }
 }
 
-/* ========== 导出 ========== */
 export function exportRows(category, filters = {}) {
-  if (category === 'interface') {
-    return aggregateInterface(filters).ranking.map((r) => ({
-      接口: r.iface, 模块: r.module, 发送数: r.req, 成功率: `${r.successRate}%`, 平均时延ms: r.avgMs, 发送异常: r.abnormal,
+  if (category === 'reception') {
+    return aggregateReceive(filters).latest.map((item) => ({
+      序号: item.seq,
+      时间: item.time,
+      系统: systemNameOf(item.systemId),
+      模块: moduleNameOf(item.moduleId),
+      报文: item.iface,
+      字节数: item.byteLength,
+      解析结果: item.verdictLabel,
+      异常说明: item.issue,
     }))
   }
   if (category === 'exception') {
-    return getExceptions(filters).map((e) => ({
-      时间: e.capturedTime, 类型: e.type, 级别: e.level, 状态: e.state, 接口: e.iface, 来源: e.source, 备注: e.remark,
+    return aggregateException(filters).latest.map((item) => ({
+      时间: item.capturedTime,
+      系统: systemNameOf(item.systemId),
+      模块: moduleNameOf(item.moduleId),
+      报文: item.iface,
+      类型: item.type,
+      异常字段: item.issues?.[0]?.field || item.detail?.fieldPath || '',
+      异常说明: item.issues?.[0]?.message || item.detail?.ruleMessage || item.remark,
+      入库情况: item.savedDatasetIds?.length ? '已入库' : '未入库',
     }))
   }
-  // 默认导出执行记录明细
-  return getRuns(filters).map((r) => ({
-    时间: r.startedAt, 系统: r.systemId, 模块: r.moduleName, 接口: r.iface,
-    发送数: r.total, 成功: r.success, 异常: abnormalOf(r), 平均时延ms: r.avgMs, 吞吐rps: r.rps,
+  if (category === 'interface') {
+    return aggregateAssets(filters).interfaceRows.map((item) => ({
+      接口: item.iface,
+      模块: item.module,
+      任务执行项: item.executions,
+      已发送报文: item.sent,
+      本次接收: item.received,
+      异常样本: item.exceptionSamples,
+      最近记录: item.lastActivity,
+    }))
+  }
+  if (category === 'asset') {
+    return getDatasets(filters).map((dataset) => ({
+      数据集: dataset.name,
+      系统: systemNameOf(dataset.systemId),
+      模块: dataset.moduleName,
+      关联报文: dataset.linkedInterface || '',
+      当前数据行: dataset.rows?.length || 0,
+      历史数据行: dataset.historyRows?.length || 0,
+      创建日期: dataset.createdAt,
+    }))
+  }
+  return aggregateSend(filters).recentBatches.map((batch) => ({
+    开始时间: batch.startedAt,
+    执行批次: batch.name,
+    任务执行项: batch.taskCount,
+    涉及接口: batch.interfaceCount,
+    已发送报文: batch.messages,
+    执行时长秒: batch.duration,
+    批次状态: batch.state,
   }))
 }
 
 export function toCSV(rows) {
   if (!rows.length) return ''
   const headers = Object.keys(rows[0])
-  const escape = (v) => {
-    const s = String(v ?? '')
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  const escape = (value) => {
+    const text = String(value ?? '')
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
   }
-  return [headers.join(','), ...rows.map((r) => headers.map((h) => escape(r[h])).join(','))].join('\n')
+  return [headers.join(','), ...rows.map((row) => headers.map((header) => escape(row[header])).join(','))].join('\n')
 }

@@ -2,7 +2,7 @@
  * dataChainImport.js — 数据链文件解析与字段/报文/数据集构建辅助
  *
  * 文件格式约定：
- *   段落标题行：如「一、SpaceMissions」「二、MonitoringStatus」
+ *   段落标题行：如「一、MonitoringStatus」「二、TelemetryFrames」
  *               （中文/阿拉伯数字序号 + 顿号/点 + 报文名，整行不含分隔符）
  *   紧随其后的首行：字段名（逗号或中文逗号分隔）
  *   后续行：数据行（逗号或中文逗号分隔，与字段名一一对应）

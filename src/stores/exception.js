@@ -5,103 +5,113 @@ import { bus, EVENTS } from '@/utils/bus'
 
 const nowText = () => new Date().toLocaleString('zh-CN', { hour12: false })
 const uid = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`
+const clone = (value) => JSON.parse(JSON.stringify(value ?? null))
 
-export const EXC_LEVELS = [
-  { value: '高', label: '高', tag: 'danger' },
-  { value: '中', label: '中', tag: 'warning' },
-  { value: '低', label: '低', tag: 'info' },
-]
-
-export const EXC_STATES = [
-  { value: '待处理', label: '待处理', tag: 'danger' },
-  { value: '已处理', label: '已处理', tag: 'success' },
-]
-
-// 异常只产生于接收侧（发送数据不产异常）：reception = 接收监控的实时校验捕获
 export const EXC_SOURCES = [
-  { value: 'reception', label: '接收校验' },
-  { value: 'rule', label: '规则判定' },
-  { value: 'link', label: '链路连接' },
-  { value: 'system', label: '系统事件' },
+  { value: 'reception', label: '接收数据自动捕获' },
 ]
 
 const defaultTypes = [
-  { id: 'unparsed', name: '无法解析', source: 'reception', defaultLevel: '高', suggestion: '自动轮询 OSE/4908A/MDS 头解析均失败；确认对端协议版本，或在接收数据流中选择转发/保存原始样本。' },
-  { id: 'semantic', name: '语义不一致', source: 'reception', defaultLevel: '高', suggestion: '报文头声明信息与实际不符（长度/校验和），核对发送端帧组装逻辑与字节偏移。' },
-  { id: 'ruleFail', name: '规则校验失败', source: 'reception', defaultLevel: '中', suggestion: '字段值违反绑定到接口的校验规则，核对规则参数与被测系统输出。' },
-  { id: 'type', name: '类型校验', source: 'reception', defaultLevel: '高', suggestion: '核对字段类型与接收解析器配置。' },
-  { id: 'range', name: '取值范围', source: 'reception', defaultLevel: '高', suggestion: '检查字段上下限、单位换算与现场传感器标定。' },
-  { id: 'boundary', name: '边界值检测', source: 'reception', defaultLevel: '中', suggestion: '复核边界条件，确认被测系统在临界值附近的处理策略。' },
-  { id: 'overflow', name: '字段越界', source: 'reception', defaultLevel: '高', suggestion: '确认报文字段长度、字节偏移与端序定义。' },
-  { id: 'timeout', name: '接收超时', source: 'reception', defaultLevel: '中', suggestion: '排查链路时延、任务负载与被测模块接收能力。' },
-  { id: 'format', name: '格式错误', source: 'reception', defaultLevel: '高', suggestion: '检查帧头、校验码、JSON/结构体格式与字段版本。' },
-].map((item) => ({ ...item, captureEnabled: true, desc: item.suggestion }))
-
-const typeIdOf = (typeName) => {
-  const hit = defaultTypes.find((item) => item.name === typeName)
-  return hit?.id || `custom-${typeName}`
-}
-
-const sourceOf = (typeName) => defaultTypes.find((item) => item.name === typeName)?.source || 'reception'
-
-const activeStateOf = (state) => {
-  if (['已处理', '已修复', '已忽略', '已转派', '自动恢复', '已记录'].includes(state)) return '已处理'
-  return '待处理'
-}
-const seedTagsOf = (alert) => {
-  const tags = []
-  if (['接收超时'].includes(alert.type)) tags.push('链路问题')
-  if (['类型校验', '取值范围', '边界值检测', '字段越界', '格式错误'].includes(alert.type)) tags.push('字段')
-  if (alert.level === '高') tags.push('高优先级')
-  if (activeStateOf(alert.state) === '待处理') tags.push('需跟进')
-  return [...new Set(tags)]
-}
-
-const cleanTags = (tags = []) => [...new Set(tags.map((tag) => String(tag).trim()).filter(Boolean))]
-
-const normalizeSeed = (alert, index) => ({
-  id: alert.id || uid('ex'),
-  type: alert.type,
-  typeId: typeIdOf(alert.type),
-  level: alert.level || '中',
-  state: activeStateOf(alert.state),
-  systemId: alert.systemId,
-  moduleId: alert.moduleId,
-  interfaceId: '',
-  iface: alert.iface || '未命名报文',
-  source: sourceOf(alert.type),
-  runId: seedRunIdForAlert(alert, index),
-  taskId: '',
-  detail: {
-    reqHex: '',
-    respHex: '',
-    ruleMessage: alert.remark || '',
-    fieldPath: '',
-    recvMs: null,
+  {
+    id: 'unparsed',
+    name: '无法解析',
+    layer: '解析',
+    tone: 'danger',
+    desc: '原始数据无法按任何已配置报文或协议完成解析。',
   },
-  capturedTime: alert.capturedTime || seedExceptionCapturedTime(index),
-  resolvedTime: alert.resolvedTime || '',
-  handler: '',
-  trace: [
-    {
-      time: alert.resolvedTime || `2026-06-24 ${String(9 + (index % 3)).padStart(2, '0')}:${String(10 + index).padStart(2, '0')}:00`,
-      user: '系统',
-      action: '捕捉异常',
-      note: alert.remark || '由历史告警数据导入。',
-    },
-  ],
-  remark: alert.remark || '',
-  tags: seedTagsOf(alert),
-})
+  {
+    id: 'structure',
+    name: '结构异常',
+    layer: '结构',
+    tone: 'warning',
+    desc: '报文长度、帧头、校验和或字段布局与结构定义不一致。',
+  },
+  {
+    id: 'constraint',
+    name: '字段约束异常',
+    layer: '字段',
+    tone: 'warning',
+    desc: '字段缺失、类型不符、枚举无效或取值超出字段约束。',
+  },
+  {
+    id: 'rule',
+    name: '规则校验异常',
+    layer: '规则',
+    tone: 'info',
+    desc: '解析结果违反接口绑定的黑盒校验规则。',
+  },
+].map((item) => ({ ...item, source: 'reception', captureEnabled: true }))
 
-const stateMeta = (state) => EXC_STATES.find((item) => item.value === state) || { value: state, label: state, tag: 'info' }
-const levelMeta = (level) => EXC_LEVELS.find((item) => item.value === level) || { value: level, label: level, tag: 'info' }
-const defaultExceptionSettings = {
-  targetSlaRate: 95,
-  highSlaHours: 4,
-  mediumSlaHours: 8,
-  lowSlaHours: 24,
-  warningLeadHours: 1,
+const TYPE_ALIASES = {
+  无法解析: '无法解析',
+  语义不一致: '结构异常',
+  格式错误: '结构异常',
+  结构异常: '结构异常',
+  类型校验: '字段约束异常',
+  取值范围: '字段约束异常',
+  边界值检测: '字段约束异常',
+  字段越界: '字段约束异常',
+  字段约束异常: '字段约束异常',
+  规则校验失败: '规则校验异常',
+  规则校验异常: '规则校验异常',
+}
+
+const canonicalType = (name) => TYPE_ALIASES[name] || '规则校验异常'
+const typeMetaOf = (name) => defaultTypes.find((item) => item.name === canonicalType(name)) || defaultTypes[3]
+const cleanTags = (tags = []) => [...new Set(tags.map((tag) => String(tag).trim()).filter(Boolean))]
+const sampleStatusOf = (item) => item.savedDatasetIds?.length ? 'saved' : 'unsaved'
+
+const seedHexOf = (index) => Array.from({ length: 18 }, (_, byteIndex) => (
+  ((index + 3) * 29 + byteIndex * 17) % 256
+).toString(16).padStart(2, '0').toUpperCase()).join(' ')
+
+const seedFieldOf = (alert) => {
+  if (canonicalType(alert.type) === '结构异常') return 'frame'
+  const match = String(alert.remark || '').match(/^([^，。；\s]+?)(?:字段|值)/)
+  return match?.[1] || 'payload'
+}
+
+const normalizeSeed = (alert, index) => {
+  const type = canonicalType(alert.type)
+  const typeMeta = typeMetaOf(type)
+  const fieldName = alert.field || seedFieldOf(alert)
+  const rawHex = alert.rawHex || seedHexOf(index)
+  const issue = {
+    layer: typeMeta.layer,
+    tag: type,
+    field: fieldName,
+    message: alert.remark || typeMeta.desc,
+  }
+  return {
+    id: alert.id || uid('ex'),
+    type,
+    typeId: typeMeta.id,
+    systemId: alert.systemId,
+    moduleId: alert.moduleId,
+    interfaceId: '',
+    iface: alert.iface || '未命名报文',
+    source: 'reception',
+    sourceEntryId: '',
+    runId: seedRunIdForAlert(alert, index),
+    taskId: '',
+    transport: 'bin',
+    rawHex,
+    fields: [{ name: fieldName, label: fieldName }],
+    values: canonicalType(alert.type) === '无法解析'
+      ? {}
+      : { [fieldName]: alert.value ?? String(alert.remark || '').match(/-?\d+(?:\.\d+)?/)?.[0] ?? '异常值' },
+    issues: [issue],
+    detail: {
+      reqHex: rawHex,
+      ruleMessage: issue.message,
+      fieldPath: fieldName,
+    },
+    capturedTime: alert.capturedTime || seedExceptionCapturedTime(index),
+    remark: alert.remark || '',
+    tags: cleanTags([typeMeta.layer, '演示样本']),
+    savedDatasetIds: [],
+    variantCount: 0,
+  }
 }
 
 export const useExceptionStore = defineStore('exception', {
@@ -112,7 +122,6 @@ export const useExceptionStore = defineStore('exception', {
       types: defaultTypes,
       selectedId: null,
       tagHistory: cleanTags(exceptions.flatMap((item) => item.tags || [])),
-      settings: { ...defaultExceptionSettings },
     }
   },
 
@@ -120,62 +129,43 @@ export const useExceptionStore = defineStore('exception', {
     selected(state) {
       return state.exceptions.find((item) => item.id === state.selectedId) || state.exceptions[0] || null
     },
-    pendingCount: (state) => state.exceptions.filter((item) => item.state === '待处理').length,
     exceptionsOfModule: (state) => (moduleId) => state.exceptions.filter((item) => item.moduleId === moduleId),
     exceptionsOfSystem: (state) => (systemId) => state.exceptions.filter((item) => !systemId || item.systemId === systemId),
-    typeByName: (state) => (name) => state.types.find((item) => item.name === name),
-    typeMeta: (state) => (name) => state.types.find((item) => item.name === name) || defaultTypes.find((item) => item.name === name),
-    tagOptions: (state) => cleanTags([...state.tagHistory, ...state.exceptions.flatMap((item) => item.tags || [])]).sort((a, b) => a.localeCompare(b, 'zh-CN')),
-    stateMeta: () => stateMeta,
-    levelMeta: () => levelMeta,
-    slaHours: (state) => (level) => {
-      if (level === '高') return state.settings.highSlaHours
-      if (level === '低') return state.settings.lowSlaHours
-      return state.settings.mediumSlaHours
-    },
-    overdueItems: (state) => {
-      const now = Date.now()
-      return state.exceptions
-        .filter((item) => item.state === '待处理')
-        .map((item) => {
-          const captured = new Date(item.capturedTime.replace(/\//g, '-')).getTime()
-          const elapsed = now - captured
-          const slaHours = levelMeta(item.level).value === '高'
-            ? state.settings.highSlaHours
-            : (levelMeta(item.level).value === '低' ? state.settings.lowSlaHours : state.settings.mediumSlaHours)
-          const slaMs = slaHours * 3600000
-          return { ...item, elapsedHours: Math.round(elapsed / 3600000), slaHours, overdue: elapsed > slaMs }
-        })
-        .filter((item) => item.overdue)
-        .sort((a, b) => b.elapsedHours - a.elapsedHours)
-    },
-    stats: () => (items = []) => {
-      const total = items.length
-      const pending = items.filter((item) => item.state === '待处理').length
-      const processed = total - pending
-      const high = items.filter((item) => item.level === '高').length
-      const middle = items.filter((item) => item.level === '中').length
-      const low = items.filter((item) => item.level === '低').length
-      return {
-        total,
-        pending,
-        processed,
-        high,
-        middle,
-        low,
-      }
-    },
+    typeByName: (state) => (name) => state.types.find((item) => item.name === canonicalType(name)),
+    typeMeta: (state) => (name) => state.types.find((item) => item.name === canonicalType(name)) || typeMetaOf(name),
+    sampleStatus: () => sampleStatusOf,
+    tagOptions: (state) => cleanTags([
+      ...state.tagHistory,
+      ...state.exceptions.flatMap((item) => item.tags || []),
+    ]).sort((a, b) => a.localeCompare(b, 'zh-CN')),
+    stats: () => (items = []) => ({
+      total: items.length,
+      unparsed: items.filter((item) => item.type === '无法解析').length,
+      structure: items.filter((item) => item.type === '结构异常').length,
+      constraint: items.filter((item) => item.type === '字段约束异常').length,
+      rule: items.filter((item) => item.type === '规则校验异常').length,
+      saved: items.filter((item) => sampleStatusOf(item) === 'saved').length,
+      unsaved: items.filter((item) => sampleStatusOf(item) === 'unsaved').length,
+    }),
     filtered: (state) => (filters = {}) => state.exceptions.filter((item) => {
       if (filters.systemId && item.systemId !== filters.systemId) return false
       if (filters.moduleId && item.moduleId !== filters.moduleId) return false
       if (filters.type && item.type !== filters.type) return false
-      if (filters.level && item.level !== filters.level) return false
-      if (filters.state && item.state !== filters.state) return false
-      if (filters.source && item.source !== filters.source) return false
+      if (filters.savedStatus && sampleStatusOf(item) !== filters.savedStatus) return false
       if (filters.tag && !(item.tags || []).includes(filters.tag)) return false
       if (filters.keyword) {
         const kw = filters.keyword.toLowerCase()
-        const hay = [item.type, item.iface, item.remark, item.detail?.ruleMessage, item.detail?.fieldPath, ...(item.tags || [])].join(' ').toLowerCase()
+        const hay = [
+          item.type,
+          item.iface,
+          item.remark,
+          item.detail?.ruleMessage,
+          item.detail?.fieldPath,
+          item.rawHex,
+          ...Object.keys(item.values || {}),
+          ...Object.values(item.values || {}),
+          ...(item.tags || []),
+        ].join(' ').toLowerCase()
         if (!hay.includes(kw)) return false
       }
       return true
@@ -187,48 +177,40 @@ export const useExceptionStore = defineStore('exception', {
       this.selectedId = id
     },
     capture(payload = {}) {
-      const typeName = payload.type || payload.ruleLabel || '系统事件'
-      const typeDef = this.types.find((item) => item.name === typeName || item.id === payload.typeId) || {
-        id: typeIdOf(typeName),
-        name: typeName,
-        defaultLevel: payload.level || '中',
-        captureEnabled: true,
-      }
+      const typeName = canonicalType(payload.type || payload.ruleLabel)
+      const typeDef = this.types.find((item) => item.name === typeName) || typeMetaOf(typeName)
       if (typeDef.captureEnabled === false) return null
 
+      const rawHex = payload.rawHex || payload.detail?.reqHex || ''
+      const issues = clone(payload.issues || []) || []
       const item = {
         id: payload.id || uid('ex'),
         type: typeDef.name,
         typeId: typeDef.id,
-        level: payload.level || typeDef.defaultLevel || '中',
-        state: activeStateOf(payload.state),
         systemId: payload.systemId || '',
         moduleId: payload.moduleId || '',
         interfaceId: payload.interfaceId || '',
         iface: payload.iface || payload.interfaceName || '未命名报文',
-        source: payload.source || typeDef.source || 'reception',
-        runId: payload.runId || '',
+        source: 'reception',
+        sourceEntryId: payload.sourceEntryId || '',
+        batchId: payload.batchId || payload.runId || '',
+        runId: payload.runId || payload.batchId || '',
         taskId: payload.taskId || '',
+        transport: payload.transport || 'bin',
+        rawHex,
+        fields: clone(payload.fields || []) || [],
+        values: clone(payload.values || {}) || {},
+        issues,
         detail: {
-          reqHex: payload.detail?.reqHex || '',
-          respHex: payload.detail?.respHex || '',
-          ruleMessage: payload.detail?.ruleMessage || payload.message || payload.remark || '',
-          fieldPath: payload.detail?.fieldPath || '',
-          recvMs: payload.detail?.recvMs ?? null,
+          reqHex: rawHex,
+          ruleMessage: payload.detail?.ruleMessage || issues.map((issue) => issue.message).filter(Boolean).join('；') || payload.message || payload.remark || '',
+          fieldPath: payload.detail?.fieldPath || issues[0]?.field || '',
         },
         capturedTime: payload.capturedTime || nowText(),
-        resolvedTime: payload.resolvedTime || '',
-        handler: payload.handler || '',
-        tags: cleanTags(payload.tags),
-        trace: [
-          {
-            time: payload.capturedTime || nowText(),
-            user: payload.handler || '系统',
-            action: '捕捉异常',
-            note: payload.detail?.ruleMessage || payload.message || payload.remark || '执行过程中自动捕捉。',
-          },
-        ],
         remark: payload.remark || payload.detail?.ruleMessage || '',
+        tags: cleanTags(payload.tags?.length ? payload.tags : [typeDef.layer]),
+        savedDatasetIds: [],
+        variantCount: 0,
       }
       this.tagHistory = cleanTags([...this.tagHistory, ...item.tags])
       this.exceptions.unshift(item)
@@ -236,30 +218,14 @@ export const useExceptionStore = defineStore('exception', {
       bus.emit(EVENTS.EXCEPTION_CREATED, item)
       return item
     },
-    updateState(id, state, note = '', handler = '测试员') {
-      const item = this.exceptions.find((ex) => String(ex.id) === String(id))
-      if (!item) return false
-      item.state = activeStateOf(state)
-      item.handler = handler
-      if (item.state === '已处理') item.resolvedTime = nowText()
-      item.trace.unshift({
-        time: nowText(),
-        user: handler,
-        action: `状态变更为${item.state}`,
-        note,
+    markSaved(ids = [], datasetId, { variant = false } = {}) {
+      const idSet = new Set((Array.isArray(ids) ? ids : [ids]).map(String))
+      this.exceptions.forEach((item) => {
+        if (!idSet.has(String(item.id))) return
+        item.savedDatasetIds = [...new Set([...(item.savedDatasetIds || []), datasetId])]
+        if (variant) item.variantCount = (item.variantCount || 0) + 1
+        bus.emit(EVENTS.EXCEPTION_UPDATED, item)
       })
-      bus.emit(EVENTS.EXCEPTION_UPDATED, item)
-      return true
-    },
-    addTrace(id, note, handler = '测试员') {
-      const item = this.exceptions.find((ex) => String(ex.id) === String(id))
-      if (!item || !note) return false
-      item.trace.unshift({ time: nowText(), user: handler, action: '添加处理记录', note })
-      item.remark = note
-      return true
-    },
-    updateExceptionSettings(patch) {
-      Object.assign(this.settings, patch)
     },
     setTags(id, tags = []) {
       const item = this.exceptions.find((ex) => String(ex.id) === String(id))
@@ -277,15 +243,6 @@ export const useExceptionStore = defineStore('exception', {
       })
       return true
     },
-    batchUpdate(ids, patch, note = '') {
-      ids.forEach((id) => {
-        if (patch.state) this.updateState(id, patch.state, note)
-        else {
-          const item = this.exceptions.find((ex) => String(ex.id) === String(id))
-          if (item) Object.assign(item, patch)
-        }
-      })
-    },
     toggleType(id, enabled) {
       const item = this.types.find((type) => type.id === id)
       if (item) item.captureEnabled = enabled
@@ -293,21 +250,6 @@ export const useExceptionStore = defineStore('exception', {
     updateType(id, patch) {
       const item = this.types.find((type) => type.id === id)
       if (item) Object.assign(item, patch)
-    },
-    addType(payload) {
-      const name = payload.name?.trim()
-      if (!name) return null
-      const item = {
-        id: payload.id || uid('etype'),
-        name,
-        source: payload.source || 'reception',
-        defaultLevel: payload.defaultLevel || '中',
-        captureEnabled: payload.captureEnabled ?? true,
-        suggestion: payload.suggestion || '按现场处置经验补充建议。',
-        desc: payload.desc || '',
-      }
-      this.types.push(item)
-      return item
     },
   },
 })

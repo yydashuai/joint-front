@@ -1,10 +1,10 @@
 /**
- * 接收报文校验引擎（两层）
+ * 接收报文校验引擎
  *
- * L1 结构层：
+ * 结构校验：
  *   - 无法解析：报文无法按任何已知协议头（OSE / 4908A / MDS）解析；
  *   - 语义不一致：报文头声明信息与实际不符（如声明长度 20、实际 21，校验和不匹配）。
- * L2 字段层：
+ * 字段与规则校验：
  *   - 字段越界：解析出的字段值违反字段定义约束（固定值 / 枚举 / 范围）；
  *   - 规则校验失败：违反「校验规则管理」中绑定到接口的规则（范围 / 边界等）。
  *
@@ -146,46 +146,46 @@ export const parseHeaderAs = (transport, bytes = []) => {
 export const tryParseHeaders = (bytes = []) =>
   HEADER_TRANSPORTS.map((t) => parseHeaderAs(t, bytes))
 
-/* ================= L1 结构校验 ================= */
+/* ================= 结构校验 ================= */
 
 /**
  * 结构层校验（针对可按接口定义解析的报文）：
  * 前后语义一致性 —— 声明长度 vs 实际长度、校验和。
- * @returns issues: [{ layer:'L1', tag, field, message }]
+ * @returns issues: [{ layer:'结构', tag, field, message }]
  */
 export const checkStructure = (transport, bytes = []) => {
   const issues = []
   if (transport === 'OSE') {
     if (bytes.length < 14) {
-      issues.push({ layer: 'L1', tag: '语义不一致', field: 'totalLength', message: `报文仅 ${bytes.length} 字节，不足 OSE 头 14 字节` })
+      issues.push({ layer: '结构', tag: '语义不一致', field: 'totalLength', message: `报文仅 ${bytes.length} 字节，不足 OSE 头 14 字节` })
       return issues
     }
     const declared = readU16(bytes, 4)
     if (declared !== bytes.length) {
-      issues.push({ layer: 'L1', tag: '语义不一致', field: 'totalLength', message: `头部声明数据长度 ${declared}，实际解析出 ${bytes.length}，前后语义不一致` })
+      issues.push({ layer: '结构', tag: '语义不一致', field: 'totalLength', message: `头部声明数据长度 ${declared}，实际解析出 ${bytes.length}，前后语义不一致` })
     }
     const declaredSum = readU16(bytes, 6)
     const actualSum = computeChecksum(bytes, 6)
     if (declared === bytes.length && declaredSum !== actualSum) {
-      issues.push({ layer: 'L1', tag: '语义不一致', field: 'checksum', message: `校验和不符：声明 0x${declaredSum.toString(16).toUpperCase()}，重算 0x${actualSum.toString(16).toUpperCase()}` })
+      issues.push({ layer: '结构', tag: '语义不一致', field: 'checksum', message: `校验和不符：声明 0x${declaredSum.toString(16).toUpperCase()}，重算 0x${actualSum.toString(16).toUpperCase()}` })
     }
   }
   if (transport === '4908A') {
     if (bytes.length < 20) {
-      issues.push({ layer: 'L1', tag: '语义不一致', field: 'header', message: `报文仅 ${bytes.length} 字节，不足 4908A 首部 20 字节` })
+      issues.push({ layer: '结构', tag: '语义不一致', field: 'header', message: `报文仅 ${bytes.length} 字节，不足 4908A 首部 20 字节` })
       return issues
     }
     const declaredSum = readU16(bytes, 16)
     const actualSum = computeChecksum(bytes, 16)
     if (declaredSum !== actualSum) {
-      issues.push({ layer: 'L1', tag: '语义不一致', field: 'checksum', message: `检验和不符：声明 0x${declaredSum.toString(16).toUpperCase()}，重算 0x${actualSum.toString(16).toUpperCase()}` })
+      issues.push({ layer: '结构', tag: '语义不一致', field: 'checksum', message: `检验和不符：声明 0x${declaredSum.toString(16).toUpperCase()}，重算 0x${actualSum.toString(16).toUpperCase()}` })
     }
   }
   // MDS：传输配置待确认，跳过结构校验
   return issues
 }
 
-/* ================= L2 字段层校验 ================= */
+/* ================= 字段约束校验 ================= */
 
 /** 字段定义约束校验（固定值 / 枚举 / 范围） */
 export const checkFieldConstraints = (fields = [], values = {}) => {
@@ -195,20 +195,20 @@ export const checkFieldConstraints = (fields = [], values = {}) => {
     if (!c || !c.mode || c.mode === 'none') continue
     const v = values[f.name]
     if (v === undefined || v === null || v === '') {
-      issues.push({ layer: 'L2', tag: '字段越界', field: f.name, message: '字段值缺失' })
+      issues.push({ layer: '字段', tag: '字段越界', field: f.name, message: '字段值缺失' })
       continue
     }
     if (c.mode === 'fixed' && String(v) !== String(c.value)) {
-      issues.push({ layer: 'L2', tag: '字段越界', field: f.name, message: `应为固定值 ${c.value}，实际 ${v}` })
+      issues.push({ layer: '字段', tag: '字段越界', field: f.name, message: `应为固定值 ${c.value}，实际 ${v}` })
     } else if (c.mode === 'enum') {
       const ok = (c.entries || []).some((e) => String(e?.value ?? e) === String(v))
-      if (!ok) issues.push({ layer: 'L2', tag: '字段越界', field: f.name, message: `值 ${v} 不在枚举范围（${(c.entries || []).map((e) => e?.label ?? e?.value ?? e).join('/')}）` })
+      if (!ok) issues.push({ layer: '字段', tag: '字段越界', field: f.name, message: `值 ${v} 不在枚举范围（${(c.entries || []).map((e) => e?.label ?? e?.value ?? e).join('/')}）` })
     } else if (c.mode === 'range') {
       const num = Number(v)
       if (!Number.isFinite(num)) {
-        issues.push({ layer: 'L2', tag: '字段越界', field: f.name, message: `应为 ${c.min}~${c.max} 内数值，实际 ${v}` })
+        issues.push({ layer: '字段', tag: '字段越界', field: f.name, message: `应为 ${c.min}~${c.max} 内数值，实际 ${v}` })
       } else if ((Number.isFinite(c.min) && num < c.min) || (Number.isFinite(c.max) && num > c.max)) {
-        issues.push({ layer: 'L2', tag: '字段越界', field: f.name, message: `值 ${num} 超出范围 ${c.min}~${c.max}` })
+        issues.push({ layer: '字段', tag: '字段越界', field: f.name, message: `值 ${num} 超出范围 ${c.min}~${c.max}` })
       }
     }
   }
@@ -229,15 +229,15 @@ export const checkInterfaceRules = (rules = [], values = {}) => {
     if (rule.type === 'range') {
       const { min, max } = rule.params || {}
       if (!Number.isFinite(v)) {
-        issues.push({ layer: 'L2', tag: '规则校验失败', field: fieldName, rule: rule.desc || '取值范围', message: `${fieldName} 不是可比较数值` })
+        issues.push({ layer: '规则', tag: '规则校验失败', field: fieldName, rule: rule.desc || '取值范围', message: `${fieldName} 不是可比较数值` })
       } else if ((Number.isFinite(Number(min)) && v < Number(min)) || (Number.isFinite(Number(max)) && v > Number(max))) {
-        issues.push({ layer: 'L2', tag: '规则校验失败', field: fieldName, rule: rule.desc || '取值范围', message: `${fieldName}=${v} 违反规则「${rule.desc || `范围 ${min}~${max}`}」` })
+        issues.push({ layer: '规则', tag: '规则校验失败', field: fieldName, rule: rule.desc || '取值范围', message: `${fieldName}=${v} 违反规则「${rule.desc || `范围 ${min}~${max}`}」` })
       }
     }
     if (rule.type === 'boundary') {
       const { min, max } = rule.params || {}
       if (Number.isFinite(v) && (v === Number(min) || v === Number(max))) {
-        issues.push({ layer: 'L2', tag: '规则校验失败', field: fieldName, rule: rule.desc || '边界值检测', message: `${fieldName}=${v} 命中边界值（规则「${rule.desc || '边界值检测'}」）` })
+        issues.push({ layer: '规则', tag: '规则校验失败', field: fieldName, rule: rule.desc || '边界值检测', message: `${fieldName}=${v} 命中边界值（规则「${rule.desc || '边界值检测'}」）` })
       }
     }
   }
@@ -247,7 +247,7 @@ export const checkInterfaceRules = (rules = [], values = {}) => {
 /* ================= 综合裁决 ================= */
 
 /**
- * 对一条接收报文做完整两层校验。
+ * 对一条接收报文执行结构、字段约束和规则校验。
  * @returns { status: 'ok'|'error'|'unparsed', tag, issues }
  */
 export const validateMessage = ({ transport, bytes = [], fields = [], values = {}, rules = [], unparsed = false }) => {
@@ -255,11 +255,11 @@ export const validateMessage = ({ transport, bytes = [], fields = [], values = {
     return {
       status: 'unparsed',
       tag: '无法解析',
-      issues: [{ layer: 'L1', tag: '无法解析', field: '', message: '报文无法按接口字段定义解析（帧结构与定义不匹配）' }],
+      issues: [{ layer: '结构', tag: '无法解析', field: '', message: '报文无法按接口字段定义解析（帧结构与定义不匹配）' }],
     }
   }
-  const l1 = checkStructure(transport, bytes)
-  if (l1.length) return { status: 'error', tag: '语义不一致', issues: l1 }
+  const structureIssues = checkStructure(transport, bytes)
+  if (structureIssues.length) return { status: 'error', tag: '语义不一致', issues: structureIssues }
 
   const constraintIssues = checkFieldConstraints(fields, values)
   const ruleIssues = checkInterfaceRules(rules, values)

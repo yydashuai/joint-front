@@ -119,20 +119,15 @@
 
     <el-table v-else-if="category === 'file'" :data="[fileConfig]" border size="small" class="field-matrix">
       <el-table-column label="数据形态" width="110" align="center">
-        <template #default><el-tag effect="plain">二进制流</el-tag></template>
+        <template #default><el-tag effect="plain">文件流</el-tag></template>
       </el-table-column>
       <el-table-column label="文件类型" min-width="190">
         <template #default="{ row }">
-          <el-select v-model="row.mediaType" filterable allow-create style="width: 100%">
-            <el-option label="application/octet-stream" value="application/octet-stream" />
-            <el-option label="application/zip" value="application/zip" />
-            <el-option label="image/png" value="image/png" />
-            <el-option label="image/jpeg" value="image/jpeg" />
+          <el-select v-model="row.fileType" style="width: 100%">
+            <el-option label="BIN" value="bin" />
+            <el-option label="TXT" value="txt" />
           </el-select>
         </template>
-      </el-table-column>
-      <el-table-column label="扩展名" width="110">
-        <template #default="{ row }"><el-input v-model="row.extension" placeholder=".bin" /></template>
       </el-table-column>
       <el-table-column label="最大容量" width="150">
         <template #default="{ row }"><el-input-number v-model="row.maxSizeMb" :min="1" :max="10240" controls-position="right" /><span class="unit">MB</span></template>
@@ -159,16 +154,10 @@
       <el-table-column label="文件类型" min-width="160">
         <template #default="{ row }">
           <el-select v-model="row.fileType" style="width: 100%">
-            <el-option label="BIN 矩阵" value="binary-matrix" />
             <el-option label="CSV" value="csv" />
             <el-option label="XLSX" value="xlsx" />
-          </el-select>
-        </template>
-      </el-table-column>
-      <el-table-column label="元素类型" min-width="130">
-        <template #default="{ row }">
-          <el-select v-model="row.scalarType" filterable style="width: 100%">
-            <el-option v-for="option in scalarEncodings" :key="option.value" :label="option.label" :value="option.value" />
+            <el-option label="PNG" value="png" />
+            <el-option label="JPEG" value="jpeg" />
           </el-select>
         </template>
       </el-table-column>
@@ -177,17 +166,6 @@
       </el-table-column>
       <el-table-column label="列数" width="125">
         <template #default="{ row }"><el-input-number v-model="row.columns" :min="0" controls-position="right" /></template>
-      </el-table-column>
-      <el-table-column label="存储顺序" width="130">
-        <template #default="{ row }">
-          <el-select v-model="row.rowMajor">
-            <el-option label="按行" :value="true" />
-            <el-option label="按列" :value="false" />
-          </el-select>
-        </template>
-      </el-table-column>
-      <el-table-column label="文件头" width="140">
-        <template #default="{ row }"><el-input-number v-model="row.headerBytes" :min="0" controls-position="right" /><span class="unit">B</span></template>
       </el-table-column>
     </el-table>
 
@@ -250,27 +228,36 @@ const structReferenceOptions = computed(() => store.protocols
 const fileConfig = computed(() => {
   if (!props.protocol.fileConfig) {
     props.protocol.fileConfig = {
-      mediaType: 'application/octet-stream',
-      extension: '.bin',
+      fileType: 'bin',
       maxSizeMb: 100,
       checksum: 'sha256',
       chunkSizeKb: 64,
     }
   }
-  return props.protocol.fileConfig
+  const config = props.protocol.fileConfig
+  if (!config.fileType) {
+    const legacyType = `${config.mediaType || ''} ${config.extension || ''}`.toLowerCase()
+    config.fileType = legacyType.includes('text') || legacyType.includes('txt') ? 'txt' : 'bin'
+  }
+  if (!['bin', 'txt'].includes(config.fileType)) config.fileType = 'bin'
+  delete config.mediaType
+  delete config.extension
+  return config
 })
 const matrixConfig = computed(() => {
   if (!props.protocol.matrixConfig) {
     props.protocol.matrixConfig = {
-      fileType: 'binary-matrix',
-      scalarType: 'float32',
+      fileType: 'csv',
       rows: 0,
       columns: 0,
-      rowMajor: true,
-      headerBytes: 0,
     }
   }
-  return props.protocol.matrixConfig
+  const config = props.protocol.matrixConfig
+  if (!['csv', 'xlsx', 'png', 'jpeg'].includes(config.fileType)) config.fileType = 'csv'
+  delete config.scalarType
+  delete config.rowMajor
+  delete config.headerBytes
+  return config
 })
 
 const legacyType = (type) => ({

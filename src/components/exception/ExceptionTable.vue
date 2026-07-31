@@ -1,27 +1,31 @@
 <template>
   <div class="exception-table">
     <div class="toolbar">
-      <el-input v-model="local.keyword" placeholder="搜索接口 / 备注 / 字段" :prefix-icon="Search" clearable class="kw" />
-      <el-select v-model="local.type" placeholder="类型" clearable>
+      <el-input
+        v-model="local.keyword"
+        placeholder="搜索报文、异常字段或数据内容"
+        :prefix-icon="Search"
+        clearable
+        class="kw"
+      />
+      <el-select v-model="local.type" placeholder="异常类型" clearable>
         <el-option v-for="type in typeOptions" :key="type.name" :label="type.name" :value="type.name" />
       </el-select>
-      <el-select v-model="local.level" placeholder="级别" clearable>
-        <el-option label="高" value="高" />
-        <el-option label="中" value="中" />
-        <el-option label="低" value="低" />
+      <el-select v-model="local.savedStatus" placeholder="入库情况" clearable>
+        <el-option label="尚未入库" value="unsaved" />
+        <el-option label="已存入数据集" value="saved" />
       </el-select>
-      <el-select v-model="local.state" placeholder="状态" clearable>
-        <el-option v-for="state in EXC_STATES" :key="state.value" :label="state.label" :value="state.value" />
-      </el-select>
-      <el-select v-model="local.tag" placeholder="标签" clearable filterable>
+      <el-select v-model="local.tag" placeholder="样本标签" clearable filterable>
         <el-option v-for="tag in tagOptions" :key="tag" :label="tag" :value="tag" />
       </el-select>
       <el-segmented v-model="groupBy" :options="groupOptions" />
     </div>
 
     <div class="batch-row">
-      <span class="muted">已选 {{ selected.length }} 条</span>
-      <el-button size="small" type="success" plain :disabled="!selected.length" @click="markSelectedProcessed">标记已处理</el-button>
+      <span class="muted">已选择 {{ selected.length }} 条异常样本</span>
+      <el-button size="small" type="primary" :disabled="!selected.length" @click="$emit('save', selected)">
+        存入数据集
+      </el-button>
       <el-button size="small" :icon="Download" @click="exportCsv">导出 CSV</el-button>
     </div>
 
@@ -35,14 +39,14 @@
           :data="group.items"
           size="small"
           row-key="id"
-          empty-text="暂无异常"
+          empty-text="暂无接收异常数据"
           class="ledger-table"
           @selection-change="onSelectionChange"
           @sort-change="onSortChange"
           @row-click="$emit('view', $event)"
         >
           <el-table-column type="selection" width="42" />
-          <el-table-column label="系统 / 模块" prop="systemModule" sortable="custom" min-width="190">
+          <el-table-column label="系统 / 模块" prop="systemModule" sortable="custom" min-width="180">
             <template #default="{ row }">
               <div class="stack">
                 <strong>{{ systemName(row.systemId) }}</strong>
@@ -50,30 +54,46 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="接口" prop="iface" sortable="custom" min-width="130" />
-          <el-table-column label="类型" prop="type" sortable="custom" min-width="128">
-            <template #default="{ row }"><el-tag effect="plain">{{ row.type }}</el-tag></template>
-          </el-table-column>
-          <el-table-column label="级别" prop="level" sortable="custom" width="80" align="center">
-            <template #default="{ row }"><el-tag :type="levelMeta(row.level).tag" effect="dark" size="small">{{ row.level }}</el-tag></template>
-          </el-table-column>
-          <el-table-column label="状态" prop="state" sortable="custom" width="104" align="center">
-            <template #default="{ row }"><el-tag :type="stateMeta(row.state).tag" size="small">{{ row.state }}</el-tag></template>
-          </el-table-column>
-          <el-table-column label="标签" prop="tags" sortable="custom" min-width="160">
+          <el-table-column label="报文" prop="iface" sortable="custom" min-width="130">
             <template #default="{ row }">
-              <span class="tag-text" :title="tagText(row.tags)">{{ tagText(row.tags) }}</span>
+              <div class="stack">
+                <strong>{{ row.iface }}</strong>
+                <span>{{ row.transport || 'bin' }}</span>
+              </div>
             </template>
           </el-table-column>
-          <el-table-column label="备注" prop="remark" sortable="custom" min-width="220">
+          <el-table-column label="类型" prop="type" sortable="custom" min-width="126">
             <template #default="{ row }">
-              <RemarkCell v-model="row.remark" @click.stop />
+              <el-tag :type="typeMeta(row.type).tone" effect="light">{{ row.type }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="时间" prop="capturedTime" sortable="custom" width="170" />
-          <el-table-column label="操作" width="82" fixed="right" align="center">
+          <el-table-column label="异常定位" prop="issue" sortable="custom" min-width="250">
+            <template #default="{ row }">
+              <div class="issue-cell">
+                <strong>{{ firstIssue(row).field || '报文整体' }}</strong>
+                <span :title="firstIssue(row).message">{{ firstIssue(row).message || '未记录异常说明' }}</span>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="数据摘要" prop="data" min-width="210">
+            <template #default="{ row }">
+              <code class="data-preview" :title="dataSummary(row)">{{ dataSummary(row) }}</code>
+            </template>
+          </el-table-column>
+          <el-table-column label="入库情况" prop="savedStatus" sortable="custom" width="118" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.savedDatasetIds?.length" type="success" size="small">
+                已入库 {{ row.savedDatasetIds.length }}
+              </el-tag>
+              <span v-else class="unsaved-dot">尚未入库</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="捕获时间" prop="capturedTime" sortable="custom" width="170" />
+          <el-table-column label="操作" width="188" fixed="right" align="center">
             <template #default="{ row }">
               <el-button link type="primary" @click.stop="$emit('view', row)">详情</el-button>
+              <el-button link type="primary" @click.stop="$emit('variant', row)">修改副本</el-button>
+              <el-button link type="primary" @click.stop="$emit('save', [row])">保存</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -84,10 +104,8 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
 import { Download, Search } from '@element-plus/icons-vue'
-import { EXC_LEVELS, EXC_SOURCES, EXC_STATES, useExceptionStore } from '@/stores/exception'
-import RemarkCell from '@/components/RemarkCell.vue'
+import { useExceptionStore } from '@/stores/exception'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
 
@@ -95,7 +113,7 @@ const props = defineProps({
   rows: { type: Array, default: () => [] },
   filters: { type: Object, default: () => ({}) },
 })
-const emit = defineEmits(['view', 'filters-change'])
+const emit = defineEmits(['view', 'save', 'variant', 'filters-change'])
 
 const store = useExceptionStore()
 const systemStore = useSystemStore()
@@ -103,13 +121,12 @@ const connStore = useConnectionStore()
 const selected = ref([])
 const groupBy = ref('none')
 const sortState = ref({ prop: '', order: null })
-const local = reactive({ keyword: '', type: '', level: '', state: '', tag: '' })
+const local = reactive({ keyword: '', type: '', savedStatus: '', tag: '' })
 const groupOptions = [
   { label: '不分组', value: 'none' },
   { label: '按类型', value: 'type' },
   { label: '按模块', value: 'moduleId' },
-  { label: '按状态', value: 'state' },
-  { label: '按标签', value: 'tag' },
+  { label: '按入库', value: 'savedStatus' },
 ]
 
 watch(() => props.filters, (value) => Object.assign(local, value), { immediate: true, deep: true })
@@ -117,27 +134,25 @@ watch(local, () => emit('filters-change', { ...local }), { deep: true })
 
 const typeOptions = computed(() => store.types)
 const tagOptions = computed(() => store.tagOptions)
-const levelMeta = (level) => store.levelMeta(level)
-const stateMeta = (state) => store.stateMeta(state)
-const sourceLabel = (source) => EXC_SOURCES.find((item) => item.value === source)?.label || source
+const typeMeta = (type) => store.typeMeta(type)
 const systemName = (id) => systemStore.systems.find((item) => item.id === id)?.name || '未归属系统'
 const moduleName = (id) => connStore.nodes.find((item) => item.id === id)?.name || '未归属模块'
-const tagText = (tags = []) => tags.length ? tags.join(', ') : '未打标签'
-const levelRank = (level) => {
-  const index = EXC_LEVELS.findIndex((item) => item.value === level)
-  return index === -1 ? EXC_LEVELS.length : index
+const firstIssue = (row) => row.issues?.[0] || {
+  field: row.detail?.fieldPath || '',
+  message: row.detail?.ruleMessage || row.remark || '',
 }
-const stateRank = (state) => {
-  const index = EXC_STATES.findIndex((item) => item.value === state)
-  return index === -1 ? EXC_STATES.length : index
+const dataSummary = (row) => {
+  const entries = Object.entries(row.values || {})
+  if (entries.length) {
+    return entries.slice(0, 2).map(([key, value]) => `${key}=${String(value)}`).join(' · ')
+  }
+  return row.rawHex || row.detail?.reqHex || '无可展示数据'
 }
+const savedStatus = (row) => row.savedDatasetIds?.length ? 'saved' : 'unsaved'
 const sortValue = (row, prop) => {
   if (prop === 'systemModule') return `${systemName(row.systemId)} ${moduleName(row.moduleId)}`
-  if (prop === 'level') return levelRank(row.level)
-  if (prop === 'source') return sourceLabel(row.source)
-  if (prop === 'state') return stateRank(row.state)
-  if (prop === 'tags') return tagText(row.tags)
-  if (prop === 'remark') return row.remark || row.detail?.ruleMessage || ''
+  if (prop === 'issue') return `${firstIssue(row).field} ${firstIssue(row).message}`
+  if (prop === 'savedStatus') return savedStatus(row)
   if (prop === 'capturedTime') return new Date(String(row.capturedTime || '').replace(/\//g, '-')).getTime() || 0
   return row[prop] ?? ''
 }
@@ -154,72 +169,49 @@ const sortedRows = computed(() => [...props.rows].sort((a, b) => {
   if (sortState.value.prop && sortState.value.order) {
     return compareRows(a, b, sortState.value.prop, sortState.value.order)
   }
-  const pendingRank = (item) => item.state === '待处理' ? 0 : 1
-  const rank = pendingRank(a) - pendingRank(b)
-  if (rank) return rank
   return String(b.capturedTime || '').localeCompare(String(a.capturedTime || ''))
 }))
 
 const groupedRows = computed(() => {
-  if (groupBy.value === 'none') return [{ key: 'all', label: '全部异常', items: sortedRows.value }]
+  if (groupBy.value === 'none') return [{ key: 'all', label: '全部异常样本', items: sortedRows.value }]
   const map = new Map()
   sortedRows.value.forEach((item) => {
-    const keys = groupBy.value === 'tag' ? (item.tags?.length ? item.tags : ['untagged']) : [item[groupBy.value] || 'unknown']
-    keys.forEach((key) => {
-      if (!map.has(key)) map.set(key, [])
-      map.get(key).push(item)
-    })
+    const key = groupBy.value === 'savedStatus' ? savedStatus(item) : (item[groupBy.value] || 'unknown')
+    if (!map.has(key)) map.set(key, [])
+    map.get(key).push(item)
   })
-  return [...map.entries()].map(([key, items]) => ({
-    key,
-    label: groupLabel(key),
-    items,
-  }))
+  return [...map.entries()].map(([key, items]) => ({ key, label: groupLabel(key), items }))
 })
 
 const groupLabel = (key) => {
-  if (groupBy.value === 'type') return key
-  if (groupBy.value === 'state') return key
   if (groupBy.value === 'moduleId') return moduleName(key)
-  if (groupBy.value === 'tag') return key === 'untagged' ? '未打标签' : key
+  if (groupBy.value === 'savedStatus') return key === 'saved' ? '已存入数据集' : '尚未入库'
   return key
 }
-
 const onSelectionChange = (items) => {
   selected.value = items
 }
 const onSortChange = ({ prop, order }) => {
   sortState.value = { prop: prop || '', order }
 }
-const markSelectedProcessed = () => {
-  const rows = selected.value.filter((item) => item?.id && item.state !== '已处理')
-  const ids = [...new Set(rows.map((item) => item.id))]
-  rows.forEach((item) => {
-    item.state = '已处理'
-  })
-  store.batchUpdate(ids, { state: '已处理' }, '批量标记已处理')
-  ElMessage.success(`已标记 ${ids.length} 条异常为已处理`)
-  selected.value = []
-}
 const exportCsv = () => {
-  const header = '时间,系统,模块,接口,类型,级别,来源,状态,标签,备注'
+  const header = '捕获时间,系统,模块,报文,异常类型,异常字段,异常说明,数据摘要,入库情况'
   const lines = sortedRows.value.map((row) => [
     row.capturedTime,
     systemName(row.systemId),
     moduleName(row.moduleId),
     row.iface,
     row.type,
-    row.level,
-    sourceLabel(row.source),
-    row.state,
-    (row.tags || []).join(' / '),
-    row.remark || row.detail?.ruleMessage || '',
-  ].map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(','))
-  const blob = new Blob([[header, ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
+    firstIssue(row).field,
+    firstIssue(row).message,
+    dataSummary(row),
+    savedStatus(row) === 'saved' ? '已存入数据集' : '尚未入库',
+  ].map((cell) => `"${String(cell || '').replaceAll('"', '""')}"`).join(','))
+  const blob = new Blob([`\uFEFF${[header, ...lines].join('\n')}`], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `exceptions-${Date.now()}.csv`
+  link.download = `异常数据-${Date.now()}.csv`
   link.click()
   URL.revokeObjectURL(url)
 }
@@ -229,40 +221,57 @@ const exportCsv = () => {
 .exception-table { display: flex; flex-direction: column; gap: 12px; }
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) repeat(4, minmax(110px, 128px)) 260px;
+  grid-template-columns: minmax(240px, 1fr) repeat(3, minmax(120px, 150px)) 270px;
   gap: 8px;
   align-items: center;
 }
-.kw { min-width: 180px; }
+.kw { min-width: 220px; }
 .batch-row { display: flex; align-items: center; gap: 8px; }
-.muted { color: var(--el-text-color-secondary); font-size: 12px; margin-right: auto; }
+.muted { margin-right: auto; color: var(--el-text-color-secondary); font-size: 12px; }
 .group-block { display: flex; flex-direction: column; gap: 8px; }
-.table-scroll {
-  width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-.ledger-table {
-  min-width: 1400px;
-}
+.table-scroll { width: 100%; overflow-x: auto; overflow-y: hidden; }
+.ledger-table { min-width: 1420px; }
 .group-title {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 4px 2px;
   font-weight: 650;
-  color: var(--el-text-color-primary);
 }
-.stack { display: flex; flex-direction: column; gap: 2px; }
-.stack span { color: var(--el-text-color-secondary); font-size: 12px; }
-.tag-text {
-  display: block;
+.stack,
+.issue-cell { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.stack span,
+.issue-cell span {
   overflow: hidden;
-  color: var(--el-text-color-regular);
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-@media (max-width: 1220px) {
+.issue-cell strong { color: var(--el-text-color-primary); font-size: 13px; }
+.data-preview {
+  display: block;
+  overflow: hidden;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.unsaved-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.unsaved-dot::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--el-color-warning);
+  content: '';
+}
+@media (max-width: 1280px) {
   .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

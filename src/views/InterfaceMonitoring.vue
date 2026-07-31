@@ -96,25 +96,33 @@
                   >
                     {{ sendPrimaryText }}
                   </el-button>
+                  <template v-if="['running', 'paused'].includes(execution.status)">
+                    <el-button
+                      v-if="execution.status !== 'paused'"
+                      :icon="VideoPause"
+                      @click="execution.pause()"
+                    >
+                      暂停
+                    </el-button>
+                    <el-button v-else type="success" :icon="VideoPlay" @click="execution.resume()">继续</el-button>
+                  </template>
                   <el-button
-                    v-if="execution.status !== 'paused'"
-                    :icon="VideoPause"
-                    :disabled="execution.status !== 'running'"
-                    @click="execution.pause()"
-                  >
-                    暂停
-                  </el-button>
-                  <el-button v-else type="success" :icon="VideoPlay" @click="execution.resume()">继续</el-button>
-                  <el-button
+                    v-if="['running', 'paused'].includes(execution.status)"
                     type="danger"
                     plain
                     :icon="SwitchButton"
-                    :disabled="!['running', 'paused'].includes(execution.status)"
-                    @click="execution.stop()"
+                    @click="stopSend"
                   >
                     终止
                   </el-button>
-
+                  <el-button
+                    v-else-if="['done', 'stopped'].includes(execution.status) && execution.currentRunId"
+                    type="primary"
+                    :icon="Tickets"
+                    @click="openBatchReport(execution.currentRunId)"
+                  >
+                    生成报告
+                  </el-button>
                 </template>
 
                 <template v-else>
@@ -126,23 +134,32 @@
                   >
                     {{ receivePrimaryText }}
                   </el-button>
+                  <template v-if="['listening', 'paused'].includes(recvStore.status)">
+                    <el-button
+                      v-if="recvStore.status !== 'paused'"
+                      :icon="VideoPause"
+                      @click="recvStore.pause()"
+                    >
+                      暂停
+                    </el-button>
+                    <el-button v-else type="success" :icon="VideoPlay" @click="recvStore.resume()">继续</el-button>
+                  </template>
                   <el-button
-                    v-if="recvStore.status !== 'paused'"
-                    :icon="VideoPause"
-                    :disabled="recvStore.status !== 'listening'"
-                    @click="recvStore.pause()"
-                  >
-                    暂停
-                  </el-button>
-                  <el-button v-else type="success" :icon="VideoPlay" @click="recvStore.resume()">继续</el-button>
-                  <el-button
+                    v-if="['listening', 'paused'].includes(recvStore.status)"
                     type="danger"
                     plain
                     :icon="SwitchButton"
-                    :disabled="!['listening', 'paused'].includes(recvStore.status)"
-                    @click="recvStore.stop()"
+                    @click="stopReceive"
                   >
                     终止
+                  </el-button>
+                  <el-button
+                    v-else-if="['done', 'stopped'].includes(recvStore.status) && recvStore.currentBatchId"
+                    type="primary"
+                    :icon="Tickets"
+                    @click="openBatchReport(recvStore.currentBatchId)"
+                  >
+                    生成报告
                   </el-button>
                 </template>
               </div>
@@ -202,8 +219,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { Plus, RefreshRight, Search, SwitchButton, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, RefreshRight, Search, SwitchButton, Tickets, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import SystemModuleTree from '@/components/SystemModuleTree.vue'
 import PlanTable from '@/components/execution/PlanTable.vue'
 import LiveConsole from '@/components/execution/LiveConsole.vue'
@@ -513,6 +530,7 @@ const addSendScheme = (schemeId) => {
     const before = execution.plan.length
     if (addSendInterface(interfaceId, { silent: true }) && execution.plan.length > before) added += 1
   })
+  execution.setPlanScheme(scheme)
   ElMessage.success(`方案「${scheme.name}」已加入 ${added} 个发送接口`)
 }
 const addReceiveScheme = (schemeId) => {
@@ -523,6 +541,7 @@ const addReceiveScheme = (schemeId) => {
     const before = recvStore.plan.length
     if (addReceiveInterface(interfaceId, { silent: true }) && recvStore.plan.length > before) added += 1
   })
+  recvStore.setPlanScheme(scheme)
   ElMessage.success(`方案「${scheme.name}」已加入 ${added} 个接收接口`)
 }
 
@@ -600,6 +619,39 @@ const startReceive = () => {
   }
   if (['done', 'stopped'].includes(recvStore.status)) recvStore.reset()
   if (!recvStore.start()) ElMessage.warning('请先加入至少一个接收接口')
+}
+
+const stopSend = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '终止后将完成并归档当前批次，剩余数据不再发送。',
+      '终止发送批次',
+      { type: 'warning', confirmButtonText: '终止并归档', cancelButtonText: '取消' },
+    )
+    execution.stop()
+    ElMessage.success('发送批次已完成并归档')
+  } catch {
+    // 用户取消
+  }
+}
+
+const stopReceive = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '终止后将完成并归档当前接收批次。',
+      '终止接收批次',
+      { type: 'warning', confirmButtonText: '终止并归档', cancelButtonText: '取消' },
+    )
+    recvStore.stop()
+    ElMessage.success('接收批次已完成并归档')
+  } catch {
+    // 用户取消
+  }
+}
+
+const openBatchReport = (batchId) => {
+  if (!batchId) return
+  router.push({ path: '/report', query: { batchId } })
 }
 
 const firstQueryValue = (value) => Array.isArray(value) ? value[0] : value

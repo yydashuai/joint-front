@@ -4,7 +4,7 @@
     <el-card class="kb__docs" shadow="never" :body-style="{ padding: '0', flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }">
       <template #header>
         <div class="card-head">
-          <span>知识文档 <span class="muted">· 全工具统一</span></span>
+          <span>知识文档</span>
           <div class="head-stat">
             <el-tag size="small" effect="plain">{{ docs.length }} 篇</el-tag>
             <el-tag size="small" effect="plain" type="success">已向量化 {{ vectorizedCount }}</el-tag>
@@ -78,7 +78,7 @@
 
     <!-- 右：混合检索测试（统一知识库内） -->
     <el-card class="kb__search" shadow="never" :body-style="{ padding: '14px 16px', flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }">
-      <template #header><div class="card-head"><span>混合检索测试</span><span class="muted">统一知识库 · 关键词 + 向量融合</span></div></template>
+      <template #header><div class="card-head"><span>混合检索测试</span></div></template>
       <el-input v-model="query" placeholder="输入查询，如 武器载荷 超时" :prefix-icon="Search" clearable @input="onSearch" @keyup.enter="onSearch" />
       <el-scrollbar class="kb__hits">
         <div v-if="hits.length" class="hits">
