@@ -25,9 +25,6 @@
                 {{ selectedInPlan ? '已在编排中' : '添加选中接口' }}
               </el-button>
             </el-tooltip>
-            <el-popconfirm title="确认重置本次监听？接收数据流将被清空" @confirm="$emit('reset-run')">
-              <template #reference><el-button :icon="RefreshRight" :disabled="['listening', 'paused'].includes(store.status)">重置本次监听</el-button></template>
-            </el-popconfirm>
           </div>
         </div>
       </template>

@@ -6,35 +6,37 @@
     destroy-on-close
     class="iface-quick-config"
   >
-    <!-- 未配置字段警告（B 方案：字段未配置的接口禁止加入计划/发送测试） -->
+    <!-- 未关联数据集警告 -->
     <el-alert
-      v-if="fieldsMissing"
+      v-if="datasetMissing"
       type="warning"
       :closable="false"
       show-icon
       class="iqc-alert"
     >
       <template #title>
-        当前接口并未关联数据集，请在下面关联数据集，或
+        当前接口尚未关联测试数据集，请在下面选择数据集，或
         <el-button link type="primary" size="small" @click="goTestData">
           去创建测试数据集
         </el-button>
       </template>
     </el-alert>
 
-    <!-- 未关联数据集警告（必须显式绑定数据集后才能加入计划） -->
-      <el-alert
-        v-else-if="datasetMissing"
-        type="warning"
-        :closable="false"
-        show-icon
-        class="iqc-alert"
-      >
-        <template #title>
-          该接口尚未关联任何测试数据集，无法开始测试。
-          <el-button link type="primary" size="small" @click="goTestData">去测试数据管理创建/关联数据集</el-button>
-        </template>
-      </el-alert>
+    <!-- 已关联数据集，但数据集 → 报文 → 当前方向字段链路不完整 -->
+    <el-alert
+      v-else-if="fieldsMissing"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="iqc-alert"
+    >
+      <template #title>
+        数据集已关联，但其关联报文没有可用的{{ fieldDirectionLabel }}字段，请检查数据集关联报文及报文字段配置。
+        <el-button link type="primary" size="small" @click="goConfigureMessage">
+          去配置
+        </el-button>
+      </template>
+    </el-alert>
 
     <el-form label-width="88px" label-position="left">
       <!-- 基本信息 -->
@@ -236,16 +238,39 @@ const linkedFields = computed(() => collectTestInterfaceFields(
 ))
 const fieldsMissing = computed(() => !linkedFields.value.length)
 const datasetMissing = computed(() => !form.datasetIds.length)
+const fieldDirectionLabel = computed(() => props.hidePlanActions ? '接收' : '发送')
 const blockPlan = computed(() => fieldsMissing.value || datasetMissing.value)
 const blockTest = computed(() => fieldsMissing.value || datasetMissing.value)
 const blockTip = computed(() => datasetMissing.value
   ? '请先在接口配置中关联至少一个测试数据集'
-  : '所选数据集没有关联可用的报文和字段')
+  : `所选数据集关联的报文没有可用${fieldDirectionLabel.value}字段`)
 const testBlockTip = computed(() => {
   if (datasetMissing.value) return '请先关联至少一个测试数据集'
-  if (fieldsMissing.value) return '所选数据集没有关联可用的报文和字段'
+  if (fieldsMissing.value) return `所选数据集关联的报文没有可用${fieldDirectionLabel.value}字段`
   return ''
 })
+
+const goConfigureMessage = () => {
+  const datasetIds = new Set(form.datasetIds.map((id) => String(id)))
+  const linkedMessageNames = testDataStore.datasets
+    .filter((dataset) => datasetIds.has(String(dataset.id)))
+    .map((dataset) => dataset.linkedInterface || dataset.linkedMessage)
+    .filter(Boolean)
+  const message = protocolStore.interfaces.find((item) =>
+    linkedMessageNames.some((name) => item.name === name || String(item.id) === String(name))
+  )
+
+  visible.value = false
+  if (!message) {
+    ElMessage.warning('未找到数据集关联的报文，请先在数据集管理中重新关联')
+    router.push('/test-data')
+    return
+  }
+
+  protocolStore.selectedInterfaceId = message.id
+  if (message.systemId) systemStore.setCurrent(message.systemId)
+  router.push({ path: '/protocol', query: { kind: 'interface', iface: String(message.id) } })
+}
 
 /* ---- 保存 ---- */
 const save = (silent = false) => {
