@@ -17,7 +17,7 @@
           <el-button v-else link type="info" size="small" :icon="treeFullyExpanded ? Fold : Expand" @click="toggleAll">
             {{ treeFullyExpanded ? '全部收起' : '全部展开' }}
           </el-button>
-          <el-button link type="primary" size="small" :icon="Plus" @click="newSystem">新建系统</el-button>
+          <el-button v-if="!readonly" link type="primary" size="small" :icon="Plus" @click="newSystem">新建系统</el-button>
         </div>
       </div>
     </template>
@@ -43,16 +43,16 @@
             :class="[`tnode--${data.kind}`, { 'tnode--draggable': draggableLeaves && isSelectableLeaf(data) }]"
             :draggable="draggableLeaves && isSelectableLeaf(data)"
             @dragstart="onDragStart($event, data)"
-            @dblclick="startRename(data)"
+            @dblclick="onNodeDblClick(data)"
           >
             <el-icon class="tnode__icon"><component :is="data.icon" /></el-icon>
             <span class="tnode__label">{{ data.label }}</span>
             <span v-if="data.badge" class="tnode__badge">{{ data.badge }}</span>
             <span v-if="data.count !== undefined" class="tnode__count">{{ data.count }}</span>
-            <span v-if="data.kind === 'system'" class="tnode__ops">
+            <span v-if="!readonly && data.kind === 'system'" class="tnode__ops">
               <el-button link type="primary" size="small" @click.stop="newModule(data)">+模块</el-button>
             </span>
-            <span v-else-if="data.addActions && data.addActions.length" class="tnode__ops">
+            <span v-else-if="!readonly && data.addActions && data.addActions.length" class="tnode__ops">
               <el-button
                 v-for="a in data.addActions"
                 :key="a.groupKind"
@@ -136,6 +136,7 @@ const props = defineProps({
   leafContextActions: { type: Function, default: null }, // (leafData) => [{ label, action, danger? }]
   moduleContextActions: { type: Function, default: null }, // (moduleData) => [{ label, action, danger? }]
   draggableLeaves: { type: Boolean, default: false },
+  readonly: { type: Boolean, default: false },
   bodyStyle: {
     type: Object,
     default: () => ({ padding: '0', flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' })
@@ -348,6 +349,9 @@ const promptName = (obj, kind, title) => {
     .catch(() => { if (!obj.name) obj.name = nextUniqueName(fb, obj) })
 }
 const startRename = (data) => { if (data?.ref) promptName(data.ref, data.kind, '重命名') }
+const onNodeDblClick = (data) => {
+  if (!props.readonly) startRename(data)
+}
 
 /* ---- 新建（默认名创建，随后可重命名） ---- */
 const newSystem = () => { systemStore.add({ name: nextUniqueName(DEFAULT_NAME.system) }) }
@@ -370,7 +374,7 @@ const clearFilter = () => {
 /* ---- 右键菜单 ---- */
 const ctx = reactive({ visible: false, x: 0, y: 0, data: null })
 const onContextMenu = (event, data) => {
-  if (!data || !data.ref) return // 叶子组（无 ref）不弹菜单
+  if (props.readonly || !data || !data.ref) return // 只读树或叶子组（无 ref）不弹菜单
   event.preventDefault()
   Object.assign(ctx, { visible: true, x: event.clientX, y: event.clientY, data })
 }

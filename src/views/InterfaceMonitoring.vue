@@ -658,8 +658,25 @@ const firstQueryValue = (value) => Array.isArray(value) ? value[0] : value
 onMounted(() => {
   const interfaceId = firstQueryValue(route.query.interfaceId)
   if (interfaceId) {
-    if (activeMode.value === 'receive') addReceiveInterface(interfaceId)
+    if (activeMode.value === 'receive') {
+      const added = addReceiveInterface(interfaceId)
+      if (added && route.query.test === '1') startReceive()
+    }
     else addSendInterface(interfaceId, { test: route.query.test === '1' })
+    router.replace({
+      path: '/execution',
+      query: activeMode.value === 'receive' ? { mode: 'receive' } : {},
+    })
+    return
+  }
+
+  const schemeId = firstQueryValue(route.query.schemeId)
+  if (schemeId) {
+    const scheme = schemeStore.schemes.find((item) => String(item.id) === String(schemeId))
+    if (scheme) {
+      if (activeMode.value === 'receive') addReceiveScheme(scheme.id)
+      else addSendScheme(scheme.id)
+    }
     router.replace({
       path: '/execution',
       query: activeMode.value === 'receive' ? { mode: 'receive' } : {},
