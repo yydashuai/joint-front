@@ -10,7 +10,7 @@
     >
       <template #header>
         <div class="card-head">
-          <div>
+          <div class="card-head__left">
             <span class="card-title">接收接口列表</span>
           </div>
           <div class="plan-actions">
@@ -43,29 +43,21 @@
             <el-icon class="drag-handle"><Rank /></el-icon>
           </template>
         </el-table-column>
-        <el-table-column label="序号" type="index" width="58" align="center" />
-        <el-table-column label="接口名称" min-width="170">
+        <el-table-column label="接口名" min-width="220">
           <template #default="{ row }">
-            <div class="strong">{{ row.iface?.name }}</div>
+            <div class="strong">
+              {{ row.iface?.name }}
+              <el-tag v-if="row.isCustom" size="small" type="primary" effect="plain" class="src-tag">自定义</el-tag>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column label="系统" min-width="180">
+        <el-table-column label="备注" min-width="300" show-overflow-tooltip>
           <template #default="{ row }">
-            {{ row.system?.name || '未归属系统' }}
+            <span v-if="row.isCustom">监听 {{ row.iface.listenConfig?.ip || '—' }} / {{ row.iface.listenConfig?.protocol || row.iface.transportType || '—' }} / {{ row.iface.listenConfig?.messageId || '全部消息' }}</span>
+            <span v-else>{{ row.iface?.desc || '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="模块" min-width="160">
-          <template #default="{ row }">
-            <span class="status-dot" :class="`status-dot--${row.module?.status || 'offline'}`" />
-            {{ row.module?.name || '未知模块' }}
-          </template>
-        </el-table-column>
-        <el-table-column label="备注" min-width="220" show-overflow-tooltip>
-          <template #default="{ row }">
-            {{ row.iface?.desc || '—' }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="120" align="center">
+        <el-table-column label="操作" width="100" align="center">
           <template #default="{ row }">
             <el-popconfirm title="确认从编排中移除？" @confirm="store.removeFromPlan(row.id)">
               <template #reference><el-button link type="danger" size="small" :disabled="['listening', 'paused'].includes(store.status)">移除</el-button></template>
@@ -74,7 +66,7 @@
         </el-table-column>
       </el-table>
 
-      <el-empty v-else class="plan-empty" :image-size="72" description="从左侧接口树拖入或选中添加接收接口；接口需已配置字段定义（解析依据）" />
+      <el-empty v-else class="plan-empty" :image-size="72" description="从左侧接口树拖入或选中添加接收接口；自定义接口需先配置监听（IP/协议/消息号）" />
     </el-card>
   </div>
 </template>
@@ -82,14 +74,14 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Sortable from 'sortablejs'
-import { Plus, Rank, RefreshRight } from '@element-plus/icons-vue'
+import { Plus, Rank } from '@element-plus/icons-vue'
 import { useReceptionStore } from '@/stores/reception'
 
 defineProps({
   selectedIface: { type: Object, default: null },
   selectedInPlan: { type: Boolean, default: false },
 })
-const emit = defineEmits(['add-selected', 'drop-iface', 'drop-scheme', 'reset-run'])
+const emit = defineEmits(['add-selected', 'drop-iface', 'drop-custom', 'drop-scheme', 'reset-run'])
 
 const store = useReceptionStore()
 const tableRef = ref()
@@ -114,9 +106,14 @@ const onDrop = (event) => {
     emit('drop-scheme', payload.id)
     return
   }
-  // 接口叶子拖入
+  // 系统接口叶子拖入
   if (payload?.kind === 'iface' && payload.id) {
     emit('drop-iface', payload.id)
+    return
+  }
+  // 自定义接口叶子拖入
+  if (payload?.kind === 'custom' && payload.id) {
+    emit('drop-custom', payload.id)
   }
 }
 
@@ -146,6 +143,7 @@ onBeforeUnmount(() => sortable?.destroy())
   :deep(.el-card__body) { padding: 14px; }
 }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.card-head__left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .card-title { font-weight: 650; font-size: 14px; margin-right: 8px; }
 .card-sub { color: var(--el-text-color-secondary); font-size: 12px; }
 .plan-actions {
@@ -177,19 +175,10 @@ onBeforeUnmount(() => sortable?.destroy())
   background: linear-gradient(0deg, rgba(47, 111, 235, .04), rgba(47, 111, 235, .04)), var(--el-bg-color);
 }
 .strong { font-weight: 600; }
+.src-tag { margin-left: 6px; transform: translateY(-1px); }
 .muted { color: var(--el-text-color-secondary); font-size: 12px; }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
 .text-danger { color: var(--el-color-danger); }
 .drag-handle { cursor: grab; color: var(--el-text-color-secondary); }
 .plan-empty { height: 152px; padding: 0; }
-.status-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 5px;
-  border-radius: 50%;
-  background: var(--el-color-info);
-}
-.status-dot--online { background: var(--el-color-success); }
-.status-dot--pinging { background: var(--el-color-warning); }
 </style>

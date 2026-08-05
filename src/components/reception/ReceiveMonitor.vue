@@ -1,154 +1,110 @@
 <template>
   <div class="rmonitor">
-    <!-- ===== 左：接收数据流 / 右：异常明细（常驻） ===== -->
-    <div class="rm-split">
-      <!-- 接收数据流 -->
-      <el-card shadow="never" class="exec-card stream-card">
-        <template #header>
-          <div class="card-head">
-            <span class="card-title">接收数据流</span>
-            <div class="stream-summary">
-              <el-tag :type="statusType" effect="dark">{{ statusText }}</el-tag>
-              <span v-for="metric in streamMetrics" :key="metric.label" class="stream-stat" :class="metric.cls">
-                <b>{{ metric.value }}</b>{{ metric.label }}
-              </span>
-            </div>
-          </div>
-        </template>
-        <div class="stream-tools">
-          <div class="stream-tools__filters">
-            <el-check-tag
-              v-for="f in statusFilters"
-              :key="f.value"
-              :checked="statusFilter === f.value"
-              class="filter-tag"
-              :class="`filter-tag--${f.value}`"
-              @change="() => setStatusFilter(f.value)"
-            >
-              {{ f.label }}（{{ f.count }}）
-            </el-check-tag>
-            <el-select
-              v-if="statusFilter === 'error'"
-              v-model="tagFilter"
-              placeholder="异常标签"
-              size="small"
-              clearable
-              style="width: 140px;"
-            >
-              <el-option v-for="t in errorTags" :key="t" :label="t" :value="t" />
-            </el-select>
-            <el-select v-model="ifaceFilter" placeholder="按接口过滤" size="small" clearable style="width: 180px;">
-              <el-option
-                v-for="item in store.planItems"
-                :key="item.iface.id"
-                :label="item.iface.name"
-                :value="item.iface.id"
-              />
-            </el-select>
-          </div>
-          <div class="stream-tools__right">
-            <el-button
-              type="success"
-              plain
-              size="small"
-              :icon="FolderAdd"
-              :disabled="!selectedIds.length"
-              @click="openSaveDialog(selectedIds)"
-            >
-              保存选中为数据集（{{ selectedIds.length }}）
-            </el-button>
-            <el-switch v-model="autoScroll" size="small" active-text="自动滚动" />
-          </div>
-        </div>
-
-        <div class="stream-head">
-          <span class="stream-head__chk">
-            <input
-              type="checkbox"
-              :checked="allSelected"
-              :indeterminate="indeterminate"
-              :disabled="!allRecvFilteredIds.length"
-              :title="allSelected ? '取消全选' : '全选当前接收数据'"
-              @change="toggleSelectAll"
-            />
-          </span>
-          <span>#</span>
-          <span>时间</span>
-          <span>接口</span>
-          <span>传输</span>
-          <span>报文（hex）</span>
-          <span class="stream-head__status">校验结果</span>
-          <span class="stream-head__op">详情</span>
-        </div>
-        <div class="stream-wrap">
-          <div ref="streamRef" class="stream">
-            <div
-              v-for="entry in filteredEntries"
-              :key="entry.id"
-              class="stream-line"
-              :class="lineClass(entry)"
-              @click="openDetail(entry)"
-            >
-              <span class="col-chk" @click.stop>
-                <input
-                  v-if="entry.kind === 'recv'"
-                  type="checkbox"
-                  :checked="selectedIds.includes(entry.id)"
-                  @change="toggleSelect(entry.id)"
-                />
-              </span>
-              <span class="mono col-idx">{{ entry.seq }}</span>
-              <span class="mono col-time">{{ entry.time }}</span>
-              <span class="col-iface">
-                {{ entry.iface }}
-                <em v-if="entry.kind === 'forward'" class="fw-mark">转发</em>
-                <em v-if="entry.sentTest" class="tx-mark">发送</em>
-              </span>
-              <span class="col-transport mono">{{ entry.transport }}</span>
-              <span class="hex mono">{{ entry.hex }}</span>
-              <span class="col-status" :class="`col-status--${entry.verdict.status}`">{{ entry.verdict.tag }}</span>
-              <span class="col-op">
-                <el-button link type="primary" size="small" @click.stop="openDetail(entry)">详情</el-button>
-              </span>
-            </div>
-            <div v-if="!filteredEntries.length" class="stream-empty">
-              {{ store.recvQueue.length ? '当前过滤条件下没有报文' : '开始监听后，接收数据流将在此实时滚动。' }}
-            </div>
-          </div>
-        </div>
-      </el-card>
-
-      <!-- 异常明细（常驻右侧） -->
-      <el-card shadow="never" class="exec-card exc-card">
-        <template #header>
-          <div class="card-head">
-            <span class="card-title">
-              本次监听异常明细
+    <!-- 接收数据流 -->
+    <el-card shadow="never" class="exec-card stream-card">
+      <template #header>
+        <div class="card-head">
+          <span class="card-title">接收数据流</span>
+          <div class="stream-summary">
+            <el-tag :type="statusType" effect="dark">{{ statusText }}</el-tag>
+            <span v-for="metric in streamMetrics" :key="metric.label" class="stream-stat" :class="metric.cls">
+              <b>{{ metric.value }}</b>{{ metric.label }}
             </span>
-            <el-button link type="primary" size="small" @click="router.push('/exception')">前往异常数据管理</el-button>
           </div>
-        </template>
-        <div class="exc-body">
-          <el-table
-            :data="sessionExceptions"
-            size="small"
-            empty-text="本次监听暂无异常"
-            :row-class-name="() => 'exc-row'"
-          >
-            <el-table-column label="捕获时间" prop="capturedTime" width="150" show-overflow-tooltip />
-            <el-table-column label="类型" width="100">
-              <template #default="{ row }">
-                <el-tag size="small" type="danger" effect="plain">{{ row.type }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="接口" prop="iface" width="130" show-overflow-tooltip />
-            <el-table-column label="说明" min-width="200" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.detail?.ruleMessage || row.remark }}</template>
-            </el-table-column>
-          </el-table>
         </div>
-      </el-card>
-    </div>
+      </template>
+      <div class="stream-tools">
+        <div class="stream-tools__filters">
+          <el-check-tag
+            v-for="f in statusFilters"
+            :key="f.value"
+            :checked="statusFilter === f.value"
+            class="filter-tag"
+            :class="`filter-tag--${f.value}`"
+            @change="() => setStatusFilter(f.value)"
+          >
+            {{ f.label }}（{{ f.count }}）
+          </el-check-tag>
+          <el-select v-model="ifaceFilter" placeholder="按接口过滤" size="small" clearable style="width: 180px;">
+            <el-option
+              v-for="item in store.planItems"
+              :key="item.iface.id"
+              :label="item.iface.name"
+              :value="item.iface.id"
+            />
+          </el-select>
+        </div>
+        <div class="stream-tools__right">
+          <el-button
+            type="success"
+            plain
+            size="small"
+            :icon="FolderAdd"
+            :disabled="!selectedIds.length"
+            @click="openSaveDialog(selectedIds)"
+          >
+            保存选中为数据集（{{ selectedIds.length }}）
+          </el-button>
+          <el-switch v-model="autoScroll" size="small" active-text="自动滚动" />
+        </div>
+      </div>
+
+      <div class="stream-head">
+        <span class="stream-head__chk">
+          <input
+            type="checkbox"
+            :checked="allSelected"
+            :indeterminate="indeterminate"
+            :disabled="!allRecvFilteredIds.length"
+            :title="allSelected ? '取消全选' : '全选当前接收数据'"
+            @change="toggleSelectAll"
+          />
+        </span>
+        <span>接口名</span>
+        <span>IP</span>
+        <span>协议</span>
+        <span>消息号</span>
+        <span>时间</span>
+        <span>报文内容</span>
+        <span class="stream-head__op">详情</span>
+      </div>
+      <div class="stream-wrap">
+        <div ref="streamRef" class="stream">
+          <div
+            v-for="entry in filteredEntries"
+            :key="entry.id"
+            class="stream-line"
+            :class="lineClass(entry)"
+            @click="openDetail(entry)"
+          >
+            <span class="col-chk" @click.stop>
+              <input
+                v-if="entry.kind === 'recv'"
+                type="checkbox"
+                :checked="selectedIds.includes(entry.id)"
+                @change="toggleSelect(entry.id)"
+              />
+            </span>
+            <span class="col-iface">
+              {{ entry.iface }}
+              <em v-if="entry.kind === 'forward'" class="fw-mark">转发</em>
+              <em v-if="entry.sentTest" class="tx-mark">发送</em>
+            </span>
+            <span class="mono col-ip">{{ entry.ip || '—' }}</span>
+            <span class="mono col-protocol">{{ entry.transport || '—' }}</span>
+            <span class="mono col-msgid">{{ entry.messageId || '—' }}</span>
+            <span class="mono col-time">{{ entry.time }}</span>
+            <span class="hex mono">{{ shortHex(entry) }}</span>
+            <span class="col-op">
+              <el-button link type="primary" size="small" @click.stop="openDetail(entry)">详情</el-button>
+            </span>
+          </div>
+          <div v-if="!filteredEntries.length" class="stream-empty">
+            {{ store.recvQueue.length ? '当前过滤条件下没有报文' : '开始监听后，接收数据流将在此实时滚动。' }}
+          </div>
+        </div>
+      </div>
+    </el-card>
 
     <!-- ===== 详情抽屉 ===== -->
     <ReceiveDetailDrawer
@@ -192,7 +148,6 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { FolderAdd } from '@element-plus/icons-vue'
 import { useReceptionStore } from '@/stores/reception'
@@ -201,7 +156,6 @@ import ReceiveDetailDrawer from '@/components/reception/ReceiveDetailDrawer.vue'
 
 const store = useReceptionStore()
 const dataStore = useTestDataStore()
-const router = useRouter()
 
 const autoScroll = ref(true)
 const streamRef = ref()
@@ -242,7 +196,6 @@ const statusFilters = computed(() => [
   { value: 'unparsed', label: '无法解析', count: store.unparsedCount },
   { value: 'forward', label: '已转发', count: store.forwardCount },
 ])
-const errorTags = ['语义不一致', '字段越界', '规则校验失败']
 
 const setStatusFilter = (v) => {
   statusFilter.value = v
@@ -264,6 +217,13 @@ const lineClass = (entry) => ({
   'stream-line--unparsed': entry.verdict.status === 'unparsed',
   'stream-line--forward': entry.kind === 'forward',
 })
+
+/* ===== 报文内容列：显示前 20 个 hex 字符，超出省略（与发送数据流一致） ===== */
+const shortHex = (entry) => {
+  const text = entry.hex || '—'
+  if (text.length > 20) return `${text.slice(0, 20)}…`
+  return text
+}
 
 /* ===== 表头全选 ===== */
 const allRecvFilteredIds = computed(() =>
@@ -342,9 +302,6 @@ const openDetail = (entry) => {
   detailVisible.value = true
 }
 
-/* ===== 右侧异常明细（常驻） ===== */
-const sessionExceptions = computed(() => store.exceptions)
-
 /* ===== 自动滚动 ===== */
 watch(() => store.recvQueue.length, () => {
   if (!autoScroll.value) return
@@ -385,16 +342,8 @@ watch(() => store.recvQueue.length, () => {
 .stream-stat.metric--bad b { color: var(--el-color-danger); }
 .stream-stat.metric--warn b { color: var(--el-color-warning); }
 
-/* ===== 左右分栏 ===== */
-.rm-split {
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(360px, 1fr);
-  gap: 14px;
-  height: 520px;
-  align-items: stretch;
-}
-.stream-card, .exc-card { display: flex; flex-direction: column; height: 100%; }
-.rm-split :deep(.el-card__body) {
+.stream-card { display: flex; flex-direction: column; height: 520px; }
+.stream-card :deep(.el-card__body) {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -415,8 +364,8 @@ watch(() => store.recvQueue.length, () => {
 .stream-tools__right { display: flex; align-items: center; gap: 12px; }
 .filter-tag { font-size: 12px; }
 
-/* ===== 数据流列表 ===== */
-$stream-cols: 30px 40px 72px 140px 56px minmax(140px, 1fr) 88px 52px;
+/* ===== 数据流列表：接口名 / IP / 协议 / 消息号 / 时间 / 报文内容 / 详情 ===== */
+$stream-cols: 30px 150px 130px 70px 90px 96px minmax(140px, 1fr) 52px;
 .stream-head {
   display: grid;
   grid-template-columns: $stream-cols;
@@ -426,7 +375,6 @@ $stream-cols: 30px 40px 72px 140px 56px minmax(140px, 1fr) 88px 52px;
   color: var(--el-text-color-secondary);
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
-.stream-head__status { text-align: center; }
 .stream-head__op { text-align: center; }
 .stream-head__chk { display: flex; align-items: center; cursor: pointer; }
 .stream-wrap { flex: 1; min-height: 0; display: flex; }
@@ -451,20 +399,16 @@ $stream-cols: 30px 40px 72px 140px 56px minmax(140px, 1fr) 88px 52px;
 }
 .stream-line:hover { background: rgba(255, 255, 255, .07); }
 .stream-line--error { background: rgba(245, 108, 108, .12); }
-.stream-line--error .col-iface, .stream-line--error .hex { color: #ffb3b3; }
+.stream-line--error .col-iface, .stream-line--error .col-ip { color: #ffb3b3; }
 .stream-line--unparsed { background: rgba(230, 162, 60, .1); }
-.stream-line--unparsed .col-iface, .stream-line--unparsed .hex { color: #f3d19e; }
+.stream-line--unparsed .col-iface, .stream-line--unparsed .col-ip { color: #f3d19e; }
 .stream-line--forward .col-iface { color: #7ec8ff; }
 .col-chk { display: flex; align-items: center; }
 .col-chk input { cursor: pointer; }
-.col-idx { color: rgba(215, 225, 234, .5); }
-.col-iface, .hex { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-transport { color: rgba(215, 225, 234, .65); }
-.col-status { text-align: center; font-weight: 600; }
-.col-status--ok { color: #67c23a; }
-.col-status--error { color: #f56c6c; }
-.col-status--unparsed { color: #e6a23c; }
-.col-status--forwarded { color: #7ec8ff; }
+.col-iface, .col-ip, .hex { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-ip { color: rgba(215, 225, 234, .65); }
+.col-protocol { color: rgba(215, 225, 234, .65); }
+.col-msgid { color: rgba(215, 225, 234, .65); }
 .col-op { text-align: center; }
 .fw-mark {
   font-style: normal;
@@ -486,15 +430,9 @@ $stream-cols: 30px 40px 72px 140px 56px minmax(140px, 1fr) 88px 52px;
 }
 .stream-empty { padding: 80px 0; text-align: center; color: rgba(215, 225, 234, .55); }
 
-/* ===== 异常明细（右侧常驻） ===== */
-.sync-tag { margin-left: 6px; }
-.exc-body { flex: 1; min-height: 0; overflow: auto; }
-.exc-body :deep(.exc-row) { cursor: default; }
-
 .save-tip { margin-bottom: 14px; }
 
 @media (max-width: 1180px) {
-  .rm-split { grid-template-columns: 1fr; height: auto; }
-  .stream-card, .exc-card { height: 460px; }
+  .stream-card { height: 460px; }
 }
 </style>

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { useProtocolStore, collectTestInterfaceFields } from '@/stores/protocol'
+import { useCustomIfaceStore } from '@/stores/customIface'
 import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
 import { useExceptionStore } from '@/stores/exception'
@@ -18,6 +19,9 @@ const nowText = () => new Date().toLocaleString('zh-CN', { hour12: false })
 const timeText = () => new Date().toLocaleTimeString('zh-CN', { hour12: false })
 const rnd = (min, max) => Math.round(min + Math.random() * (max - min))
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)]
+const makeHex = (bytes = 12) => Array.from({ length: bytes }, () =>
+  rnd(0, 255).toString(16).padStart(2, '0').toUpperCase()
+).join(' ')
 
 const MAX_QUEUE = 400
 
@@ -72,8 +76,25 @@ export const useReceptionStore = defineStore('reception', {
       const connStore = useConnectionStore()
       const systemStore = useSystemStore()
       const ruleStore = useRuleStore()
+      const customStore = useCustomIfaceStore()
 
       return state.plan.map((planItem, index) => {
+        // 自定义接口：系统不解析内部字段，按监听配置匹配
+        if (planItem.customId) {
+          const custom = customStore.byId(planItem.customId)
+          if (!custom) return null
+          return {
+            ...planItem, index,
+            iface: custom,
+            module: null,
+            system: null,
+            fields: [],
+            rules: [],
+            fieldCount: 0,
+            ruleCount: 0,
+            isCustom: true,
+          }
+        }
         const iface = protocolStore.testInterfaces.find((i) => String(i.id) === String(planItem.interfaceId))
         if (!iface) return null
         const module = connStore.nodes.find((n) => n.id === iface.moduleId) || null
@@ -122,6 +143,18 @@ export const useReceptionStore = defineStore('reception', {
       const protocolStore = useProtocolStore()
       if (!protocolStore.testInterfaces.some((i) => String(i.id) === String(interfaceId))) return false
       this.plan.push({ id: uid('rplan'), interfaceId })
+      this.sourceScheme = null
+      this._syncActiveBatchScope()
+      return true
+    },
+
+    /** 自定义接口加入接收计划（按监听配置匹配报文） */
+    addCustomToPlan(customId) {
+      if (!customId) return false
+      if (this.plan.some((p) => String(p.customId) === String(customId))) return false
+      const customStore = useCustomIfaceStore()
+      if (!customStore.byId(customId)) return false
+      this.plan.push({ id: uid('rplan'), customId })
       this.sourceScheme = null
       this._syncActiveBatchScope()
       return true
@@ -306,6 +339,39 @@ export const useReceptionStore = defineStore('reception', {
      * 正常 ~68%；字段越界 ~15%；语义不一致 ~9%；无法解析 ~8%。
      */
     _fabricate(item) {
+      // 自定义接口：系统不解析内部字段/数据，按监听配置标记来源（IP/协议/消息号）
+      if (item.isCustom) {
+        const iface = item.iface
+        const lc = iface.listenConfig || {}
+        const transport = iface.transportType || lc.protocol || 'OSE'
+        const body = makeHex(rnd(8, 16))
+        this._seq += 1
+        return {
+          id: uid('rx'),
+          kind: 'recv',
+          seq: this._seq,
+          time: timeText(),
+          interfaceId: iface.id,
+          iface: iface.name,
+          moduleId: '',
+          systemId: '',
+          transport,
+          ip: lc.ip || iface.transportConfig?.targetAddress || '—',
+          messageId: lc.messageId || iface.transportConfig?.messageType || '—',
+          hex: body,
+          byteLength: body.split(' ').filter(Boolean).length,
+          fields: [],
+          values: { 报文体: body },
+          verdict: { status: 'ok', tag: '正常', issues: [] },
+          parseAttempts: [],
+          headerParse: null,
+          exceptionId: null,
+          forwardedFrom: null,
+          forwardTarget: null,
+          savedToDataset: false,
+        }
+      }
+
       const transport = item.iface.transportType || 'OSE'
       const r = Math.random()
       let variant = r < 0.68 ? 'ok' : r < 0.83 ? 'field' : r < 0.92 ? 'semantic' : 'unparsed'
@@ -366,6 +432,8 @@ export const useReceptionStore = defineStore('reception', {
         moduleId: item.module?.id || item.iface.moduleId || '',
         systemId: item.system?.id || item.iface.systemId || '',
         transport,
+        ip: item.iface.transportConfig?.targetAddress || '—',
+        messageId: item.iface.transportConfig?.messageType || '—',
         hex: hexFromBytes(bytes),
         byteLength: bytes.length,
         fields: item.fields,

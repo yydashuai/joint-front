@@ -4,6 +4,7 @@ import { useProtocolStore, collectTestInterfaceFields } from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
 import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
+import { useCustomIfaceStore } from '@/stores/customIface'
 import { buildBatchScope, useRunBatchStore } from '@/stores/runBatch'
 import { bus, EVENTS } from '@/utils/bus'
 
@@ -153,8 +154,28 @@ export const useExecutionStore = defineStore('execution', {
       const dataStore = useTestDataStore()
       const connStore = useConnectionStore()
       const systemStore = useSystemStore()
+      const customStore = useCustomIfaceStore()
 
       return state.plan.map((planItem, index) => {
+        // 自定义接口条目：无 task/数据集，报文体透传，系统不解析
+        if (planItem.customId) {
+          const custom = customStore.byId(planItem.customId)
+          if (!custom) return null
+          return {
+            ...planItem,
+            index,
+            task: null,
+            module: null,
+            system: null,
+            iface: custom,
+            datasets: [],
+            rowCount: 0,
+            baseRequests: 1,
+            estimatedRequests: 1,
+            isCustom: true,
+            interval: planItem.interval ?? custom.sendInterval ?? 500,
+          }
+        }
         const task = taskStore.tasks.find((item) => item.id === planItem.taskId)
         const module = task ? connStore.nodes.find((item) => item.id === task.moduleId) : null
         const system = task ? systemStore.systems.find((item) => item.id === task.systemId) : null
@@ -175,8 +196,9 @@ export const useExecutionStore = defineStore('execution', {
           rowCount,
           baseRequests,
           estimatedRequests,
+          interval: planItem.interval ?? iface?.sendInterval ?? 500,
         }
-      }).filter((item) => !!item.task)
+      }).filter((item) => !!item && (!!item.task || item.isCustom))
     },
 
     isRunning: (state) => state.status === 'running',
@@ -218,6 +240,32 @@ export const useExecutionStore = defineStore('execution', {
       this.loadConfigFromTasks()
       this._syncActiveBatchScope()
       return true
+    },
+
+    /** 自定义接口直连加入发送计划（无 task，报文体透传） */
+    addCustomToPlan(customId) {
+      if (!customId) return false
+      if (this.plan.some((item) => item.customId === customId)) return false
+      const customStore = useCustomIfaceStore()
+      if (!customStore.byId(customId)) return false
+      this.plan.push({ id: uid('plan'), customId, interval: customStore.byId(customId)?.sendInterval || 500 })
+      this.sourceScheme = null
+      this._syncActiveBatchScope()
+      return true
+    },
+
+    /** 设置单个计划项的发送间隔（毫秒） */
+    setPlanInterval(planId, interval) {
+      const item = this.plan.find((p) => p.id === planId)
+      if (!item) return
+      item.interval = Math.max(200, Number(interval) || 500)
+    },
+
+    /** 批量同步时间间隔到所有计划项（表头配置） */
+    applyIntervalToAll(interval) {
+      const val = Math.max(200, Number(interval) || 500)
+      this.plan.forEach((item) => { item.interval = val })
+      this.config.sendInterval = val
     },
 
     setPlanScheme(scheme) {
@@ -281,6 +329,33 @@ export const useExecutionStore = defineStore('execution', {
       const protocolStore = useProtocolStore()
       const queue = []
       for (const item of this.planItems) {
+        // 自定义接口：报文体透传（可为加密数据，系统不解析）
+        if (item.isCustom) {
+          const iface = item.iface
+          const count = Math.max(1, item.estimatedRequests || 1)
+          for (let i = 0; i < count; i += 1) {
+            queue.push({
+              id: uid('sq'),
+              taskId: null,
+              customId: iface.id,
+              planIndex: item.index,
+              iface: iface.name || '自定义接口',
+              proto: iface.transportType || 'OSE',
+              label: `自定义报文 ${i + 1}`,
+              datasetName: '',
+              datasetId: null,
+              fields: [],
+              values: { 报文体: iface.bodyHex || '' },
+              variant: 'normal',
+              issues: [],
+              status: 'pending',            // pending | sent
+              time: '',
+              hex: iface.bodyHex || '',
+              interval: item.interval ?? 500,
+            })
+          }
+          continue
+        }
         const fields = item.iface
           ? collectTestInterfaceFields(
             item.iface,
@@ -312,6 +387,7 @@ export const useExecutionStore = defineStore('execution', {
             status: 'pending',            // pending | sent
             time: '',
             hex: '',
+            interval: item.interval ?? 500,
           })
         }
       }
@@ -427,7 +503,7 @@ export const useExecutionStore = defineStore('execution', {
       })
       this._markTasksRunning()
       this._tick()
-      if (this.status === 'running') runTimer = window.setInterval(() => this._tick(), this.tickInterval())
+      if (this.status === 'running') this._scheduleNext()
       bus.emit(EVENTS.TASK_RUN_STARTED, { runId: this.currentRunId, taskIds: this.plan.map((p) => p.taskId) })
       return true
     },
@@ -444,7 +520,7 @@ export const useExecutionStore = defineStore('execution', {
       this.status = 'running'
       useRunBatchStore().updateBatchStatus(this.currentRunId, 'running')
       this._tick()
-      if (this.status === 'running') runTimer = window.setInterval(() => this._tick(), this.tickInterval())
+      if (this.status === 'running') this._scheduleNext()
     },
 
     stop() {
@@ -513,7 +589,21 @@ export const useExecutionStore = defineStore('execution', {
     tickInterval() {
       if (this.config.mode === 'stress') return clamp(700 - this.config.stress.threadCount * 18, 180, 650)
       if (this.config.mode === 'endurance') return clamp(this.config.endurance.requestInterval, 220, 900)
+      // 每接口独立时间间隔：取下一个待发送条目所属接口的 interval
+      const next = this.sendQueue.find((e) => e.status === 'pending')
+      if (next?.interval) return clamp(next.interval, 200, 2000)
       return clamp(this.config.sendInterval || 500, 200, 2000)
+    },
+
+    /** 链式调度：按下一条待发送数据的 interval 动态设定下次发送时间 */
+    _scheduleNext() {
+      this._clearTimers()
+      if (this.status !== 'running') return
+      if (!this.sendQueue.some((e) => e.status === 'pending')) return
+      runTimer = window.setTimeout(() => {
+        this._tick()
+        if (this.status === 'running' && this.sendQueue.some((e) => e.status === 'pending')) this._scheduleNext()
+      }, this.tickInterval())
     },
 
     _tick() {
@@ -704,7 +794,10 @@ export const useExecutionStore = defineStore('execution', {
     },
 
     _clearTimers() {
-      if (runTimer) window.clearInterval(runTimer)
+      if (runTimer) {
+        window.clearTimeout(runTimer)
+        window.clearInterval(runTimer)
+      }
       runTimer = null
     },
   },

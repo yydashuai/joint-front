@@ -22,7 +22,7 @@
             </span>
             <el-tag size="small" type="success" effect="plain">已发送 {{ store.sentCount }}</el-tag>
             <el-tag size="small" type="info" effect="plain">待发送 {{ store.pendingCount }}</el-tag>
-            <el-tooltip v-if="store.status === 'running'" content="运行中不可修改，暂停后点击任一条数据即可编辑字段" placement="top">
+            <el-tooltip v-if="store.status === 'running'" content="运行中不可修改，暂停后点击详情可修改报文" placement="top">
               <span class="lock-hint">运行中锁定</span>
             </el-tooltip>
             <el-switch v-model="autoScroll" size="small" active-text="自动滚动" />
@@ -31,12 +31,10 @@
       </template>
 
       <div class="stream-head">
-        <span>#</span>
         <span>时间</span>
-        <span>测试数据</span>
-        <span>接口</span>
-        <span>报文</span>
-        <span class="stream-head__status">状态</span>
+        <span>接口名</span>
+        <span>报文内容</span>
+        <span class="stream-head__op">详情</span>
       </div>
       <div ref="consoleRef" class="stream">
         <button
@@ -48,27 +46,73 @@
             'stream-line--pending': entry.status === 'pending',
             'stream-line--current': entry.status === 'pending' && idx === firstPendingIndex,
             'stream-line--abnormal': entry.variant === 'abnormal',
-            'stream-line--locked': store.status === 'running',
           }"
-          @click="onRowClick(entry)"
+          @click="openDetail(entry)"
         >
-          <span class="mono col-idx">{{ idx + 1 }}</span>
           <span class="mono col-time">{{ entry.time || '—' }}</span>
-          <span class="col-label">
-            {{ entry.label }}
-            <em v-if="entry.variant === 'abnormal'" class="abn-mark">异常</em>
+          <span class="col-iface">
+            {{ entry.iface }}
+            <em v-if="entry.customId" class="custom-mark">自定义</em>
           </span>
-          <span class="col-iface">{{ entry.iface }}</span>
-          <span class="hex mono">{{ entry.hex || previewValues(entry) }}</span>
-          <span class="col-status" :class="entry.status === 'sent' ? 'col-status--sent' : 'col-status--pending'">
-            {{ entry.status === 'sent' ? '已发送' : '待发送' }}
+          <span class="hex mono">{{ shortHex(entry) }}</span>
+          <span class="col-op">
+            <el-button link type="primary" size="small" @click.stop="openDetail(entry)">详情</el-button>
           </span>
         </button>
         <div v-if="!store.sendQueue.length" class="stream-empty">点击开始后加载全部测试数据，从上往下逐条发送。</div>
       </div>
     </el-card>
 
-    <!-- 暂停后点击测试数据：矩阵形式编辑字段值 -->
+    <!-- 报文详情弹窗：查看完整报文，可修改或复制 -->
+    <el-dialog
+      v-model="detailVisible"
+      :title="detailTitle"
+      width="640px"
+      destroy-on-close
+    >
+      <template v-if="detailEntry">
+        <div class="detail-meta">
+          <el-tag size="small" type="info" effect="plain">{{ detailEntry.iface }}</el-tag>
+          <el-tag v-if="detailEntry.datasetName" size="small" type="success" effect="plain">数据集：{{ detailEntry.datasetName }}</el-tag>
+          <el-tag v-if="detailEntry.customId" size="small" type="primary" effect="plain">自定义接口</el-tag>
+          <el-tag size="small" :type="detailEntry.variant === 'abnormal' ? 'danger' : 'success'" effect="dark">
+            {{ detailEntry.variant === 'abnormal' ? '异常' : '正常' }}
+          </el-tag>
+          <span class="detail-meta__time">{{ detailEntry.time || '尚未发送' }}</span>
+        </div>
+
+        <div class="detail-block">
+          <div class="detail-block__title">报文内容（完整）</div>
+          <div class="hex-box mono">{{ detailHex }}</div>
+        </div>
+
+        <div v-if="detailPairs.length" class="detail-block">
+          <div class="detail-block__title">报文数据</div>
+          <div class="detail-kv">
+            <div v-for="[k, v] in detailPairs" :key="k" class="detail-kv__row">
+              <span class="detail-kv__key">{{ k }}</span>
+              <span class="mono detail-kv__val">{{ v }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="detailEntry.variant === 'abnormal' && detailEntry.issues?.length" class="judge-issues">
+          <div v-for="issue in detailEntry.issues" :key="issue.name" class="judge-issues__item">
+            <span class="judge-issues__field">{{ issue.name }}</span>{{ issue.message }}
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <el-button @click="copyDetailHex">复制报文</el-button>
+        <el-button
+          type="primary"
+          :disabled="store.status === 'running' || ['done', 'stopped'].includes(store.status)"
+          @click="openEditFromDetail"
+        >修改报文</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 修改报文：暂停后矩阵形式编辑字段值 -->
     <el-dialog
       v-model="editVisible"
       :title="editTitle"
@@ -92,7 +136,12 @@
           </div>
         </div>
 
-        <div v-if="!editEntry.fields.length" class="edit-empty">
+        <!-- 自定义接口：直接编辑报文体 hex -->
+        <div v-if="editEntry.customId" class="hex-edit">
+          <div class="detail-block__title">报文体（hex，可为加密数据）</div>
+          <el-input v-model="editHex" type="textarea" :rows="5" class="mono" placeholder="如：EB 90 01 02 03 04 05 06" />
+        </div>
+        <div v-else-if="!editEntry.fields.length" class="edit-empty">
           <el-empty description="该接口未引用任何字段定义，暂无可编辑字段" :image-size="60" />
         </div>
         <el-table v-else :data="[editValues]" size="small" border class="edit-matrix" max-height="360">
@@ -189,7 +238,6 @@ const autoScroll = ref(true)
 const consoleRef = ref()
 
 const firstPendingIndex = computed(() => store.sendQueue.findIndex((e) => e.status === 'pending'))
-const abnormalRequests = computed(() => store.counters.failedRequests + store.counters.errorRequests)
 
 const streamMetrics = computed(() => [
   { label: '进度', value: `${store.progress}%` },
@@ -209,6 +257,14 @@ const statusType = computed(() => ({
   stopped: 'success',
   idle: 'info',
 }[store.status]))
+
+/* ---- 报文内容列：显示前 20 个 hex 字符，超出省略 ---- */
+const shortHex = (entry) => {
+  let text = entry.hex || previewValues(entry)
+  if (text.length > 20) return `${text.slice(0, 20)}…`
+  return text
+}
+
 /* ---- 待发送行的数据预览（未发送时报文列显示字段值摘要） ---- */
 const previewValues = (entry) => {
   const pairs = Object.entries(entry.values || {}).filter(([, v]) => v !== '' && v != null)
@@ -216,10 +272,55 @@ const previewValues = (entry) => {
   return pairs.slice(0, 4).map(([k, v]) => `${k}=${v}`).join('  ') + (pairs.length > 4 ? ' …' : '')
 }
 
-/* ---- 点击测试数据：运行中锁定，暂停后可修改（已发送数据修改后追加到队尾重发） ---- */
+/* ---- 报文详情弹窗 ---- */
+const detailVisible = ref(false)
+const detailEntry = ref(null)
+const detailTitle = computed(() => (detailEntry.value ? `报文详情 · ${detailEntry.value.label}` : '报文详情'))
+const detailHex = computed(() => detailEntry.value?.hex || previewValues(detailEntry.value || {}) || '—')
+const detailPairs = computed(() => Object.entries(detailEntry.value?.values || {}).filter(([, v]) => v !== '' && v != null))
+
+const openDetail = (entry) => {
+  detailEntry.value = entry
+  detailVisible.value = true
+}
+
+const copyDetailHex = async () => {
+  const text = detailHex.value
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('报文已复制到剪贴板')
+  } catch {
+    ElMessage.warning('复制失败，请手动选择复制')
+  }
+}
+
+const openEditFromDetail = () => {
+  if (store.status === 'running' || ['done', 'stopped'].includes(store.status)) return
+  detailVisible.value = false
+  editEntry.value = detailEntry.value
+  if (editEntry.value?.customId) {
+    editHex.value = editEntry.value.hex || ''
+  } else {
+    // 回填该条数据当前的完整字段值；个别缺失字段按约束兜底
+    const values = JSON.parse(JSON.stringify(editEntry.value.values || {}))
+    for (const f of editEntry.value.fields || []) {
+      if (values[f.name] !== undefined && values[f.name] !== null && values[f.name] !== '') continue
+      const c = f.constraint
+      if (c?.mode === 'fixed') values[f.name] = c.value
+      else if (c?.mode === 'enum' && c.entries?.length) values[f.name] = c.entries[0]?.value ?? c.entries[0]
+      else if (c?.mode === 'range') values[f.name] = Number.isFinite(c.min) ? c.min : 0
+      else values[f.name] = values[f.name] ?? ''
+    }
+    editValues.value = values
+  }
+  editVisible.value = true
+}
+
+/* ---- 修改测试数据：运行中锁定，暂停后可修改（已发送数据修改后追加到队尾重发） ---- */
 const editVisible = ref(false)
 const editEntry = ref(null)
 const editValues = ref({})
+const editHex = ref('')
 
 const editTitle = computed(() => {
   if (!editEntry.value) return ''
@@ -235,25 +336,19 @@ const liveJudge = computed(() => {
 })
 const isIssueField = (name) => liveJudge.value.issues.some((i) => i.name === name)
 
-const onRowClick = (entry) => {
-  if (store.status === 'running' || ['done', 'stopped'].includes(store.status)) return
-  editEntry.value = entry
-  // 回填该条数据当前的完整字段值；个别缺失字段按约束兜底，保证用户看到的是实际发送的数据
-  const values = JSON.parse(JSON.stringify(entry.values || {}))
-  for (const f of entry.fields || []) {
-    if (values[f.name] !== undefined && values[f.name] !== null && values[f.name] !== '') continue
-    const c = f.constraint
-    if (c?.mode === 'fixed') values[f.name] = c.value
-    else if (c?.mode === 'enum' && c.entries?.length) values[f.name] = c.entries[0]?.value ?? c.entries[0]
-    else if (c?.mode === 'range') values[f.name] = Number.isFinite(c.min) ? c.min : 0
-    else values[f.name] = values[f.name] ?? ''
-  }
-  editValues.value = values
-  editVisible.value = true
-}
-
 const saveEdit = () => {
   if (!editEntry.value) { editVisible.value = false; return }
+  if (editEntry.value.customId) {
+    // 自定义接口：更新报文体 hex 后直接重发
+    const clean = (editHex.value || '').trim()
+    const result = store.saveQueueEdit(editEntry.value.id, { 报文体: clean })
+    editEntry.value.hex = clean
+    if (result === 'appended') ElMessage.success('已修改，新数据已追加到队尾等待发送')
+    else if (result === 'updated') ElMessage.success('已保存修改，继续发送时按新值发送')
+    else ElMessage.info('数据未修改，保持不变')
+    editVisible.value = false
+    return
+  }
   const result = store.saveQueueEdit(editEntry.value.id, editValues.value)
   if (result === 'appended') {
     ElMessage.success('已修改，新数据已追加到队尾等待发送')
@@ -344,8 +439,8 @@ watch(() => store.sentCount, () => {
 .stream-stat.metric--ok b { color: var(--el-color-success); }
 .stream-stat.metric--bad b { color: var(--el-color-danger); }
 
-/* ---- 发送数据流 ---- */
-$stream-cols: 40px 76px 170px 150px minmax(160px, 1fr) 64px;
+/* ---- 发送数据流：时间 / 接口名 / 报文 / 详情 ---- */
+$stream-cols: 92px 150px minmax(160px, 1fr) 60px;
 .stream-head {
   display: grid;
   grid-template-columns: $stream-cols;
@@ -355,7 +450,7 @@ $stream-cols: 40px 76px 170px 150px minmax(160px, 1fr) 64px;
   color: var(--el-text-color-secondary);
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
-.stream-head__status { text-align: center; }
+.stream-head__op { text-align: center; }
 .stream {
   height: 370px;
   overflow: auto;
@@ -380,8 +475,6 @@ $stream-cols: 40px 76px 170px 150px minmax(160px, 1fr) 64px;
   cursor: pointer;
 }
 .stream-line:hover { background: rgba(255,255,255,.07); }
-.stream-line--locked { cursor: default; }
-.stream-line--locked:hover { background: transparent; }
 .stream-line--pending { color: rgba(215,225,234,.45); }
 .stream-line--current { background: rgba(64,158,255,.14); color: #d7e1ea; }
 /* 异常行：整行红色背景 + 浅色文字 */
@@ -390,22 +483,39 @@ $stream-cols: 40px 76px 170px 150px minmax(160px, 1fr) 64px;
   border-left: 3px solid var(--el-color-danger);
   > span { color: var(--el-color-danger-light-3); }
 }
-.abn-mark {
+.custom-mark {
   font-style: normal;
   font-size: 11px;
-  color: #ffb3b3;
-  border: 1px solid rgba(245,108,108,.5);
+  color: #b37feb;
+  border: 1px solid rgba(179, 127, 235, .5);
   border-radius: 3px;
   padding: 0 4px;
   margin-left: 4px;
 }
-.col-idx { color: rgba(215,225,234,.5); }
-.col-label, .col-iface, .hex { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-status { text-align: center; font-weight: 600; }
-.col-status--sent { color: #67c23a; }
-.col-status--pending { color: rgba(215,225,234,.45); }
+.col-time, .col-iface, .hex { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-op { text-align: center; }
 .mono { font-family: Consolas, Monaco, monospace; }
 .stream-empty { padding: 80px 0; text-align: center; color: rgba(215,225,234,.55); }
+
+/* ---- 报文详情弹窗 ---- */
+.detail-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.detail-meta__time { font-size: 12px; color: var(--el-text-color-secondary); margin-left: auto; }
+.detail-block { margin-bottom: 12px; }
+.detail-block__title { font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--el-text-color-regular); }
+.hex-box {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #101923;
+  color: #d7e1ea;
+  font-size: 12px;
+  line-height: 1.7;
+  word-break: break-all;
+  user-select: text;
+}
+.detail-kv { display: flex; flex-direction: column; gap: 4px; }
+.detail-kv__row { display: flex; align-items: baseline; gap: 12px; font-size: 13px; }
+.detail-kv__key { color: var(--el-text-color-secondary); min-width: 110px; flex-shrink: 0; }
+.detail-kv__val { color: var(--el-text-color-primary); word-break: break-all; }
 
 /* ---- 编辑弹窗 ---- */
 .edit-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -428,6 +538,8 @@ $stream-cols: 40px 76px 170px 150px minmax(160px, 1fr) 64px;
 }
 .edit-empty { padding: 20px 0; }
 .edit-matrix { width: 100%; }
+.hex-edit { padding: 4px 0; }
+.hex-edit :deep(.el-textarea__inner) { font-family: Consolas, Monaco, monospace; }
 .field-col-header {
   display: flex;
   flex-direction: column;

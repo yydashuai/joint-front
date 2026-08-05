@@ -2,6 +2,7 @@
   <el-card class="main" shadow="never" :body-style="mainBody">
     <template #header>
       <div class="proto-head">
+        <span class="proto-head__label">报文名称</span>
         <el-input
           v-model="iface.name"
           class="proto-name"
@@ -16,393 +17,47 @@
     </template>
 
     <el-scrollbar class="editor-scroll">
+      <!-- 报文基本信息 -->
       <div class="field-label">备注说明</div>
       <el-input v-model="iface.desc" placeholder="可选，描述该报文的用途" class="proto-desc" />
 
-      <div class="meta-row">
-        <span class="meta-row__label req">传输类型</span>
-        <el-select v-model="iface.transportType" placeholder="选择传输类型" class="meta-sel" clearable style="width: 160px" @change="onTransportTypeChange">
-          <el-option v-for="t in transportTypeOptions" :key="t.value" :label="t.label" :value="t.value">
-            <span>{{ t.label }}</span>
-            <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px">{{ t.desc }}</span>
-          </el-option>
-        </el-select>
-      </div>
-
-      <!-- 传输配置（根据传输类型动态渲染） -->
-      <TransportConfigForm
-        :transport-config="iface.transportConfig"
-        :transport-type="iface.transportType"
-      />
-
-      <!-- 发送字段 -->
-      <div class="proto-refs-section proto-refs-section--send">
-        <div class="section-head">
-          <span class="section-title section-title--send">发送字段</span>
-          <el-button size="small" type="primary" plain :icon="Plus" @click="openPicker('send')">添加</el-button>
-        </div>
-        <el-table v-if="sendProtocols.length" :data="sendProtocols" border size="small">
-          <el-table-column label="字段" min-width="200">
-            <template #default="{ row }">
-              <span style="font-weight:500">{{ protocolName(row.protocolId) }}</span>
-              <span class="proto-sys-tag" v-if="getProtocolSys(row.protocolId)">{{ getProtocolSys(row.protocolId) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="60" align="center">
-            <template #default="{ row }">
-              <el-button text size="small" :icon="Delete" @click="removeRef(row)" />
-            </template>
-          </el-table-column>
-        </el-table>
-        <el-empty v-else description="暂无发送字段" :image-size="40" />
-      </div>
-
-      <!-- 接收字段 -->
-      <div class="proto-refs-section proto-refs-section--receive">
-        <div class="section-head">
-          <span class="section-title section-title--receive">接收字段</span>
-          <el-button size="small" type="success" plain :icon="Plus" @click="openPicker('receive')">添加</el-button>
-        </div>
-        <el-table v-if="receiveProtocols.length" :data="receiveProtocols" border size="small">
-          <el-table-column label="字段" min-width="200">
-            <template #default="{ row }">
-              <span style="font-weight:500">{{ protocolName(row.protocolId) }}</span>
-              <span class="proto-sys-tag" v-if="getProtocolSys(row.protocolId)">{{ getProtocolSys(row.protocolId) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="60" align="center">
-            <template #default="{ row }">
-              <el-button text size="small" :icon="Delete" @click="removeRef(row)" />
-            </template>
-          </el-table-column>
-        </el-table>
-        <el-empty v-else description="暂无接收字段" :image-size="40" />
-      </div>
-
-      <!-- 字段选择弹窗 -->
-      <el-dialog v-model="pickerVisible" :title="pickerTitle" width="520px" :append-to-body="true">
-        <div class="picker-filter">
-          <el-input v-model="pickerSearch" placeholder="搜索字段名称..." clearable size="small" :prefix-icon="Search" style="flex:1" />
-          <el-checkbox v-model="showAllProtocols" size="small">显示全部（不限模块）</el-checkbox>
-        </div>
-        <div class="picker-list">
-          <div v-for="p in filteredPickerList" :key="p.value" class="picker-item" @click="onPickProtocol(p.value)">
-            <div class="picker-item__info">
-              <span class="picker-item__name">{{ p.label }}</span>
-              <span class="picker-item__meta">{{ p.fieldCount }} 字段 · {{ p.systemName || '未分配' }}</span>
-            </div>
-            <el-tag size="small" :type="p.isInline ? 'warning' : 'info'" effect="plain">{{ p.isInline ? '内联' : '通用' }}</el-tag>
-          </div>
-          <el-empty v-if="!filteredPickerList.length" :description="showAllProtocols ? '无匹配字段' : '当前模块无可引用字段，尝试开启「显示全部」'" :image-size="50" />
-        </div>
-        <template #footer>
-          <el-button @click="pickerVisible = false">关闭</el-button>
-        </template>
-      </el-dialog>
-
-      <!-- 数据预览（只读，展示引用字段的结构） -->
-      <div class="data-preview" v-if="iface.protocolRefs.length">
-        <div class="section-head">
-          <span class="section-title">数据预览</span>
-          <span class="preview-hint">只读 · 点击字段名可跳转编辑</span>
-        </div>
-        <div v-for="ref in iface.protocolRefs" :key="`${ref.protocolId}-${ref.role}`" class="preview-block">
-          <div class="preview-header" @click="$emit('navigateProtocol', ref.protocolId)">
-            <el-tag size="small" :type="roleTagType(ref.role)">{{ roleLabel(ref.role) }}</el-tag>
-            <span class="preview-name">{{ protocolName(ref.protocolId) }}</span>
-          </div>
-          <div class="preview-fields" v-if="getProtocolFields(ref.protocolId).length">
-            <div v-for="f in getProtocolFields(ref.protocolId)" :key="f.id" class="preview-field">
-              <span class="field-name">{{ f.name }}</span>
-              <el-tag size="small" effect="plain" :type="fieldTypeTag(f)">{{ fieldDisplay(f) }}</el-tag>
-              <span class="field-desc" v-if="f.desc">{{ f.desc }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <!-- 字段定义（统一表格，不再区分收发） -->
+      <MessageFieldTable :iface="iface" />
     </el-scrollbar>
   </el-card>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { Plus, Delete, Search } from '@element-plus/icons-vue'
-import { ElMessageBox } from 'element-plus'
-import {
-  TRANSPORT_TYPES, PROTOCOL_ROLES,
-  makeTransportConfig, useProtocolStore, makeProtocolRef,
-} from '@/stores/protocol'
-import { useTestDataStore } from '@/stores/testData'
-import { useConnectionStore } from '@/stores/connection'
-import TransportConfigForm from './TransportConfigForm.vue'
+import { ref } from 'vue'
+import { Delete } from '@element-plus/icons-vue'
 import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
+import MessageFieldTable from './MessageFieldTable.vue'
 
 const props = defineProps({
   iface: { type: Object, required: true },
-  systemOptions: { type: Array, default: () => [] },
-  protocolOptions: { type: Array, default: () => [] },
 })
-defineEmits(['delete', 'navigateProtocol'])
+defineEmits(['delete'])
+
+const { nextUniqueName, validateName } = useEntityNameGuard()
 
 const mainBody = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }
-const protoStore = useProtocolStore()
-const dataStore = useTestDataStore()
-const connStore = useConnectionStore()
-const { nextUniqueName, validateName } = useEntityNameGuard()
+
 const nameBeforeEdit = ref('')
-
-const beginNameEdit = () => {
-  nameBeforeEdit.value = props.iface.name
-}
-const commitNameEdit = () => {
+function beginNameEdit() { nameBeforeEdit.value = props.iface.name }
+function commitNameEdit() {
   const validName = validateName(props.iface.name, props.iface, '报文')
-  if (!validName) {
-    props.iface.name = nameBeforeEdit.value || nextUniqueName('新建报文', props.iface)
-    return
-  }
-  props.iface.name = validName
-}
-
-// 确保接口对象具备新增字段（兼容旧数据）
-if (!Array.isArray(props.iface.datasetIds)) props.iface.datasetIds = []
-if (!props.iface.strategy) props.iface.strategy = { trigger: 'manual', scheduleAt: null, periodicInterval: 60, periodicUnit: 's', periodicCount: null }
-if (!props.iface.sendInterval) props.iface.sendInterval = 500
-
-// 关联数据集下拉（按系统 + 模块过滤）
-const datasetOptions = computed(() => {
-  const sysId = props.iface.systemId
-  const modName = connStore.nodes.find((n) => n.id === props.iface.moduleId)?.name || ''
-  let list = dataStore.datasets
-  if (sysId) list = list.filter((d) => d.systemId === sysId)
-  if (modName) list = list.filter((d) => d.moduleName === modName)
-  return list.map((d) => ({ value: d.id, label: `${d.name}（${d.rows?.length || 0} 行）` }))
-})
-
-// Split protocol refs by role
-const sendProtocols = computed(() =>
-  props.iface.protocolRefs.filter(r => r.role === 'send')
-)
-const receiveProtocols = computed(() =>
-  props.iface.protocolRefs.filter(r => r.role === 'receive')
-)
-
-// 传输类型下拉选项（兼容旧类型 TCP/HTTP/gRPC 数据，避免下拉空白）
-const transportTypeOptions = computed(() => {
-  const opts = TRANSPORT_TYPES.map(t => ({ ...t }))
-  const cur = props.iface.transportType
-  if (cur && !opts.some(o => o.value === cur)) {
-    opts.push({ value: cur, label: cur, desc: '（旧类型，已不再支持）' })
-  }
-  return opts
-})
-
-// Protocol name lookup
-const protocolName = (id) => protoStore.protocols.find(p => p.id === id)?.name || '未知字段'
-
-// Protocol system name (for display in table)
-const getProtocolSys = (id) => {
-  const p = protoStore.protocols.find(x => x.id === id)
-  if (!p || !p.systemId) return ''
-  const sys = props.systemOptions.find(s => s.value === p.systemId)
-  return sys?.label || ''
-}
-
-// Protocol fields for preview
-const getProtocolFields = (id) => {
-  const p = protoStore.protocols.find(x => x.id === id)
-  return p?.fields || []
-}
-
-// 移除一个字段引用
-const removeRef = (row) => {
-  ElMessageBox.confirm('确认移除该字段引用？', '移除确认', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
-    const idx = props.iface.protocolRefs.indexOf(row)
-    if (idx !== -1) props.iface.protocolRefs.splice(idx, 1)
-  }).catch(() => {})
-}
-
-// ── 协议选择弹窗 ──
-const pickerVisible = ref(false)
-const pickerSearch = ref('')
-const showAllProtocols = ref(false)
-const pickerRole = ref('send')
-
-const pickerTitle = computed(() =>
-  pickerRole.value === 'send' ? '添加发送字段' : '添加接收字段'
-)
-
-const openPicker = (role) => {
-  pickerRole.value = role
-  pickerSearch.value = ''
-  pickerVisible.value = true
-}
-
-// Build enriched protocol list with metadata
-const enrichedProtocols = computed(() => {
-  // 同一字段可分别用于发送和接收；只阻止在当前角色内重复添加。
-  const usedIds = new Set(props.iface.protocolRefs
-    .filter((ref) => ref.role === pickerRole.value)
-    .map((ref) => ref.protocolId))
-  return protoStore.protocols
-    .filter(p => !usedIds.has(p.id))
-    .map(p => {
-      const sysOpt = props.systemOptions.find(s => s.value === p.systemId)
-      return {
-        value: p.id,
-        label: p.name,
-        fieldCount: (p.fields || []).length,
-        systemId: p.systemId,
-        moduleId: p.moduleId,
-        systemName: sysOpt?.label || '',
-        isInline: !!p.__inline,
-      }
-    })
-})
-
-// Filtered list for picker dialog
-const filteredPickerList = computed(() => {
-  let list = enrichedProtocols.value
-  // 按当前系统/模块过滤（除非开启"全部字段"）
-  if (!showAllProtocols.value) {
-    const sysId = props.iface.systemId
-    const modId = props.iface.moduleId
-    if (sysId && modId) {
-      list = list.filter(p => p.systemId === sysId && p.moduleId === modId)
-    } else if (sysId) {
-      list = list.filter(p => p.systemId === sysId)
-    }
-  }
-  // 搜索过滤
-  const kw = pickerSearch.value.trim().toLowerCase()
-  if (kw) {
-    list = list.filter(p => p.label.toLowerCase().includes(kw))
-  }
-  return list
-})
-
-const onPickProtocol = (protocolId) => {
-  props.iface.protocolRefs.push(makeProtocolRef(protocolId, pickerRole.value))
-  pickerVisible.value = false
-  pickerSearch.value = ''
-}
-
-// Role display helpers
-const roleLabel = (role) => {
-  const r = PROTOCOL_ROLES.find(x => x.value === role)
-  return r ? r.label : role
-}
-
-const roleTagType = (role) => {
-  const map = { send: 'warning', receive: 'success' }
-  return map[role] || 'info'
-}
-
-// Field display helpers for preview
-const fieldDisplay = (f) => {
-  if (f.type === 'scalar') return f.encoding || 'uint8'
-  if (f.type === 'bitstream') return '位组序流'
-  if (f.type === 'struct') return `共识体 (${(f.children || []).length} 字段)`
-  if (f.type === 'matrix') return '结构矩阵'
-  if (f.type === 'file') return '流文件'
-  // Handle byte fields (from byte-stream protocols)
-  if (f.kind === 'byte') return f.dataType || 'uint8'
-  if (f.kind === 'bit') return `bit[${f.bitStart}:${f.bitEnd}]`
-  if (f.kind === 'repeat') return `重复组 ×${f.repeatCount || '?'}`
-  return f.type || f.dataType || '—'
-}
-
-const fieldTypeTag = (f) => {
-  const t = f.type || f.kind
-  const map = { scalar: 'primary', bitstream: 'warning', struct: 'success', matrix: 'danger', file: 'info', byte: 'primary', bit: 'warning', repeat: 'info' }
-  return map[t] || 'info'
-}
-
-// Transport type change
-const onTransportTypeChange = (type) => {
-  if (type) {
-    props.iface.transportConfig = makeTransportConfig(type)
-  } else {
-    props.iface.transportConfig = {}
-  }
+  if (!validName) props.iface.name = nameBeforeEdit.value || nextUniqueName('新建报文', props.iface)
+  else props.iface.name = validName
 }
 </script>
 
 <style scoped lang="scss">
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.proto-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.proto-name { max-width: 280px; :deep(.el-input__wrapper) { font-weight: 600; } }
-.field-label { font-size: 13px; font-weight: 500; color: var(--el-text-color-regular); margin-bottom: 4px; }
+.proto-head { display: flex; align-items: center; gap: 12px; }
+.proto-head__label { font-size: 14px; font-weight: 600; color: var(--el-text-color-regular); flex-shrink: 0; }
+.proto-name { max-width: 320px; :deep(.el-input__wrapper) { font-weight: 600; } }
+.proto-head .el-popconfirm { margin-left: auto; }
+.field-label { font-size: 13px; font-weight: 500; color: var(--el-text-color-regular); margin: 4px 0 4px; }
 .proto-desc { margin-bottom: 12px; }
-.meta-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-.meta-row__label { font-size: 13px; color: var(--el-text-color-regular); }
-.meta-row__label.req::before { content: '*'; color: var(--el-color-danger); margin-right: 2px; }
-.meta-sel { width: 200px; }
-.meta-sel-wide { width: 100%; }
-.meta-row__hint { font-size: 12px; color: var(--el-text-color-secondary); margin-left: 4px; }
-
-.strategy-section {
-  margin: 4px 0 14px;
-  padding: 12px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  background: var(--el-fill-color-extra-light);
-}
-.strategy-section .section-title--strategy { border-left-color: var(--el-color-primary); }
-.section-head__actions { display: flex; gap: 8px; }
-
 .editor-scroll { flex: 1; min-height: 0; }
-
-.proto-refs-section { margin-bottom: 12px; }
-.proto-refs-section--send {
-  .section-title { border-left-color: #E6A23C; }
-}
-.proto-refs-section--receive {
-  .section-title { border-left-color: #67C23A; }
-}
-.section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.section-title { font-size: 14px; font-weight: 600; padding-left: 8px; border-left: 3px solid var(--el-color-primary); }
-.section-title--send { border-left-color: #E6A23C; }
-.section-title--receive { border-left-color: #67C23A; }
-
-.proto-sys-tag {
-  display: inline-block; font-size: 11px; color: var(--el-text-color-secondary);
-  background: var(--el-fill-color); padding: 1px 6px; border-radius: 3px; margin-left: 6px;
-}
-
-// 字段选择弹窗
-.picker-filter { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.picker-list { max-height: 360px; overflow-y: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
-.picker-item {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--el-border-color-extra-light);
-  transition: background 0.15s;
-  &:hover { background: var(--el-color-primary-light-9); }
-  &:last-child { border-bottom: none; }
-}
-.picker-item__info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.picker-item__name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.picker-item__meta { font-size: 11px; color: var(--el-text-color-secondary); }
-
-.data-preview { margin-bottom: 8px; }
-.preview-hint { font-size: 12px; color: var(--el-text-color-placeholder); }
-.preview-block {
-  margin-top: 8px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; overflow: hidden;
-}
-.preview-header {
-  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
-  background: var(--el-fill-color-lighter); cursor: pointer;
-  &:hover { background: var(--el-fill-color); }
-}
-.preview-name { font-size: 13px; font-weight: 500; }
-.preview-fields { padding: 6px 12px; }
-.preview-field {
-  display: flex; align-items: center; gap: 8px; padding: 3px 0;
-  font-size: 12px;
-}
-.field-name { font-family: ui-monospace, monospace; color: var(--el-text-color-primary); min-width: 100px; }
-.field-desc { color: var(--el-text-color-secondary); font-size: 11px; }
 </style>

@@ -73,8 +73,10 @@ export const collectInterfaceFields = (iface, protocols = [], role = null) => {
   }
   for (const ref of iface.protocolRefs || []) {
     if (!ref) continue
-    const refRole = typeof ref === 'object' ? (ref.role || 'send') : 'send'
-    if (role && refRole !== role) continue
+    const refRole = typeof ref === 'object' ? ref.role : null
+    // 报文管理界面不再区分收发：未标注 role 的引用对所有收发上下文均生效。
+    // 显式标注 role 的引用（如迁移数据）仍按原角色过滤，保持向后兼容。
+    if (role && refRole && refRole !== role) continue
     const protocolId = typeof ref === 'object' ? ref.protocolId : ref
     const proto = protocols.find(p => p.id === protocolId)
     if (proto) walk(proto.fields, ref.role)
@@ -264,6 +266,11 @@ export const SCALAR_ENCODINGS = [
   { value: 'unix-ms', label: 'Unix毫秒',group: '时间', bytes: 8 },
 ]
 
+// 报文（字段）定义中可选用、且出现在协议字段里的数值/浮点编码（不含字符/编码/时间等不会出现在协议字段的类型）
+export const SCALAR_NUMERIC_ENCODINGS = SCALAR_ENCODINGS.filter((e) =>
+  ['整数', '浮点'].includes(e.group)
+)
+
 // v1 兼容常量(老代码可能直接 import)
 export const CONST_SUBTYPES = SCALAR_ENCODINGS.map(s => s.value)
 export const ENDIANS = [
@@ -414,6 +421,81 @@ export const makeParam = (o = {}) => ({
   remark: '',
   ...o
 })
+
+// ─── 报文（字段）定义辅助：构建单字段协议（message field）───
+// 报文字段在底层仍是一个 protocol 实体（可被数据集/执行引擎复用），
+// 但标记为 __inline 并在报文管理界面内联定义，不进入左侧「字段库」。
+export const buildMessageField = (payload = {}) => {
+  const {
+    name = '新建字段',
+    category = 'scalar',
+    encoding = 'uint8',
+    unit = '',
+    dataType = 'uint8',
+    fileType = 'bin',
+    chunkSizeKb = 64,
+    checksum = 'sha256',
+    matrixFileType = 'csv',
+    constraint,
+    desc = '',
+    children = [],
+  } = payload
+  const base = {
+    id: uid(),
+    name,
+    desc,
+    systemId: null,
+    moduleId: null,
+    category,
+    __inline: true,
+    endian: 'big',
+    framing: null,
+    checksum: null,
+    fileConfig: null,
+    matrixConfig: null,
+    fields: [],
+  }
+  if (category === 'scalar') {
+    base.fields = [makeParam({ name, type: 'scalar', encoding, unit, constraint: constraint || defaultConstraint(encoding), desc })]
+  } else if (category === 'bitstream') {
+    // 纯字节语义：一个字段 = 一个字节粒度单元，字节数由 dataType 决定，无位段/长度/偏移/单位
+    base.fields = [makeByteField({ name, dataType, constraint: constraint || defaultConstraint(dataType), desc })]
+    base.framing = makeFraming()
+    base.checksum = makeChecksum()
+  } else if (category === 'struct') {
+    base.fields = (children || []).map((c) => makeParam({ ...c }))
+  } else if (category === 'file') {
+    base.fileConfig = { fileType, chunkSizeKb, checksum }
+  } else if (category === 'matrix') {
+    base.matrixConfig = { fileType: matrixFileType }
+  }
+  return base
+}
+
+// 切换报文内某字段的大类：原地改造协议实体，保留名称，重建结构
+export const convertProtocolCategory = (protocol, category) => {
+  if (!protocol) return
+  const keepName = protocol.name
+  protocol.category = category
+  if (category === 'scalar') {
+    const src = protocol.fields?.[0]
+    protocol.fields = [makeParam({ name: keepName, type: 'scalar', encoding: src?.encoding || 'uint8', unit: src?.unit || '', desc: protocol.desc })]
+    protocol.fileConfig = null; protocol.matrixConfig = null; protocol.framing = null; protocol.checksum = null
+  } else if (category === 'bitstream') {
+    protocol.fields = [makeByteField({ name: keepName, dataType: 'uint8' })]
+    protocol.fileConfig = null; protocol.matrixConfig = null
+    protocol.framing = makeFraming(); protocol.checksum = makeChecksum(); protocol.endian = 'big'
+  } else if (category === 'struct') {
+    if (!protocol.fields?.length) protocol.fields = [makeParam({ name: '子字段1', type: 'scalar', encoding: 'uint8' })]
+    protocol.fileConfig = null; protocol.matrixConfig = null; protocol.framing = null; protocol.checksum = null
+  } else if (category === 'file') {
+    protocol.fileConfig = protocol.fileConfig || { fileType: 'bin', chunkSizeKb: 64, checksum: 'sha256' }
+    protocol.fields = []; protocol.matrixConfig = null; protocol.framing = null; protocol.checksum = null
+  } else if (category === 'matrix') {
+    protocol.matrixConfig = protocol.matrixConfig || { fileType: 'csv' }
+    protocol.fields = []; protocol.fileConfig = null; protocol.framing = null; protocol.checksum = null
+  }
+}
 
 // v1 → 五类数据规则 映射
 const V1_TO_V2_TYPE = {
@@ -678,7 +760,8 @@ const migrateV1Interface = (iface) => {
       .filter(Boolean)
       .map((id) => {
         if (typeof id !== 'object') return { protocolId: id, role: 'send' }
-        const role = id.role === 'request' ? 'send' : id.role === 'response' ? 'receive' : (id.role || 'send')
+        // 报文管理界面不再区分收发：无 role 的引用保留未定义状态（对所有收发上下文生效）
+        const role = id.role === 'request' ? 'send' : id.role === 'response' ? 'receive' : id.role
         return { ...id, role }
       })
     : []
@@ -738,7 +821,8 @@ export const useProtocolStore = defineStore('protocol', {
         // ── 给已有的 protocolRefs 补角色 ──
         const finalRefs = [...(iface.protocolRefs || [])].filter(Boolean).map(ref => {
           if (typeof ref === 'object' && ref.protocolId) {
-            const role = ref.role === 'request' ? 'send' : ref.role === 'response' ? 'receive' : (ref.role || 'send')
+            // 报文管理界面不再区分收发：无 role 的引用保留未定义状态
+            const role = ref.role === 'request' ? 'send' : ref.role === 'response' ? 'receive' : ref.role
             return { ...ref, role }
           }
           return { protocolId: ref, role: 'send' }
@@ -821,6 +905,34 @@ export const useProtocolStore = defineStore('protocol', {
       const i = this.protocols.findIndex((p) => p.id === id)
       if (i >= 0) this.protocols.splice(i, 1)
       if (this.selectedProtocolId === id) this.selectedProtocolId = this.protocols[0]?.id ?? null
+    },
+
+    // ── 报文内联字段（message field）──
+    // 在报文上下文中直接定义字段：创建 __inline 协议实体并加入报文引用；
+    // role 不在此写入（收发由监控侧按需决定）。
+    addMessageField(iface, payload) {
+      const proto = buildMessageField(payload)
+      this.protocols.unshift(proto)
+      if (!Array.isArray(iface.protocolRefs)) iface.protocolRefs = []
+      iface.protocolRefs.push({ protocolId: proto.id })
+      this.selectedProtocolId = proto.id
+      return proto
+    },
+    removeMessageField(iface, protocolId) {
+      const idx = (iface.protocolRefs || []).findIndex((r) => (r.protocolId ?? r) === protocolId)
+      if (idx >= 0) iface.protocolRefs.splice(idx, 1)
+      // 内联字段移除后从字段库一并删除（不再被复用）
+      const proto = this.protocols.find((p) => p.id === protocolId)
+      if (proto?.__inline) this.removeProtocol(protocolId)
+    },
+    moveMessageField(iface, protocolId, direction) {
+      const refs = iface.protocolRefs || []
+      const idx = refs.findIndex((r) => (r.protocolId ?? r) === protocolId)
+      if (idx < 0) return
+      const newIdx = direction === 'up' ? idx - 1 : idx + 1
+      if (newIdx < 0 || newIdx >= refs.length) return
+      const [m] = refs.splice(idx, 1)
+      refs.splice(newIdx, 0, m)
     },
 
     // 添加字节字段（末尾追加或指定位置后插入）

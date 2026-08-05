@@ -23,13 +23,13 @@
             clearable
           />
         </div>
-        <SystemModuleTree
+        <MonitorTree
           v-model="selectedKey"
-          title="测试接口"
-          draggable-leaves
-          :leaf-groups="leafGroups"
-          :extra-system-children="extraSystemChildren"
-          :leaf-context-actions="leafContextActions"
+          title="接口监控树"
+          :search="ifaceSearch"
+          :iface-badge="ifaceBadge"
+          :scheme-badge="schemeBadge"
+          :custom-badge="customBadge"
           @select="onTreeSelect"
           @add-leaf="onAddLeaf"
           @delete-leaf="onDeleteLeaf"
@@ -57,23 +57,26 @@
             <div class="wizard-body">
               <div v-show="activeMode === 'send'" class="monitor-panel">
                 <PlanTable
-                  :selected-iface="selectedIface"
+                  :selected-iface="selectedIface || selectedCustom"
                   :selected-in-plan="isSelectedInSendPlan"
                   :total-estimated-requests="totalEstimatedRequests"
                   @add-selected="addSelectedIface"
                   @drop-scheme="addSendScheme"
                   @drop-iface="addInterfaceFromDrop"
+                  @drop-custom="addCustomFromDrop"
                   @reset-run="execution.reset()"
+                  @open-transport-config="transportConfigVisible = true"
                 />
                 <LiveConsole />
               </div>
 
               <div v-show="activeMode === 'receive'" class="monitor-panel">
                 <ReceptionPlanTable
-                  :selected-iface="selectedIface"
+                  :selected-iface="selectedIface || selectedCustom"
                   :selected-in-plan="isSelectedInReceivePlan"
                   @add-selected="addSelectedIface"
                   @drop-iface="addInterfaceFromDrop"
+                  @drop-custom="addCustomFromDrop"
                   @drop-scheme="addReceiveScheme"
                   @reset-run="recvStore.reset()"
                 />
@@ -169,15 +172,16 @@
       </div>
     </div>
 
+    <!-- 接口方案 新建/编辑 -->
     <el-dialog
       v-model="schemeDialogVisible"
-      :title="editingSchemeId ? `编辑${schemeTypeLabel}` : `新建${schemeTypeLabel}`"
+      :title="editingSchemeId ? '编辑接口方案' : '新建接口方案'"
       width="560px"
       destroy-on-close
     >
       <el-form label-width="80px" label-position="left">
         <el-form-item label="方案名称">
-          <el-input v-model="schemeForm.name" :placeholder="`留空默认「新建${schemeTypeLabel}」`" clearable />
+          <el-input v-model="schemeForm.name" placeholder="留空默认「新建接口方案」" clearable />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="schemeForm.remark" type="textarea" :rows="2" placeholder="可选" />
@@ -187,15 +191,25 @@
             v-model="schemeForm.interfaceIds"
             multiple
             filterable
-            placeholder="选择要纳入方案的接口"
+            placeholder="选择要纳入方案的接口（含系统接口与自定义接口）"
             style="width: 100%"
           >
-            <el-option
-              v-for="iface in availableInterfaces"
-              :key="iface.id"
-              :label="iface.name"
-              :value="iface.id"
-            />
+            <el-option-group label="系统接口">
+              <el-option
+                v-for="iface in sysIfaceOptions"
+                :key="iface.id"
+                :label="iface.name"
+                :value="iface.id"
+              />
+            </el-option-group>
+            <el-option-group label="自定义接口">
+              <el-option
+                v-for="iface in customIfaceOptions"
+                :key="iface.id"
+                :label="`${iface.name}（自定义）`"
+                :value="iface.id"
+              />
+            </el-option-group>
           </el-select>
         </el-form-item>
       </el-form>
@@ -204,6 +218,18 @@
         <el-button type="primary" @click="confirmScheme">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 自定义接口 新建/编辑 -->
+    <CustomIfaceDialog v-model="customDialogVisible" :interface-id="customDialogId" @saved="onCustomSaved" />
+
+    <!-- 自定义监听配置 -->
+    <ListenConfigDialog v-model="listenDialogVisible" :iface-id="listenDialogId" />
+
+    <!-- 传输配置两步弹窗（①传输配置 → ②报文头配置） -->
+    <TransportConfigDialog
+      v-model="transportConfigVisible"
+      :interfaces="sendPlanInterfaces"
+    />
 
     <InterfaceQuickConfig
       v-model="ifaceConfigVisible"
@@ -221,19 +247,22 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, RefreshRight, Search, SwitchButton, Tickets, VideoPause, VideoPlay } from '@element-plus/icons-vue'
-import SystemModuleTree from '@/components/SystemModuleTree.vue'
+import MonitorTree from '@/components/execution/MonitorTree.vue'
+import CustomIfaceDialog from '@/components/execution/CustomIfaceDialog.vue'
+import ListenConfigDialog from '@/components/execution/ListenConfigDialog.vue'
 import PlanTable from '@/components/execution/PlanTable.vue'
 import LiveConsole from '@/components/execution/LiveConsole.vue'
 import ReceptionPlanTable from '@/components/reception/ReceptionPlanTable.vue'
 import ReceiveMonitor from '@/components/reception/ReceiveMonitor.vue'
 import InterfaceQuickConfig from '@/components/execution/InterfaceQuickConfig.vue'
+import TransportConfigDialog from '@/components/execution/TransportConfigDialog.vue'
 import { useExecutionStore } from '@/stores/execution'
 import { useReceptionStore } from '@/stores/reception'
 import { useProtocolStore, collectTestInterfaceFields } from '@/stores/protocol'
+import { useCustomIfaceStore } from '@/stores/customIface'
 import { useTestDataStore } from '@/stores/testData'
 import { useTestTaskStore } from '@/stores/testTask'
 import { usePlanSchemeStore } from '@/stores/planScheme'
-import { useSystemStore } from '@/stores/system'
 import { useRunBatchStore } from '@/stores/runBatch'
 import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
@@ -242,10 +271,10 @@ const router = useRouter()
 const execution = useExecutionStore()
 const recvStore = useReceptionStore()
 const protocolStore = useProtocolStore()
+const customStore = useCustomIfaceStore()
 const testDataStore = useTestDataStore()
 const taskStore = useTestTaskStore()
 const schemeStore = usePlanSchemeStore()
-const systemStore = useSystemStore()
 const batchStore = useRunBatchStore()
 const { nextUniqueName, validateName } = useEntityNameGuard()
 
@@ -272,115 +301,132 @@ watch(() => route.query.mode, (mode) => {
   activeMode.value = mode === 'receive' ? 'receive' : 'send'
 })
 
+/* ---- 选中：系统接口 / 自定义接口 ---- */
 const selectedIface = computed(() => {
   const match = selectedKey.value.match(/^iface-(.+)$/)
   if (!match) return null
   return protocolStore.testInterfaces.find((iface) => String(iface.id) === String(match[1])) || null
 })
+const selectedCustom = computed(() => {
+  const match = selectedKey.value.match(/^custom-(.+)$/)
+  if (!match) return null
+  return customStore.byId(match[1])
+})
+
+const transportConfigVisible = ref(false)
+const sendPlanInterfaces = computed(() => execution.planItems.map((item) => item.iface).filter(Boolean))
 const isSelectedInSendPlan = computed(() => {
+  if (selectedCustom.value) return execution.plan.some((item) => String(item.customId) === String(selectedCustom.value.id))
   if (!selectedIface.value) return false
   const task = taskStore.tasks.find((item) =>
     String(item.bindings?.interfaceId ?? '') === String(selectedIface.value.id)
   )
   return !!task && execution.plan.some((item) => item.taskId === task.id)
 })
-const isSelectedInReceivePlan = computed(() =>
-  !!selectedIface.value &&
-  recvStore.plan.some((item) => String(item.interfaceId) === String(selectedIface.value.id))
-)
+const isSelectedInReceivePlan = computed(() => {
+  if (selectedCustom.value) return recvStore.plan.some((item) => String(item.customId) === String(selectedCustom.value.id))
+  return !!selectedIface.value &&
+    recvStore.plan.some((item) => String(item.interfaceId) === String(selectedIface.value.id))
+})
 const totalEstimatedRequests = computed(() =>
   execution.planItems.reduce((sum, item) => sum + item.estimatedRequests, 0)
 )
 
+/* ---- 树徽标 ---- */
 const ifaceBadge = (iface) => {
   const datasetCount = (iface.datasetIds || []).length
   return datasetCount ? `${datasetCount} 数据集` : '未关联数据'
 }
+const schemeBadge = (scheme) => `${(scheme.interfaceIds || []).length} 接口`
+const customBadge = (custom) =>
+  `${custom.transportType || '—'}·${custom.bodyHex || custom.transportConfig?.targetAddress ? '已配置' : '待配置'}`
 
-const leafGroups = (module) => {
-  const keyword = ifaceSearch.value.trim().toLowerCase()
-  let interfaces = protocolStore.testInterfaces.filter((iface) => iface.moduleId === module.id)
-  if (keyword) {
-    interfaces = interfaces.filter((iface) =>
-      iface.name.toLowerCase().includes(keyword) ||
-      (iface.desc || '').toLowerCase().includes(keyword)
-    )
-  }
-  return [{
-    flat: true,
-    kind: 'iface',
-    addLabel: '+接口',
-    addType: 'success',
-    items: interfaces.map((iface) => ({
-      key: `iface-${iface.id}`,
-      kind: 'iface',
-      icon: 'Link',
-      label: iface.name,
-      badge: ifaceBadge(iface),
-      ref: iface,
-      module,
-    })),
-  }]
-}
-
-const schemeTypeLabel = computed(() => '接口方案')
-const extraSystemChildren = (system) => {
-  const schemes = schemeStore.schemesOfSystem(system.id)
-  return [{
-    key: `schemes-${system.id}`,
-    kind: 'schemeGroup',
-    icon: 'FolderOpened',
-    label: '接口方案',
-    ref: { id: `schemes-${system.id}`, systemId: system.id },
-    addActions: [{
-      groupKind: 'scheme',
-      label: '+方案',
-      type: 'warning',
-    }],
-    children: schemes.map((scheme) => ({
-      key: `scheme-${scheme.id}`,
-      kind: 'scheme',
-      icon: 'Notebook',
-      label: scheme.name,
-      badge: `${scheme.interfaceIds.length} 接口`,
-      ref: scheme,
-    })),
-  }]
-}
-
-const leafContextActions = (node) => {
-  if (node?.kind === 'scheme' && node.ref) {
-    return [{ label: '编辑方案', action: 'edit-scheme' }]
-  }
-  if (node?.kind !== 'iface' || !node.ref) return []
-  const actions = [
-    { label: '配置接口', action: 'config-iface' },
-    { label: activeMode.value === 'send' ? '加入发送监控' : '加入接收监控', action: 'iface-to-monitor' },
-  ]
-  if (activeMode.value === 'send') actions.push({ label: '立即发送', action: 'iface-test' })
-  return actions
-}
-
+/* ---- 树事件 ---- */
 const onTreeSelect = (data) => {
-  if (data.kind === 'iface' && data.ref) {
+  if (['iface', 'custom'].includes(data.kind) && data.ref) {
     selectedKey.value = data.key
     return
   }
   if (data.kind === 'scheme' && data.ref) {
     schemeStore.select(data.ref.id)
-    openSchemeDialog(data.ref.systemId, data.ref)
+    openSchemeDialog(data.ref)
   }
 }
 
+const onAddLeaf = ({ groupKind }) => {
+  if (groupKind === 'scheme') openSchemeDialog()
+  else if (groupKind === 'custom') openCustomDialog()
+  else openIfaceConfig()
+}
+
+const onDeleteLeaf = (node) => {
+  if (node.kind === 'scheme' && node.ref) {
+    schemeStore.remove(node.ref.id)
+    ElMessage.success('方案已删除')
+  }
+  if (node.kind === 'iface' && node.ref) {
+    protocolStore.removeTestInterface(node.ref.id)
+    ElMessage.success('接口已删除')
+  }
+  if (node.kind === 'custom' && node.ref) {
+    customStore.remove(node.ref.id)
+    ElMessage.success('自定义接口已删除')
+  }
+}
+
+const onLeafAction = ({ action, data }) => {
+  if (!data?.ref) return
+  if (action === 'edit-scheme') openSchemeDialog(data.ref)
+  if (action === 'delete-scheme') {
+    schemeStore.remove(data.ref.id)
+    ElMessage.success('方案已删除')
+  }
+  if (action === 'config-iface') openIfaceConfig(data.ref.id)
+  if (action === 'iface-to-send') addSendInterface(data.ref.id)
+  if (action === 'iface-to-receive') addReceiveInterface(data.ref.id)
+  if (action === 'iface-test') addSendInterface(data.ref.id, { test: true })
+  if (action === 'delete-iface') {
+    protocolStore.removeTestInterface(data.ref.id)
+    ElMessage.success('接口已删除')
+  }
+  if (action === 'config-custom') openCustomDialog(data.ref.id)
+  if (action === 'listen-custom') openListenDialog(data.ref.id)
+  if (action === 'custom-to-send') addCustomToSend(data.ref.id)
+  if (action === 'custom-to-receive') addCustomToReceive(data.ref.id)
+  if (action === 'custom-test') addCustomToSend(data.ref.id, { test: true })
+  if (action === 'delete-custom') {
+    customStore.remove(data.ref.id)
+    ElMessage.success('自定义接口已删除')
+  }
+}
+
+/* ---- 系统接口配置 ---- */
 const ifaceConfigVisible = ref(false)
 const ifaceConfigId = ref(null)
 const ifaceConfigContext = ref(null)
-const openIfaceConfig = (interfaceId = null, module = null) => {
+const openIfaceConfig = (interfaceId = null) => {
   ifaceConfigId.value = interfaceId
-  ifaceConfigContext.value = module ? { systemId: module.systemId, moduleId: module.id } : null
+  ifaceConfigContext.value = null
   ifaceConfigVisible.value = true
 }
 const openHeaderIfaceDialog = () => openIfaceConfig()
+
+/* ---- 自定义接口 新建/编辑/监听配置 ---- */
+const customDialogVisible = ref(false)
+const customDialogId = ref(null)
+const openCustomDialog = (id = null) => {
+  customDialogId.value = id
+  customDialogVisible.value = true
+}
+const onCustomSaved = () => {
+  // 新建后自动选中
+}
+const listenDialogVisible = ref(false)
+const listenDialogId = ref(null)
+const openListenDialog = (id) => {
+  listenDialogId.value = id
+  listenDialogVisible.value = true
+}
 
 const interfaceReadiness = (iface, role) => {
   const reasons = []
@@ -415,6 +461,7 @@ const ensureTaskForInterface = (iface) => {
   return task
 }
 
+/* ---- 加入发送监控：系统接口（需 readiness） / 自定义接口（透传） ---- */
 const addSendInterface = (interfaceId, { test = false, silent = false } = {}) => {
   const iface = protocolStore.testInterfaces.find((item) => String(item.id) === String(interfaceId))
   if (!iface) return false
@@ -447,6 +494,27 @@ const addSendInterface = (interfaceId, { test = false, silent = false } = {}) =>
   return true
 }
 
+const addCustomToSend = (customId, { test = false, silent = false } = {}) => {
+  const custom = customStore.byId(customId)
+  if (!custom) return false
+  if (!custom.bodyHex) {
+    ElMessage.warning(`自定义接口「${custom.name}」未配置报文体，请先配置`)
+    openCustomDialog(custom.id)
+    return false
+  }
+  const added = execution.addCustomToPlan(custom.id)
+  selectedKey.value = `custom-${custom.id}`
+  if (test) {
+    startSend()
+    return true
+  }
+  if (!silent) {
+    if (added) ElMessage.success(`自定义接口「${custom.name}」已加入发送监控`)
+    else ElMessage.info(`自定义接口「${custom.name}」已在发送监控中`)
+  }
+  return true
+}
+
 const addReceiveInterface = (interfaceId, { silent = false } = {}) => {
   const iface = protocolStore.testInterfaces.find((item) => String(item.id) === String(interfaceId))
   if (!iface) return false
@@ -465,7 +533,30 @@ const addReceiveInterface = (interfaceId, { silent = false } = {}) => {
   return true
 }
 
+const addCustomToReceive = (customId, { silent = false } = {}) => {
+  const custom = customStore.byId(customId)
+  if (!custom) return false
+  const lc = custom.listenConfig || {}
+  if (!lc.ip) {
+    ElMessage.warning(`自定义接口「${custom.name}」未配置监听 IP，请先配置`)
+    openListenDialog(custom.id)
+    return false
+  }
+  const added = recvStore.addCustomToPlan(custom.id)
+  selectedKey.value = `custom-${custom.id}`
+  if (!silent) {
+    if (added) ElMessage.success(`自定义接口「${custom.name}」已加入接收监控`)
+    else ElMessage.info(`自定义接口「${custom.name}」已在接收监控中`)
+  }
+  return true
+}
+
 const addSelectedIface = () => {
+  if (selectedCustom.value) {
+    if (activeMode.value === 'send') addCustomToSend(selectedCustom.value.id)
+    else addCustomToReceive(selectedCustom.value.id)
+    return
+  }
   if (!selectedIface.value) return
   if (activeMode.value === 'send') addSendInterface(selectedIface.value.id)
   else addReceiveInterface(selectedIface.value.id)
@@ -474,32 +565,30 @@ const addInterfaceFromDrop = (interfaceId) => {
   if (activeMode.value === 'send') addSendInterface(interfaceId)
   else addReceiveInterface(interfaceId)
 }
+const addCustomFromDrop = (customId) => {
+  if (activeMode.value === 'send') addCustomToSend(customId)
+  else addCustomToReceive(customId)
+}
 const testConfiguredInterface = (interfaceId) => {
   if (activeMode.value === 'send') addSendInterface(interfaceId, { test: true })
   else if (addReceiveInterface(interfaceId)) startReceive()
 }
 
+/* ---- 方案：新建/编辑/加入（方案可组合系统接口与自定义接口） ---- */
 const schemeDialogVisible = ref(false)
 const schemeForm = ref({ name: '', interfaceIds: [], remark: '' })
 const editingSchemeId = ref(null)
-const schemeSystemId = ref(null)
-const availableInterfaces = computed(() =>
-  protocolStore.testInterfaces.filter((iface) =>
-    !schemeSystemId.value || iface.systemId === schemeSystemId.value
-  )
-)
+const sysIfaceOptions = computed(() => protocolStore.testInterfaces)
+const customIfaceOptions = computed(() => customStore.customIfaces)
 
-const openSchemeDialog = (systemId, scheme = null) => {
-  schemeSystemId.value = systemId || systemStore.currentId || systemStore.visibleSystems[0]?.id || null
+const openSchemeDialog = (scheme = null) => {
   editingSchemeId.value = scheme?.id || null
   schemeForm.value = scheme
     ? { name: scheme.name, interfaceIds: [...scheme.interfaceIds], remark: scheme.remark || '' }
     : { name: '', interfaceIds: [], remark: '' }
   schemeDialogVisible.value = true
 }
-const openHeaderSchemeDialog = () => {
-  openSchemeDialog(selectedIface.value?.systemId || systemStore.currentId || null)
-}
+const openHeaderSchemeDialog = () => openSchemeDialog()
 const confirmScheme = () => {
   const current = editingSchemeId.value
     ? schemeStore.schemes.find((scheme) => scheme.id === editingSchemeId.value)
@@ -511,24 +600,31 @@ const confirmScheme = () => {
   const payload = { ...schemeForm.value, name: validName }
   if (current) {
     schemeStore.update(current.id, payload)
-    ElMessage.success(`${schemeTypeLabel.value}已更新`)
+    ElMessage.success('接口方案已更新')
   } else {
-    schemeStore.add({
-      ...payload,
-      systemId: schemeSystemId.value,
-    })
-    ElMessage.success(`${schemeTypeLabel.value}已创建`)
+    schemeStore.add({ ...payload })
+    ElMessage.success('接口方案已创建')
   }
   schemeDialogVisible.value = false
 }
+
+const schemeToInterfaces = (scheme) => (scheme.interfaceIds || []).map((id) => {
+  const sys = protocolStore.testInterfaces.find((i) => String(i.id) === String(id))
+  if (sys) return { type: 'sys', id: sys.id }
+  const custom = customStore.byId(id)
+  if (custom) return { type: 'custom', id: custom.id }
+  return null
+}).filter(Boolean)
 
 const addSendScheme = (schemeId) => {
   const scheme = schemeStore.schemes.find((item) => item.id === schemeId)
   if (!scheme) return
   let added = 0
-  scheme.interfaceIds.forEach((interfaceId) => {
+  schemeToInterfaces(scheme).forEach((entry) => {
     const before = execution.plan.length
-    if (addSendInterface(interfaceId, { silent: true }) && execution.plan.length > before) added += 1
+    if (entry.type === 'sys') {
+      if (addSendInterface(entry.id, { silent: true }) && execution.plan.length > before) added += 1
+    } else if (addCustomToSend(entry.id, { silent: true }) && execution.plan.length > before) added += 1
   })
   execution.setPlanScheme(scheme)
   ElMessage.success(`方案「${scheme.name}」已加入 ${added} 个发送接口`)
@@ -537,36 +633,17 @@ const addReceiveScheme = (schemeId) => {
   const scheme = schemeStore.schemes.find((item) => item.id === schemeId)
   if (!scheme) return
   let added = 0
-  scheme.interfaceIds.forEach((interfaceId) => {
+  schemeToInterfaces(scheme).forEach((entry) => {
     const before = recvStore.plan.length
-    if (addReceiveInterface(interfaceId, { silent: true }) && recvStore.plan.length > before) added += 1
+    if (entry.type === 'sys') {
+      if (addReceiveInterface(entry.id, { silent: true }) && recvStore.plan.length > before) added += 1
+    } else if (addCustomToReceive(entry.id, { silent: true }) && recvStore.plan.length > before) added += 1
   })
   recvStore.setPlanScheme(scheme)
   ElMessage.success(`方案「${scheme.name}」已加入 ${added} 个接收接口`)
 }
 
-const onLeafAction = ({ action, data }) => {
-  if (!data?.ref) return
-  if (action === 'edit-scheme') openSchemeDialog(data.ref.systemId, data.ref)
-  if (action === 'config-iface') openIfaceConfig(data.ref.id)
-  if (action === 'iface-to-monitor') addInterfaceFromDrop(data.ref.id)
-  if (action === 'iface-test') addSendInterface(data.ref.id, { test: true })
-}
-const onAddLeaf = ({ groupKind, module }) => {
-  if (groupKind === 'scheme') openSchemeDialog(module.systemId || module.id)
-  else openIfaceConfig(null, module)
-}
-const onDeleteLeaf = (node) => {
-  if (node.kind === 'scheme' && node.ref) {
-    schemeStore.remove(node.ref.id)
-    ElMessage.success('方案已删除')
-  }
-  if (node.kind === 'iface' && node.ref) {
-    protocolStore.removeTestInterface(node.ref.id)
-    ElMessage.success('接口已删除')
-  }
-}
-
+/* ---- 主按钮状态 ---- */
 const sendPrimaryText = computed(() => {
   if (execution.status === 'running') return '发送中'
   if (execution.status === 'paused') return '发送已暂停'
@@ -689,7 +766,6 @@ onMounted(() => {
     const batch = batchStore.byId(String(runId))
     if (batch && execution.loadBatchSnapshot(batch)) {
       activeMode.value = 'send'
-      if (batch.systemId) systemStore.setCurrent(batch.systemId)
       ElMessage.success('已打开执行批次摘要')
       return
     }
@@ -742,7 +818,7 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   :deep(.el-input) { width: 100%; }
 }
-:deep(.smt) {
+:deep(.mtree) {
   width: 100%;
   min-width: 0;
   flex: 1;
@@ -752,7 +828,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   overflow: hidden;
 }
-:deep(.smt > .el-card__body) {
+:deep(.mtree > .el-card__body) {
   min-height: 0;
   overflow: hidden;
 }
@@ -784,22 +860,23 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 0;
 }
+/* Tab 切换按钮：紧凑高度（原 70px 过高，占内容过多） */
 .wizard-steps {
   flex-shrink: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  padding: 14px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--el-border-color-lighter);
   background: linear-gradient(180deg, #fbfdff, #f6f8fb);
 }
 .wizard-step {
   min-width: 0;
-  min-height: 70px;
+  min-height: 38px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 4px 12px;
   text-align: left;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
@@ -818,8 +895,8 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 -2px 0 var(--el-color-primary);
 }
 .wizard-step__index {
-  width: 30px;
-  height: 30px;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
   display: inline-grid;
   place-items: center;
@@ -827,7 +904,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--el-border-color);
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color-extra-light);
-  font: 700 13px Consolas, Monaco, monospace;
+  font: 700 12px Consolas, Monaco, monospace;
 }
 .wizard-step--active .wizard-step__index {
   color: #fff;
@@ -835,7 +912,7 @@ onBeforeUnmount(() => {
   border-color: var(--el-color-primary);
 }
 .wizard-step__copy strong {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 650;
 }
 .wizard-body {

@@ -1,6 +1,7 @@
 ﻿/**
  * 模拟数据种子文件 —— 便携式智能联试工具 Demo
- * 2 个系统 · 每系统 2 个模块 · 每模块 1-3 字段/报文
+ * 2 个系统 · 每系统 2-3 个模块 · 每模块若干报文
+ * 字段不再独立成库：每个报文内联定义字段（底层 __inline 协议实体）。
  *
  * 数据结构与 stores 保持一致，各 store 直接 import 使用。
  */
@@ -58,11 +59,12 @@ const repeatGroup = (o) => ({
 })
 
 /* ========== 辅助：报文参数 ========== */
+// 标量 / 共识体子字段使用；encoding 为数值/浮点编码（SCALAR_NUMERIC_ENCODINGS）
 const param = (o) => ({
   id: pid(),
   name: '',
-  type: '常量',
-  dataType: 'uint8',
+  type: 'scalar',
+  encoding: 'uint8',
   protocolRef: null,
   children: [],
   desc: '',
@@ -90,6 +92,7 @@ const sysModules = [
   // ── 1. 综合武器管理系统 ──
   ['sys-weapon', '武器管理模块',   '192.168.10.21', 9001, '武器装订与发射控制主链路',        true,  'online',  12],
   ['sys-weapon', '弹药状态模块',   '192.168.10.32', 9100, '弹药余量与装填状态上报链路',       true,  'online',  23],
+  ['sys-weapon', '挂载检测模块',   '192.168.10.45', 9200, '挂点载荷识别与状态上报链路',       true,  'online',  15],
   // ── 2. 火控指挥联试系统 ──
   ['sys-fire',   '火控解算模块',   '192.168.20.45', 8080, '火控解算与目标分配数据链路',       true,  'online',  18],
   ['sys-fire',   '指挥链路模块',   '192.168.20.46', 7070, '指挥所指令下行链路（当前不通）',    false, 'offline', 0],
@@ -120,924 +123,212 @@ const inSeedScope = (item) =>
   nodes.some((module) => module.id === item.moduleId)
 
 /* ────────────────────────────────────────────
- *  三、字段 (Protocols) —— 字节/位层级结构
+ *  三、报文字段 (Message Fields) —— 报文内联定义
+ *  报文不再引用独立「字段库」；每个字段在报文中内联定义，
+ *  底层为 __inline 协议实体（与报文管理界面的统一字段表一一对应）。
  * ──────────────────────────────────────────── */
 
-const _p = (o) => ({
-  id: pid(),
-  desc: '',
-  fields: [],
-  framing: null,
-  checksum: null,
-  ...o
-})
-
-/* ========== calcOffsets 增强：处理 repeat ========== */
-const calcOffsets = (fields) => {
-  let offset = 0
-  for (const f of fields) {
-    f.byteOffset = offset
-    if (f.kind === 'repeat') {
-      const groupSize = f.children.reduce((s, c) => s + (c.byteLength || 0), 0)
-      f.groupByteSize = groupSize
-      offset += groupSize * (f.repeatCount || 1)
-    } else {
-      offset += f.byteLength
-    }
+// 报文内联字段：一个字段 = 一个 __inline 协议实体
+// category 五类：scalar / struct / bitstream / file / matrix
+const field = (o = {}) => {
+  const category = o.category || 'scalar'
+  const name = o.name || '新建字段'
+  const desc = o.desc || ''
+  const constraint = o.constraint || null
+  const f = {
+    id: pid(),
+    name,
+    desc,
+    systemId: null,
+    moduleId: null,
+    category,
+    __inline: true,
+    endian: 'big',
+    framing: null,
+    checksum: null,
+    fileConfig: null,
+    matrixConfig: null,
+    fields: [],
   }
-  return fields
+  if (category === 'scalar') {
+    f.fields = [param({ name, type: 'scalar', encoding: o.encoding || 'uint8', constraint: constraint || range(0, 255), desc })]
+  } else if (category === 'bitstream') {
+    // 纯字节语义：一个字段 = 一个字节粒度单元（无位段/长度/偏移/单位）
+    f.fields = [byteField({ name, dataType: o.dataType || 'uint8', constraint: constraint || range(0, 255), desc })]
+    f.framing = { mode: 'fixed', fixedLength: 0, lengthFieldId: null, lengthIncludesHeader: true, lengthIncludesSelf: true, headerBytes: '', footerBytes: '' }
+    f.checksum = { type: 'none', fieldId: null, rangeStart: 0, rangeEnd: 0, polynomial: '0x1021', initValue: '0xFFFF', reflectIn: false, reflectOut: false, xorOut: '0x0000' }
+  } else if (category === 'struct') {
+    f.fields = (o.children || []).map((c) => param({ ...c }))
+  } else if (category === 'file') {
+    f.fileConfig = { fileType: o.fileType || 'bin', chunkSizeKb: o.chunkSizeKb ?? 64, checksum: o.checksum || 'sha256' }
+  } else if (category === 'matrix') {
+    f.matrixConfig = { fileType: o.matrixFileType || 'csv' }
+  }
+  return f
 }
 
-const allProtocols = [
-  // ── 武器管理 ──
-  _p({
-    name: '帧控制字节字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    desc: '1 字节帧控制位标志（bit7 → bit0），适用于压缩/加密等按位场景',
-    category: 'bitstream',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧控制位标志', byteLength: 1, bitMode: true, desc: '帧控制字节，拆分为7段位', children: [
-        bitField({ name: '加密标志', bitStart: 7, bitEnd: 7, constraint: range(0, 1), desc: '1=加密，0=明文' }),
-        bitField({ name: '压缩标志', bitStart: 6, bitEnd: 6, constraint: range(0, 1), desc: '1=压缩，0=未压缩' }),
-        bitField({ name: '分片标志', bitStart: 5, bitEnd: 5, constraint: range(0, 1), desc: '1=分片包，0=完整包' }),
-        bitField({ name: '应答标志', bitStart: 4, bitEnd: 4, constraint: range(0, 1), desc: '1=应答包，0=业务包' }),
-        bitField({ name: '保留位', bitStart: 3, bitEnd: 3, constraint: fixed(0), desc: '预留字段扩展' }),
-        bitField({ name: '保留位', bitStart: 2, bitEnd: 2, constraint: fixed(0), desc: '预留字段扩展' }),
-        bitField({ name: '数据类型', bitStart: 1, bitEnd: 0, constraint: range(0, 3), desc: '00=JSON 01=二进制 10=字符串 11=XML' }),
-      ]}),
-    ])
-  }),
-  _p({
-    name: '武器挂载识别字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'),
-    desc: '挂点载荷识别与状态上报帧',
-    endian: 'big',
-    framing: { mode: 'delimiter', fixedLength: 0, lengthFieldId: null, lengthIncludesHeader: true, lengthIncludesSelf: true, headerBytes: 'AA55', footerBytes: '' },
-    checksum: { type: 'none', fieldId: null, rangeStart: 0, rangeEnd: 0, polynomial: '0x1021', initValue: '0xFFFF', reflectIn: false, reflectOut: false, xorOut: '0x0000' },
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 2, dataType: 'raw', constraint: fixed(0xAA55), desc: '固定 0xAA55' }),
-      byteField({ name: '挂点编号', byteLength: 1, dataType: 'uint8', constraint: range(1, 12), desc: '挂点 1~12' }),
-      byteField({ name: '载荷类型', byteLength: 1, dataType: 'uint8', constraint: enumC([
-        { value: 0, label: '空' }, { value: 1, label: '导弹' }, { value: 2, label: '火箭' },
-        { value: 3, label: '吊舱' }, { value: 4, label: '副油箱' }, { value: 5, label: '其他' }
-      ]), desc: '载荷类型枚举' }),
-      byteField({ name: '载荷重量', byteLength: 2, dataType: 'uint16', constraint: range(0, 9999), desc: '单位 kg' }),
-      byteField({ name: '锁定状态', byteLength: 1, dataType: 'uint8', constraint: enumC([{ value: 0, label: '未锁定' }, { value: 1, label: '锁定' }]), desc: '锁定状态' }),
-    ])
-  }),
-  _p({
-    name: '弹药编目字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '弹药状态模块'),
-    desc: '标量示例：定义一个 uint16 弹药数量变量',
-    category: 'scalar',
-    fields: [
-      param({ name: 'ammoCount', type: '常量', dataType: 'uint16', desc: '当前弹药数量', constraint: range(0, 65535) }),
-    ]
-  }),
-  _p({
-    name: '武器遥测广播字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    desc: '武器状态广播帧，周期性上报各挂点实时状态',
-    category: 'bitstream',
-    endian: 'big',
-    framing: { mode: 'fixed', fixedLength: 0, lengthFieldId: null, lengthIncludesHeader: true, lengthIncludesSelf: true, headerBytes: '', footerBytes: '' },
-    checksum: { type: 'sum8', fieldId: null, rangeStart: 0, rangeEnd: 6, polynomial: '0x1021', initValue: '0xFFFF', reflectIn: false, reflectOut: false, xorOut: '0x0000' },
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 2, dataType: 'raw', constraint: fixed(0xDD55), desc: '固定 0xDD55' }),
-      byteField({ name: '设备编号', byteLength: 1, dataType: 'uint8', constraint: range(1, 32), desc: '武器管理设备编号' }),
-      byteField({ name: '遥测计数', byteLength: 1, dataType: 'uint8', constraint: range(0, 255), desc: '本轮广播序号' }),
-      byteField({ name: '数据长度', byteLength: 2, dataType: 'uint16', constraint: range(0, 4096), desc: '后续遥测载荷字节数' }),
-      byteField({ name: '各挂点状态', byteLength: 2, dataType: 'uint16', constraint: range(0, 65535), desc: 'bit0~bit11 对应 12 挂点，1=已装填 0=空' }),
-      byteField({ name: '校验和', byteLength: 1, dataType: 'uint8', constraint: range(0, 255), desc: 'Sum8 校验' }),
-    ])
-  }),
-
-  // ── 火控指挥 ──
-  _p({
-    name: '解算结果字段', systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
-    desc: '标量示例：定义一个 int32 解算结果变量',
-    category: 'scalar',
-    fields: [
-      param({ name: 'solutionCode', type: '常量', dataType: 'int32', desc: '解算结果码', constraint: range(0, 255) }),
-    ]
-  }),
-  _p({
-    name: '目标航迹帧字段', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'),
-    desc: '多目标航迹融合输出帧',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 2, constraint: fixed(0xF1F2), desc: '固定 0xF1F2' }),
-      byteField({ name: '目标编号', byteLength: 2, constraint: range(1, 256), desc: '航迹编号' }),
-      byteField({ name: '方位角', byteLength: 2, constraint: range(0, 36000), desc: '0.01° 精度' }),
-      byteField({ name: '俯仰角', byteLength: 2, constraint: range(-9000, 9000), desc: '0.01° 精度' }),
-      byteField({ name: '距离', byteLength: 4, constraint: range(0, 500000), desc: '单位 m' }),
-      byteField({ name: '速度', byteLength: 2, constraint: range(0, 3000), desc: '单位 m/s' }),
-      byteField({ name: '置信度', byteLength: 1, constraint: range(0, 100), desc: '融合置信度百分比' }),
-    ])
-  }),
-
-  // ── 雷达探测 ──
-  _p({
-    name: '雷达回波帧字段', systemId: 'sys-radar', moduleId: byName('sys-radar', '信号处理模块'),
-    desc: '雷达基带回波 IQ 采样帧（含重复组示例）',
-    endian: 'big',
-    framing: { mode: 'delimiter', fixedLength: 0, lengthFieldId: null, lengthIncludesHeader: true, lengthIncludesSelf: true, headerBytes: 'DEADBEEF', footerBytes: '' },
-    checksum: { type: 'none', fieldId: null, rangeStart: 0, rangeEnd: 0, polynomial: '0x1021', initValue: '0xFFFF', reflectIn: false, reflectOut: false, xorOut: '0x0000' },
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 4, dataType: 'raw', constraint: fixed(0xDEADBEEF), desc: '固定 0xDEADBEEF' }),
-      byteField({ name: '脉冲编号', byteLength: 2, dataType: 'uint16', constraint: range(0, 65535), desc: 'PRI 序号' }),
-      byteField({ name: '通道号', byteLength: 1, dataType: 'uint8', constraint: range(0, 15), desc: '接收通道 0~15' }),
-      byteField({ name: '采样点数', byteLength: 2, dataType: 'uint16', constraint: range(64, 4096), desc: '本帧 IQ 采样数' }),
-      repeatGroup({
-        name: 'IQ采样数据', repeatMode: 'fixed', repeatCount: 2,
-        children: [
-          byteField({ name: 'I路数据', byteLength: 2, dataType: 'int16', constraint: range(-32768, 32767), desc: '同相分量' }),
-          byteField({ name: 'Q路数据', byteLength: 2, dataType: 'int16', constraint: range(-32768, 32767), desc: '正交分量' }),
-        ]
-      }),
-    ])
-  }),
-  _p({
-    name: '天线伺服控制字段', systemId: 'sys-radar', moduleId: byName('sys-radar', '天线控制模块'),
-    desc: '天线方位/俯仰指令与反馈帧',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 1, constraint: fixed(0x5A), desc: '固定 0x5A' }),
-      byteField({ name: '指令类型', byteLength: 1, constraint: range(0, 4), desc: '0=停止 1=搜索 2=跟踪 3=标定 4=归零' }),
-      byteField({ name: '目标方位', byteLength: 2, constraint: range(0, 36000), desc: '0.01° 精度' }),
-      byteField({ name: '目标俯仰', byteLength: 2, constraint: range(-2000, 8000), desc: '0.01° 精度' }),
-      byteField({ name: '扫描速率', byteLength: 1, constraint: range(0, 60), desc: '°/s' }),
-    ])
-  }),
-  _p({
-    name: '目标特征帧字段', systemId: 'sys-radar', moduleId: byName('sys-radar', '目标识别模块'),
-    desc: '目标 RCS 特征与分类结果帧',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 2, constraint: fixed(0xBB01), desc: '固定 0xBB01' }),
-      byteField({ name: '目标ID', byteLength: 2, constraint: range(1, 512), desc: '识别目标编号' }),
-      byteField({ name: 'RCS均值', byteLength: 2, constraint: range(0, 10000), desc: '0.01 m²' }),
-      byteField({ name: '目标类别', byteLength: 1, constraint: range(0, 6), desc: '0=未知 1=战斗机 2=运输机 3=直升机 4=导弹 5=无人机 6=舰船' }),
-      byteField({ name: '识别置信度', byteLength: 1, constraint: range(0, 100), desc: '百分比' }),
-    ])
-  }),
-
-  // ── 通信保障 ──
-  _p({
-    name: '数据链帧字段', systemId: 'sys-comm', moduleId: byName('sys-comm', '数据链模块'),
-    desc: '战术数据链 TADIL 帧格式',
-    endian: 'big',
-    framing: { mode: 'delimiter', fixedLength: 0, lengthFieldId: null, lengthIncludesHeader: true, lengthIncludesSelf: true, headerBytes: '1ACF', footerBytes: '' },
-    checksum: { type: 'crc16', fieldId: null, rangeStart: 0, rangeEnd: 6, polynomial: '0x1021', initValue: '0xFFFF', reflectIn: false, reflectOut: false, xorOut: '0x0000' },
-    fields: calcOffsets([
-      byteField({ name: '帧同步头', byteLength: 2, dataType: 'raw', constraint: fixed(0x1ACF), desc: '帧同步码' }),
-      byteField({ name: '消息类型', byteLength: 1, dataType: 'uint8', constraint: range(0, 15), desc: 'J 系列消息编号' }),
-      byteField({ name: '发送方ID', byteLength: 2, dataType: 'uint16', constraint: range(1, 512), desc: '网络参与方编号' }),
-      byteField({ name: '优先级', byteLength: 1, dataType: 'uint8', bitMode: true, desc: '0=最低 7=最高', children: [
-        bitField({ name: '优先级值', bitStart: 2, bitEnd: 0, dataType: 'uint', constraint: range(0, 7), desc: '3位优先级编码' }),
-        bitField({ name: '保留', bitStart: 7, bitEnd: 3, dataType: 'uint', constraint: fixed(0), desc: '预留' }),
-      ]}),
-      byteField({ name: 'CRC校验', byteLength: 2, dataType: 'uint16', constraint: range(0, 65535), desc: 'CRC-16/CCITT' }),
-    ])
-  }),
-  _p({
-    name: '卫通链路管理字段', systemId: 'sys-comm', moduleId: byName('sys-comm', '卫星通信模块'),
-    desc: '卫星通信建链/保链/断链控制帧',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 1, constraint: fixed(0x7E), desc: '固定 0x7E' }),
-      byteField({ name: '操作码', byteLength: 1, constraint: range(0, 5), desc: '0=建链 1=保链 2=断链 3=切星 4=功率调整 5=状态查询' }),
-      byteField({ name: '卫星编号', byteLength: 1, constraint: range(1, 32), desc: '在轨卫星编号' }),
-      byteField({ name: '信号强度', byteLength: 1, constraint: range(0, 100), desc: 'dBm 归一化' }),
-    ])
-  }),
-
-  // ── 导航定位 ──
-  _p({
-    name: '惯导数据帧字段', systemId: 'sys-nav', moduleId: byName('sys-nav', '惯性导航模块'),
-    desc: 'IMU 六轴原始数据与姿态角输出帧',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 2, constraint: fixed(0x4E41), desc: '固定 "NA"' }),
-      byteField({ name: '陀螺X', byteLength: 4, constraint: range(-32768, 32767), desc: '角速度 ×1000 °/s' }),
-      byteField({ name: '陀螺Y', byteLength: 4, constraint: range(-32768, 32767), desc: '角速度 ×1000 °/s' }),
-      byteField({ name: '陀螺Z', byteLength: 4, constraint: range(-32768, 32767), desc: '角速度 ×1000 °/s' }),
-      byteField({ name: '加速度X', byteLength: 2, constraint: range(-16384, 16383), desc: 'mg' }),
-      byteField({ name: '加速度Y', byteLength: 2, constraint: range(-16384, 16383), desc: 'mg' }),
-      byteField({ name: '加速度Z', byteLength: 2, constraint: range(-16384, 16383), desc: 'mg' }),
-    ])
-  }),
-  _p({
-    name: '卫通定位帧字段', systemId: 'sys-nav', moduleId: byName('sys-nav', '卫星定位模块'),
-    desc: '北斗/GPS 双模定位解算输出帧',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 1, constraint: fixed(0x24), desc: '固定 $' }),
-      byteField({ name: '定位标志', byteLength: 1, bitMode: true, desc: '系统标识与定位状态', children: [
-        bitField({ name: '系统标识', bitStart: 7, bitEnd: 4, constraint: range(0, 3), desc: '0=GPS 1=BDS 2=双模 3=GLONASS' }),
-        bitField({ name: '定位状态', bitStart: 3, bitEnd: 0, constraint: range(0, 5), desc: '0=无效 1=单点 2=DGPS 3=RTK固定 4=RTK浮点 5=惯导辅助' }),
-      ]}),
-      byteField({ name: '可见星数', byteLength: 1, constraint: range(0, 40), desc: '可见卫星数' }),
-      byteField({ name: 'HDOP', byteLength: 2, constraint: range(10, 9999), desc: '精度因子 ×100' }),
-    ])
-  }),
-
-  // ── 电子对抗 ──
-  _p({
-    name: '电磁侦察帧字段', systemId: 'sys-ew', moduleId: byName('sys-ew', '侦察分析模块'),
-    desc: '电磁环境信号侦察与参数测量帧',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 2, constraint: fixed(0xE5E5), desc: '固定 0xE5E5' }),
-      byteField({ name: '信号类型', byteLength: 1, constraint: range(0, 8), desc: '0=脉冲 1=连续波 2=跳频 3=扩频 4=噪声' }),
-      byteField({ name: '中心频率', byteLength: 4, constraint: range(100, 18000), desc: 'MHz' }),
-      byteField({ name: '脉宽', byteLength: 2, constraint: range(1, 10000), desc: 'μs' }),
-      byteField({ name: '脉冲重复频率', byteLength: 2, constraint: range(1, 50000), desc: 'Hz' }),
-    ])
-  }),
-  _p({
-    name: '干扰指令帧字段', systemId: 'sys-ew', moduleId: byName('sys-ew', '干扰执行模块'),
-    desc: '有源/无源干扰参数下发帧',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 1, constraint: fixed(0x4A), desc: '固定 0x4A' }),
-      byteField({ name: '干扰模式', byteLength: 1, constraint: range(0, 5), desc: '0=噪声压制 1=欺骗 2=瞄准 3=阻塞 4=箔条 5=红外诱饵' }),
-      byteField({ name: '干扰频段', byteLength: 2, constraint: range(100, 18000), desc: 'MHz' }),
-      byteField({ name: '功率等级', byteLength: 1, constraint: range(0, 10), desc: '0~10 级' }),
-      byteField({ name: '持续时间', byteLength: 2, constraint: range(1, 600), desc: '单位 0.1s' }),
-    ])
-  }),
-
-  // ── 无人机管控 ──
-  _p({
-    name: '飞控遥测帧字段', systemId: 'sys-uav', moduleId: byName('sys-uav', '飞行控制模块'),
-    desc: '无人机飞行状态遥测下行帧',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 2, constraint: fixed(0x55AA), desc: '固定 0x55AA' }),
-      byteField({ name: '飞行模式', byteLength: 1, constraint: range(0, 5), desc: '0=手动 1=半自主 2=全自主 3=返航 4=降落 5=紧急' }),
-      byteField({ name: '高度', byteLength: 2, constraint: range(0, 15000), desc: '单位 m' }),
-      byteField({ name: '空速', byteLength: 2, constraint: range(0, 500), desc: '单位 km/h' }),
-      byteField({ name: '航向角', byteLength: 2, constraint: range(0, 36000), desc: '0.01° 精度' }),
-      byteField({ name: '电池电量', byteLength: 1, constraint: range(0, 100), desc: '百分比' }),
-    ])
-  }),
-  _p({
-    name: '载荷控制帧字段', systemId: 'sys-uav', moduleId: byName('sys-uav', '任务载荷模块'),
-    desc: '光电/红外载荷指令帧',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 1, constraint: fixed(0x6C), desc: '固定 0x6C' }),
-      byteField({ name: '载荷类型', byteLength: 1, constraint: range(0, 3), desc: '0=可见光 1=红外 2=SAR 3=多光谱' }),
-      byteField({ name: '工作模式', byteLength: 1, constraint: range(0, 4), desc: '0=待机 1=搜索 2=跟踪 3=录像 4=拍照' }),
-      byteField({ name: '云台俯仰', byteLength: 2, constraint: range(-9000, 3000), desc: '0.01° 精度' }),
-      byteField({ name: '变焦倍率', byteLength: 1, constraint: range(1, 30), desc: '光学变焦' }),
-    ])
-  }),
-
-  // ── 指挥控制 ──
-  _p({
-    name: '态势标注帧字段', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'),
-    desc: '战场态势目标标注与更新帧',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 2, constraint: fixed(0xC0DE), desc: '固定 0xC0DE' }),
-      byteField({ name: '标注类型', byteLength: 1, constraint: range(0, 5), desc: '0=友军 1=敌方 2=中性 3=障碍 4=区域 5=路线' }),
-      byteField({ name: '经度', byteLength: 4, constraint: range(-18000000, 18000000), desc: '×100000' }),
-      byteField({ name: '纬度', byteLength: 4, constraint: range(-9000000, 9000000), desc: '×100000' }),
-      byteField({ name: '时间戳', byteLength: 4, constraint: range(0, 4294967295), desc: 'Unix 秒' }),
-    ])
-  }),
-  _p({
-    name: '作战指令编码字段', systemId: 'sys-cmd', moduleId: byName('sys-cmd', '指令下发模块'),
-    desc: '作战指令结构化编码帧',
-    endian: 'big',
-    fields: calcOffsets([
-      byteField({ name: '帧头', byteLength: 2, constraint: fixed(0xC0D0), desc: '固定标识' }),
-      byteField({ name: '指令头', byteLength: 1, bitMode: true, desc: '指令类型与优先级', children: [
-        bitField({ name: '指令类型', bitStart: 7, bitEnd: 4, constraint: range(0, 10), desc: '0=机动 1=攻击 2=防御 3=侦察 4=撤退 5=集结' }),
-        bitField({ name: '优先级', bitStart: 3, bitEnd: 1, constraint: range(0, 7), desc: '0=常规 7=特急' }),
-        bitField({ name: '保留', bitStart: 0, bitEnd: 0, constraint: fixed(0), desc: '预留' }),
-      ]}),
-      byteField({ name: '执行单位', byteLength: 2, constraint: range(1, 256), desc: '单位编号' }),
-      byteField({ name: '有效时段', byteLength: 2, constraint: range(1, 1440), desc: '分钟' }),
-    ])
-  }),
-
-  // ── 共识体（可复用数据结构字段） ──
-  _p({
-    name: '装订参数字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    desc: '武器装订参数共识体，定义引信模式、射程与装订角度',
-    category: 'struct',
-    fields: [
-      param({ name: 'fuseMode', type: '常量', dataType: 'uint8', desc: '引信模式' }),
-      param({ name: 'range', type: '常量', dataType: 'uint16', desc: '射程设定 m' }),
-      param({ name: 'angle', type: '常量', dataType: 'float', desc: '装订角度' }),
-    ]
-  }),
-  _p({
-    name: '雷达参数字段', systemId: 'sys-radar', moduleId: byName('sys-radar', '信号处理模块'),
-    desc: '雷达工作参数共识体，定义功率、位置与频率',
-    fields: [
-      param({ name: 'power', type: '常量', dataType: 'uint16', desc: '发射功率 W' }),
-      param({ name: 'latitude', type: '常量', dataType: 'double', desc: '雷达站纬度' }),
-      param({ name: 'longitude', type: '常量', dataType: 'double', desc: '雷达站经度' }),
-      param({ name: 'frequency', type: '常量', dataType: 'uint32', desc: '工作频率 MHz' }),
-    ]
-  }),
-  _p({
-    name: '武器状态字段', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    desc: '共识体示例：使用二维字段矩阵定义状态变量，并引用装订参数共识体',
-    category: 'struct',
-    fields: [
-      param({ name: 'deviceId', type: '常量', dataType: 'uint8', desc: '设备编号' }),
-      param({ name: 'online', type: '常量', dataType: 'uint8', desc: '1=在线 0=离线' }),
-      param({ name: 'pylonNo', type: '常量', dataType: 'uint8', desc: '挂点号' }),
-      param({ name: 'loaded', type: '常量', dataType: 'uint8', desc: '1=已装填 0=空' }),
-      param({ name: 'bindingParams', type: '共识体', desc: '引用装订参数共识体' }),
-    ]
-  }),
-  _p({
-    name: '数据流文件', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    desc: '流文件示例：作为报文尾部文本状态附件使用',
-    category: 'file',
-    fields: [param({ name: 'statusPayloadFile', type: '流文件', desc: '设备状态文本附件' })],
-    fileConfig: { fileType: 'txt', maxSizeMb: 32, checksum: 'sha256', chunkSizeKb: 64 }
-  }),
-  _p({
-    name: '雷达数据文件', systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    desc: '结构矩阵示例：二维装订参数数据文件',
-    category: 'matrix',
-    fields: [param({ name: 'bindingMatrix', type: '结构矩阵', desc: '装订参数二维矩阵' })],
-    matrixConfig: { fileType: 'csv', rows: 16, columns: 4 }
-  }),
-  _p({
-    name: '航迹位置字段', systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'),
-    desc: '航迹位置共识体，定义方位角、俯仰角与距离',
-    fields: [
-      param({ name: 'azimuth', type: '常量', dataType: 'float32', desc: '方位角 °' }),
-      param({ name: 'elevation', type: '常量', dataType: 'float32', desc: '俯仰角 °' }),
-      param({ name: 'distance', type: '常量', dataType: 'float32', desc: '距离 m' }),
-    ]
-  }),
-]
-const bindingStruct = allProtocols.find((protocol) => protocol.name === '装订参数字段')
-const weaponStatusStruct = allProtocols.find((protocol) => protocol.name === '武器状态字段')
-const bindingReference = weaponStatusStruct?.fields?.find((field) => field.name === 'bindingParams')
-if (bindingReference && bindingStruct) bindingReference.protocolRef = bindingStruct.id
-
-export const protocols = allProtocols.filter(inSeedScope)
 
 /* ────────────────────────────────────────────
  *  四、报文 (Interfaces) 参数树
  * ──────────────────────────────────────────── */
-const _i = (o) => ({
-  id: pid(),
-  path: '',
-  transportType: null,
-  transportConfig: {},
-  protocolRefs: [],
-  desc: '',
-  request: [],
-  response: [],
-  ...o
-})
+const _i = (o) => ({ id: pid(), desc: '', datasetIds: [], fields: [], ...o })
 
-const protoByName = (sys, name) => protocols.find(p => p.systemId === sys && p.name === name)?.id
-
+// ── 报文（Interfaces）──
+// 报文定义携带 fields（内联字段）；导出时生成 __inline 字段协议与 protocolRefs。
+// 传输类型不再在报文中定义（仅在收发监控侧配置）。
 const allInterfaces = [
   // ── 武器管理 ──
   _i({
-    name: '查询设备状态', path: '/device/status',
-    transportType: 'OSE',
-    transportConfig: { method: 'GET', contentType: 'application/json', headers: [{ key: 'Accept', value: 'application/json' }], auth: { type: 'basic', username: 'admin', password: '' } },
-    protocolRefs: [
-      protoByName('sys-weapon', '武器遥测广播字段'),
-      { protocolId: protoByName('sys-weapon', '数据流文件'), role: 'send' },
-      { protocolId: protoByName('sys-weapon', '数据流文件'), role: 'receive' },
-    ],
+    name: '查询设备状态',
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    datasetIds: [2], // 模拟关联：遥测帧 + 状态附件
-    desc: '发送设备状态，返回遥测帧',
+    datasetIds: [2],
+    desc: '查询设备状态，返回遥测帧与状态附件',
+    fields: [
+      field({ category: 'scalar', name: '设备编号', encoding: 'uint8', constraint: range(1, 32), desc: '武器管理设备编号' }),
+      field({ category: 'scalar', name: '设备类型', encoding: 'uint8', constraint: enumC([{ value: 0, label: '指挥所' }, { value: 1, label: '雷达' }, { value: 2, label: '干扰机' }, { value: 3, label: '无人机' }]), desc: '设备类型枚举' }),
+      field({ category: 'bitstream', name: '状态字', dataType: 'uint16', constraint: range(0, 65535), desc: 'bit 位状态标志（1=在线 2=故障 4=自检中）' }),
+      field({ category: 'scalar', name: '设备温度', encoding: 'float32', constraint: range(-40, 85), desc: '核心温度' }),
+      field({ category: 'struct', name: '挂载明细', desc: '各挂点状态', children: [
+        { type: 'scalar', name: '挂点号', encoding: 'uint8', constraint: range(1, 12), desc: '挂点编号 1~12' },
+        { type: 'scalar', name: '载荷类型', encoding: 'uint8', constraint: enumC([{ value: 0, label: '空' }, { value: 1, label: '导弹' }, { value: 2, label: '火箭' }, { value: 3, label: '吊舱' }, { value: 4, label: '副油箱' }]), desc: '载荷类型枚举' },
+        { type: 'scalar', name: '锁定状态', encoding: 'uint8', constraint: enumC([{ value: 0, label: '未锁定' }, { value: 1, label: '锁定' }]), desc: '锁定状态' },
+      ]}),
+      field({ category: 'file', name: '状态附件', fileType: 'bin', chunkSizeKb: 64, checksum: 'sha256', desc: '状态上报附件文件' }),
+      field({ category: 'matrix', name: '挂载参数矩阵', matrixFileType: 'csv', desc: '挂载参数二维表' }),
+    ],
   }),
   _i({
-    name: '武器装订指令', path: '/weapon/bind',
-    transportType: '4908A',
-    transportConfig: { port: 9001, timeout: 3000 },
-    protocolRefs: [
-      protoByName('sys-weapon', '装订参数字段'),
-      protoByName('sys-weapon', '帧控制字节字段'),
-      { protocolId: protoByName('sys-weapon', '雷达数据文件'), role: 'send' },
-      { protocolId: protoByName('sys-weapon', '雷达数据文件'), role: 'receive' },
-    ],
+    name: '武器装订指令',
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    datasetIds: [4], // 模拟关联：共识体 + 位标志 + 结构矩阵
+    datasetIds: [4],
     desc: '下发武器装订参数并确认',
+    fields: [
+      field({ category: 'scalar', name: '指令序号', encoding: 'uint32', constraint: range(0, 4294967295), desc: '装订指令流水号' }),
+      field({ category: 'struct', name: '装订参数', desc: '装订参数共识体', children: [
+        { type: 'scalar', name: '目标编号', encoding: 'uint16', constraint: range(1, 512), desc: '目标航迹编号' },
+        { type: 'scalar', name: '引信方式', encoding: 'uint8', constraint: enumC([{ value: 0, label: '触发' }, { value: 1, label: '近炸' }, { value: 2, label: '定时' }]), desc: '引信方式枚举' },
+        { type: 'scalar', name: '弹道类型', encoding: 'uint8', constraint: enumC([{ value: 0, label: '平射' }, { value: 1, label: '高抛' }, { value: 2, label: '俯冲' }]), desc: '弹道类型枚举' },
+        { type: 'scalar', name: '射程', encoding: 'uint16', constraint: range(100, 20000), desc: '装订射程' },
+        { type: 'scalar', name: '射角', encoding: 'float32', constraint: range(-15, 60), desc: '装订射角' },
+      ]}),
+      field({ category: 'bitstream', name: '控制字', dataType: 'uint8', constraint: range(0, 255), desc: '装订控制标志（bit0 同步 / bit1 校验）' }),
+      field({ category: 'matrix', name: '装订矩阵', matrixFileType: 'csv', desc: '批量装订参数二维表' }),
+    ],
   }),
-  // 报文示例：引用「帧控制字节字段」（字段被报文引用），数据集关联此报文
-  // 报文字段由所引用的字段定义提供（位标志、约束、说明），无需在 request 中重复定义
   _i({
-    name: '帧控制指令', path: '/frame/ctrl',
-    transportType: 'OSE',
-    transportConfig: { method: 'GET', contentType: 'application/json', headers: [], auth: { type: 'none' } },
-    protocolRefs: [protoByName('sys-weapon', '帧控制字节字段')],
+    name: '帧控制指令',
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    datasetIds: [1], // 模拟关联：帧控制位组合
-    desc: '帧控制字节（按位标志）',
-    request: [],
-    response: []
+    datasetIds: [1],
+    desc: '帧控制字（纯字节）发送控制指令',
+    fields: [
+      field({ category: 'bitstream', name: '帧头', dataType: 'uint16', constraint: fixed(0xAA55), desc: '固定帧头 0xAA55' }),
+      field({ category: 'bitstream', name: '控制字', dataType: 'uint8', constraint: range(0, 255), desc: '帧控制字（1=加密 2=压缩 4=分片 8=应答）' }),
+      field({ category: 'scalar', name: '数据长度', encoding: 'uint16', constraint: range(0, 4096), desc: '后续载荷字节数' }),
+    ],
   }),
+
+  // ── 弹药状态 ──
   _i({
-    name: '上报弹药余量', path: '/ammo/report',
-    transportType: '4908A',
-    transportConfig: { serverAddress: '192.168.10.32:50051', streamingMode: 'unary', tls: { enabled: false }, timeout: 10 },
-    protocolRefs: [protoByName('sys-weapon', '弹药编目字段')],
+    name: '上报弹药余量',
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '弹药状态模块'),
+    datasetIds: [],
     desc: '查询并上报各类弹药余量',
-    request: [
-      param({ name: 'queryType', type: '常量', dataType: 'uint8', desc: '查询类型' }),
-    ],
-    response: [
-      param({ name: 'total', type: '常量', dataType: 'uint16', desc: '弹药总量' }),
-      param({ name: 'available', type: '常量', dataType: 'uint16', desc: '可用量' }),
-      param({ name: 'detail', type: '共识体', desc: '余量明细', children: [
-        param({ name: 'typeA', type: '常量', dataType: 'uint16', desc: 'A 型余量' }),
-        param({ name: 'typeB', type: '常量', dataType: 'uint16', desc: 'B 型余量' }),
-        param({ name: 'typeC', type: '常量', dataType: 'uint16', desc: 'C 型余量' }),
+    fields: [
+      field({ category: 'scalar', name: '弹药总量', encoding: 'uint16', constraint: range(0, 65535), desc: '当前弹药总量' }),
+      field({ category: 'struct', name: '余量明细', desc: '各型弹药余量明细', children: [
+        { type: 'scalar', name: 'A型余量', encoding: 'uint16', constraint: range(0, 9999), desc: 'A 型余量' },
+        { type: 'scalar', name: 'B型余量', encoding: 'uint16', constraint: range(0, 9999), desc: 'B 型余量' },
+        { type: 'scalar', name: 'C型余量', encoding: 'uint16', constraint: range(0, 9999), desc: 'C 型余量' },
       ]}),
-    ]
+      field({ category: 'scalar', name: '上报时间', encoding: 'uint32', constraint: range(0, 4294967295), desc: '上报时间戳' }),
+    ],
   }),
+
+  // ── 挂载检测 ──
   _i({
-    name: '挂载状态查询', path: '/pylon/status',
-    transportType: '4908A',
-    transportConfig: { port: 9200, timeout: 2000 },
-    protocolRefs: [protoByName('sys-weapon', '武器挂载识别字段'), protoByName('sys-weapon', '武器状态字段')],
+    name: '挂载状态查询',
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'),
-    datasetIds: [5], // 模拟关联：挂点识别响应
+    datasetIds: [5],
     desc: '查询全部挂点挂载状态',
-    request: [
-      param({ name: 'aircraftId', type: '常量', dataType: 'uint16', desc: '飞机编号' }),
-    ],
-    response: [
-      param({ name: 'pylonList', type: '共识体', desc: '挂点列表', children: [
-        param({ name: 'pylonNo', type: '常量', dataType: 'uint8', desc: '挂点号' }),
-        param({ name: 'loadType', type: '常量', dataType: 'uint8', desc: '载荷类型' }),
-        param({ name: 'locked', type: '常量', dataType: 'uint8', desc: '锁定状态' }),
+    fields: [
+      field({ category: 'scalar', name: '飞机编号', encoding: 'uint16', constraint: range(1, 65535), desc: '飞机编号' }),
+      field({ category: 'struct', name: '挂点列表', desc: '挂点状态共识体', children: [
+        { type: 'scalar', name: '挂点号', encoding: 'uint8', constraint: range(1, 12), desc: '挂点编号 1~12' },
+        { type: 'scalar', name: '载荷类型', encoding: 'uint8', constraint: enumC([{ value: 0, label: '空' }, { value: 1, label: '导弹' }, { value: 2, label: '火箭' }, { value: 3, label: '吊舱' }, { value: 4, label: '副油箱' }]), desc: '载荷类型枚举' },
+        { type: 'scalar', name: '载荷重量', encoding: 'uint16', constraint: range(0, 9999), desc: '载荷重量' },
+        { type: 'scalar', name: '锁定状态', encoding: 'uint8', constraint: enumC([{ value: 0, label: '未锁定' }, { value: 1, label: '锁定' }]), desc: '锁定状态' },
       ]}),
-      param({ name: 'rawFrame', type: '位组序流', desc: '原始识别帧' }),
-    ]
+      field({ category: 'bitstream', name: '识别帧', dataType: 'uint8', constraint: range(0, 255), desc: '原始识别帧字节' }),
+    ],
   }),
 
   // ── 火控指挥 ──
   _i({
-    name: '目标分配解算', path: '/fire/solve',
-    transportType: '4908A',
-    transportConfig: { port: 8080, timeout: 300 },
-    protocolRefs: [protoByName('sys-fire', '解算结果字段')],
+    name: '目标分配解算',
     systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
-    datasetIds: [], // 遥测帧-温度范围测试已关联至「遥测帧上报」报文
+    datasetIds: [],
     desc: '提交目标列表，返回火力分配方案',
-    request: [
-      param({ name: 'targets', type: '共识体', desc: '目标列表', children: [
-        param({ name: 'targetId', type: '常量', dataType: 'uint16', desc: '目标编号' }),
-        param({ name: 'priority', type: '常量', dataType: 'uint8', desc: '优先级' }),
-      ]}),
-      param({ name: 'unitCount', type: '常量', dataType: 'uint8', desc: '火力单元数' }),
+    fields: [
+      field({ category: 'scalar', name: '目标编号', encoding: 'uint16', constraint: range(1, 256), desc: '目标航迹编号' }),
+      field({ category: 'scalar', name: '优先级', encoding: 'uint8', constraint: range(1, 10), desc: '目标优先级' }),
+      field({ category: 'scalar', name: '火力单元数', encoding: 'uint8', constraint: range(1, 16), desc: '参与解算的火力单元数' }),
+      field({ category: 'scalar', name: '解算结果码', encoding: 'int32', constraint: range(0, 255), desc: '0=成功 1=降级 32=无解' }),
+      field({ category: 'file', name: '分配方案', fileType: 'txt', chunkSizeKb: 32, checksum: 'md5', desc: '火力分配方案文件' }),
     ],
-    response: [
-      param({ name: 'result', type: '常量', dataType: 'int32', desc: '解算结果码' }),
-      param({ name: 'plan', type: '流文件', desc: '分配方案文件' }),
-      param({ name: 'raw', type: '位组序流', desc: '原始解算帧' }),
-    ]
   }),
-  // 报文示例：遥测数据上报，引用标量解算结果字段
   _i({
-    name: '遥测帧上报', path: '/telemetry/report',
-    transportType: 'OSE',
-    transportConfig: { method: 'GET', contentType: 'application/json', headers: [], auth: { type: 'none' } },
-    protocolRefs: [protoByName('sys-fire', '解算结果字段')],
+    name: '遥测帧上报',
     systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
-    datasetIds: [3], // 模拟关联：标量解算结果码
-    desc: '上报火控解算结果码',
-    request: [],
-    response: []
-  }),
-  _i({
-    name: '航迹订阅', path: '/track/subscribe',
-    transportType: '4908A',
-    transportConfig: { serverAddress: '192.168.20.47:50051', streamingMode: 'server-stream', tls: { enabled: false }, timeout: 30 },
-    protocolRefs: [protoByName('sys-fire', '目标航迹帧字段'), protoByName('sys-fire', '航迹位置字段')],
-    systemId: 'sys-fire', moduleId: byName('sys-fire', '目标跟踪模块'),
-    desc: '订阅指定目标的实时航迹数据',
-    request: [
-      param({ name: 'trackIds', type: '结构矩阵', desc: '目标ID列表', children: [
-        param({ name: 'id', type: '常量', dataType: 'uint16' }),
-      ]}),
-      param({ name: 'interval', type: '常量', dataType: 'uint16', desc: '推送间隔 ms' }),
+    datasetIds: [3],
+    desc: '上报火控解算遥测帧（温度/航向/电量）',
+    fields: [
+      field({ category: 'bitstream', name: '遥测帧头', dataType: 'uint16', constraint: fixed(0xEB90), desc: '固定帧头 0xEB90' }),
+      field({ category: 'scalar', name: '解算结果码', encoding: 'int32', constraint: range(0, 255), desc: '解算结果码' }),
+      field({ category: 'scalar', name: '温度值', encoding: 'float32', constraint: range(-40, 85), desc: '设备温度' }),
+      field({ category: 'scalar', name: '航向角', encoding: 'float32', constraint: range(0, 360), desc: '航向角' }),
+      field({ category: 'scalar', name: '电池电量', encoding: 'uint8', constraint: range(0, 100), desc: '电池电量百分比' }),
     ],
-    response: [
-      param({ name: 'subscribed', type: '常量', dataType: 'uint8', desc: '成功订阅数' }),
-      param({ name: 'sessionId', type: '常量', dataType: 'uint32', desc: '会话标识' }),
-    ]
   }),
+
+  // ── 指挥链路 ──
   _i({
-    name: '指挥指令下发', path: '/cmd/dispatch',
-    transportType: '4908A',
-    transportConfig: { port: 7070, timeout: 1000 },
-    protocolRefs: [protoByName('sys-fire', '解算结果字段')],
+    name: '指挥指令下发',
     systemId: 'sys-fire', moduleId: byName('sys-fire', '指挥链路模块'),
-    datasetIds: [6], // 模拟关联：嵌套指挥指令
+    datasetIds: [6],
     desc: '从指挥所向下游下发作战指令',
-    request: [
-      param({ name: 'cmdType', type: '常量', dataType: 'uint8', desc: '指令类型' }),
-      param({ name: 'content', type: '共识体', desc: '指令内容', children: [
-        param({ name: 'targetId', type: '常量', dataType: 'uint16' }),
-        param({ name: 'action', type: '常量', dataType: 'uint8' }),
-        param({ name: 'deadline', type: '常量', dataType: 'uint32', desc: '截止时间戳' }),
+    fields: [
+      field({ category: 'scalar', name: '指令类型', encoding: 'uint8', constraint: enumC([{ value: 1, label: '目标跟踪' }, { value: 2, label: '火力分配' }, { value: 9, label: '任务撤销' }]), desc: '指令类型枚举' }),
+      field({ category: 'struct', name: '指令内容', desc: '指令内容共识体', children: [
+        { type: 'scalar', name: '目标编号', encoding: 'uint16', constraint: range(1, 512), desc: '目标航迹编号' },
+        { type: 'scalar', name: '动作', encoding: 'uint8', constraint: enumC([{ value: 0, label: '取消' }, { value: 1, label: '跟踪' }, { value: 4, label: '打击' }]), desc: '动作枚举' },
+        { type: 'scalar', name: '截止时间', encoding: 'uint32', constraint: range(0, 4294967295), desc: '指令截止时间戳' },
       ]}),
+      field({ category: 'scalar', name: '指令序号', encoding: 'uint32', constraint: range(0, 4294967295), desc: '指令流水号' }),
+      field({ category: 'bitstream', name: '应答码', dataType: 'uint8', constraint: range(0, 255), desc: '应答状态码' }),
     ],
-    response: [
-      param({ name: 'ack', type: '常量', dataType: 'uint8', desc: '1=已接收' }),
-      param({ name: 'seq', type: '常量', dataType: 'uint32', desc: '指令流水号' }),
-    ]
   }),
-
-  // ── 雷达探测 ──
-  _i({
-    name: '启动雷达扫描', path: '/radar/scan/start',
-    transportType: '4908A',
-    transportConfig: { port: 6001, timeout: 1000 },
-    protocolRefs: [protoByName('sys-radar', '雷达回波帧字段'), protoByName('sys-radar', '雷达参数字段')],
-    systemId: 'sys-radar', moduleId: byName('sys-radar', '信号处理模块'),
-    desc: '配置雷达扫描参数并启动',
-    request: [
-      param({ name: 'mode', type: '常量', dataType: 'uint8', desc: '0=全向 1=扇扫 2=定向' }),
-      param({ name: 'prf', type: '常量', dataType: 'uint16', desc: '脉冲重复频率 Hz' }),
-      param({ name: 'duration', type: '常量', dataType: 'uint16', desc: '扫描时长 s' }),
-    ],
-    response: [
-      param({ name: 'code', type: '常量', dataType: 'int32', desc: '0=成功' }),
-      param({ name: 'scanId', type: '常量', dataType: 'uint32', desc: '扫描任务ID' }),
-    ]
-  }),
-  _i({
-    name: '天线指向控制', path: '/radar/antenna/point',
-    transportType: '4908A',
-    transportConfig: { port: 6002, timeout: 200 },
-    protocolRefs: [protoByName('sys-radar', '天线伺服控制字段')],
-    systemId: 'sys-radar', moduleId: byName('sys-radar', '天线控制模块'),
-    desc: '设置天线方位角和俯仰角',
-    request: [
-      param({ name: 'azimuth', type: '常量', dataType: 'float', desc: '方位角 °' }),
-      param({ name: 'elevation', type: '常量', dataType: 'float', desc: '俯仰角 °' }),
-      param({ name: 'speed', type: '常量', dataType: 'uint8', desc: '转动速率' }),
-    ],
-    response: [
-      param({ name: 'code', type: '常量', dataType: 'int32' }),
-      param({ name: 'actualAz', type: '常量', dataType: 'float', desc: '实际方位' }),
-      param({ name: 'actualEl', type: '常量', dataType: 'float', desc: '实际俯仰' }),
-    ]
-  }),
-  _i({
-    name: '目标识别发送', path: '/radar/identify',
-    transportType: '4908A',
-    transportConfig: { serverAddress: '192.168.30.12:50052', streamingMode: 'bidirectional', tls: { enabled: false }, timeout: 60 },
-    protocolRefs: [protoByName('sys-radar', '目标特征帧字段')],
-    systemId: 'sys-radar', moduleId: byName('sys-radar', '目标识别模块'),
-    desc: '提交目标特征数据进行分类识别',
-    request: [
-      param({ name: 'trackId', type: '常量', dataType: 'uint16', desc: '目标航迹ID' }),
-      param({ name: 'featureData', type: '位组序流', desc: 'RCS 特征向量' }),
-    ],
-    response: [
-      param({ name: 'category', type: '常量', dataType: 'uint8', desc: '目标类别' }),
-      param({ name: 'confidence', type: '常量', dataType: 'uint8', desc: '置信度 %' }),
-      param({ name: 'rcsDb', type: '常量', dataType: 'float', desc: 'RCS dBsm' }),
-    ]
-  }),
-
-  // ── 通信保障 ──
-  _i({
-    name: '数据链组网', path: '/comm/datalink/join',
-    transportType: 'UDP',
-    transportConfig: { port: 5001, broadcast: false },
-    protocolRefs: [protoByName('sys-comm', '数据链帧字段')],
-    systemId: 'sys-comm', moduleId: byName('sys-comm', '数据链模块'),
-    desc: '加入战术数据链网络',
-    request: [
-      param({ name: 'netId', type: '常量', dataType: 'uint16', desc: '网络编号' }),
-      param({ name: 'nodeId', type: '常量', dataType: 'uint16', desc: '本节点编号' }),
-      param({ name: 'cryptoKey', type: '常量', dataType: 'string', desc: '加密密钥标识' }),
-    ],
-    response: [
-      param({ name: 'joined', type: '常量', dataType: 'uint8', desc: '1=入网成功' }),
-      param({ name: 'members', type: '结构矩阵', desc: '当前成员列表', children: [
-        param({ name: 'id', type: '常量', dataType: 'uint16' }),
-        param({ name: 'role', type: '常量', dataType: 'uint8', desc: '0=普通 1=主控' }),
-      ]}),
-    ]
-  }),
-  _i({
-    name: '卫通建链', path: '/comm/sat/link',
-    transportType: '4908A',
-    transportConfig: { port: 5002, timeout: 5000 },
-    protocolRefs: [protoByName('sys-comm', '卫通链路管理字段')],
-    systemId: 'sys-comm', moduleId: byName('sys-comm', '卫星通信模块'),
-    desc: '建立卫星通信链路',
-    request: [
-      param({ name: 'satId', type: '常量', dataType: 'uint8', desc: '目标卫星编号' }),
-      param({ name: 'bandwidth', type: '常量', dataType: 'uint16', desc: '申请带宽 KHz' }),
-    ],
-    response: [
-      param({ name: 'code', type: '常量', dataType: 'int32' }),
-      param({ name: 'signalStrength', type: '常量', dataType: 'int16', desc: '信号强度 dBm' }),
-      param({ name: 'linkRate', type: '常量', dataType: 'uint32', desc: '链路速率 bps' }),
-    ]
-  }),
-
-  // ── 导航定位 ──
-  _i({
-    name: '惯导校准', path: '/nav/ins/calibrate',
-    transportType: '4908A',
-    transportConfig: { port: 4001, timeout: 2000 },
-    protocolRefs: [protoByName('sys-nav', '惯导数据帧字段')],
-    systemId: 'sys-nav', moduleId: byName('sys-nav', '惯性导航模块'),
-    desc: '执行惯导系统初始校准',
-    request: [
-      param({ name: 'mode', type: '常量', dataType: 'uint8', desc: '0=冷启动 1=热启动 2=对准' }),
-      param({ name: 'refPos', type: '共识体', desc: '参考位置', children: [
-        param({ name: 'lat', type: '常量', dataType: 'double', desc: '纬度' }),
-        param({ name: 'lon', type: '常量', dataType: 'double', desc: '经度' }),
-        param({ name: 'alt', type: '常量', dataType: 'float', desc: '海拔 m' }),
-      ]}),
-    ],
-    response: [
-      param({ name: 'code', type: '常量', dataType: 'int32' }),
-      param({ name: 'readyTime', type: '常量', dataType: 'uint16', desc: '预计就绪时间 s' }),
-      param({ name: 'drift', type: '常量', dataType: 'float', desc: '零偏漂移' }),
-    ]
-  }),
-  _i({
-    name: '定位数据查询', path: '/nav/gnss/position',
-    transportType: '4908A',
-    transportConfig: { port: 4002, timeout: 1000 },
-    protocolRefs: [protoByName('sys-nav', '卫通定位帧字段')],
-    systemId: 'sys-nav', moduleId: byName('sys-nav', '卫星定位模块'),
-    desc: '查询当前定位解算结果',
-    request: [
-      param({ name: 'system', type: '常量', dataType: 'uint8', desc: '0=GPS 1=BDS 2=双模' }),
-    ],
-    response: [
-      param({ name: 'lat', type: '常量', dataType: 'double', desc: '纬度' }),
-      param({ name: 'lon', type: '常量', dataType: 'double', desc: '经度' }),
-      param({ name: 'alt', type: '常量', dataType: 'float', desc: '海拔 m' }),
-      param({ name: 'fixStatus', type: '常量', dataType: 'uint8', desc: '定位状态' }),
-      param({ name: 'satCount', type: '常量', dataType: 'uint8', desc: '可见星数' }),
-    ]
-  }),
-  _i({
-    name: '组合导航输出', path: '/nav/fusion/output',
-    transportType: '4908A',
-    transportConfig: { port: 4003, timeout: 500 },
-    protocolRefs: [protoByName('sys-nav', '惯导数据帧字段'), protoByName('sys-nav', '卫通定位帧字段')],
-    systemId: 'sys-nav', moduleId: byName('sys-nav', '组合导航模块'),
-    desc: '获取 INS/GNSS 紧组合滤波输出',
-    request: [
-      param({ name: 'rate', type: '常量', dataType: 'uint8', desc: '输出频率 Hz' }),
-    ],
-    response: [
-      param({ name: 'position', type: '共识体', desc: '融合位置', children: [
-        param({ name: 'lat', type: '常量', dataType: 'double' }),
-        param({ name: 'lon', type: '常量', dataType: 'double' }),
-        param({ name: 'alt', type: '常量', dataType: 'float' }),
-      ]}),
-      param({ name: 'velocity', type: '共识体', desc: '融合速度', children: [
-        param({ name: 'vn', type: '常量', dataType: 'float', desc: '北向 m/s' }),
-        param({ name: 've', type: '常量', dataType: 'float', desc: '东向 m/s' }),
-        param({ name: 'vd', type: '常量', dataType: 'float', desc: '地向 m/s' }),
-      ]}),
-      param({ name: 'rawFrame', type: '位组序流', desc: '原始导航帧' }),
-    ]
-  }),
-
-  // ── 电子对抗 ──
-  _i({
-    name: '威胁信号查询', path: '/ew/threat/query',
-    transportType: 'OSE',
-    transportConfig: { method: 'POST', contentType: 'application/json', headers: [{ key: 'Accept', value: 'application/json' }], auth: { type: 'bearer', token: '' } },
-    protocolRefs: [protoByName('sys-ew', '电磁侦察帧字段')],
-    systemId: 'sys-ew', moduleId: byName('sys-ew', '侦察分析模块'),
-    desc: '查询当前识别的威胁信号列表',
-    request: [
-      param({ name: 'freqRange', type: '共识体', desc: '频率范围', children: [
-        param({ name: 'low', type: '常量', dataType: 'uint32', desc: 'MHz' }),
-        param({ name: 'high', type: '常量', dataType: 'uint32', desc: 'MHz' }),
-      ]}),
-      param({ name: 'threatLevel', type: '常量', dataType: 'uint8', desc: '最低威胁等级' }),
-    ],
-    response: [
-      param({ name: 'signals', type: '结构矩阵', desc: '威胁信号列表', children: [
-        param({ name: 'id', type: '常量', dataType: 'uint16' }),
-        param({ name: 'type', type: '常量', dataType: 'uint8' }),
-        param({ name: 'freq', type: '常量', dataType: 'uint32', desc: 'MHz' }),
-        param({ name: 'threat', type: '常量', dataType: 'uint8', desc: '威胁等级' }),
-      ]}),
-      param({ name: 'rawFrame', type: '位组序流', desc: '侦察原始帧' }),
-    ]
-  }),
-  _i({
-    name: '干扰任务下发', path: '/ew/jam/task',
-    transportType: '4908A',
-    transportConfig: { port: 3002, timeout: 500 },
-    protocolRefs: [protoByName('sys-ew', '干扰指令帧字段')],
-    systemId: 'sys-ew', moduleId: byName('sys-ew', '干扰执行模块'),
-    desc: '下发干扰任务参数',
-    request: [
-      param({ name: 'targetId', type: '常量', dataType: 'uint16', desc: '目标信号ID' }),
-      param({ name: 'jamMode', type: '常量', dataType: 'uint8', desc: '干扰模式' }),
-      param({ name: 'power', type: '常量', dataType: 'uint8', desc: '功率等级' }),
-      param({ name: 'duration', type: '常量', dataType: 'uint16', desc: '持续时间 0.1s' }),
-    ],
-    response: [
-      param({ name: 'code', type: '常量', dataType: 'int32' }),
-      param({ name: 'taskId', type: '常量', dataType: 'uint32', desc: '干扰任务编号' }),
-    ]
-  }),
-  _i({
-    name: '频谱快照获取', path: '/ew/spectrum/snapshot',
-    transportType: 'OSE',
-    transportConfig: { method: 'GET', contentType: 'application/octet-stream', headers: [], auth: { type: 'bearer', token: '' } },
-    protocolRefs: [],
-    systemId: 'sys-ew', moduleId: byName('sys-ew', '频谱监测模块'),
-    desc: '获取当前电磁频谱快照数据',
-    request: [
-      param({ name: 'bandwidth', type: '常量', dataType: 'uint32', desc: '观测带宽 Hz' }),
-      param({ name: 'resolution', type: '常量', dataType: 'uint16', desc: '频率分辨率' }),
-    ],
-    response: [
-      param({ name: 'snapshot', type: '流文件', desc: '频谱数据文件' }),
-      param({ name: 'timestamp', type: '常量', dataType: 'uint32', desc: '采集时间戳' }),
-    ]
-  }),
-
-  // ── 无人机管控 ──
-  _i({
-    name: '飞行计划上传', path: '/uav/flightplan',
-    transportType: 'OSE',
-    transportConfig: { method: 'POST', contentType: 'application/json', headers: [{ key: 'Accept', value: 'application/json' }], auth: { type: 'bearer', token: '' } },
-    protocolRefs: [protoByName('sys-uav', '飞控遥测帧字段')],
-    systemId: 'sys-uav', moduleId: byName('sys-uav', '飞行控制模块'),
-    desc: '上传无人机飞行计划航点',
-    request: [
-      param({ name: 'uavId', type: '常量', dataType: 'uint16', desc: '无人机编号' }),
-      param({ name: 'waypoints', type: '结构矩阵', desc: '航点列表', children: [
-        param({ name: 'lat', type: '常量', dataType: 'double' }),
-        param({ name: 'lon', type: '常量', dataType: 'double' }),
-        param({ name: 'alt', type: '常量', dataType: 'float', desc: '高度 m' }),
-        param({ name: 'speed', type: '常量', dataType: 'uint16', desc: '空速 km/h' }),
-      ]}),
-    ],
-    response: [
-      param({ name: 'code', type: '常量', dataType: 'int32' }),
-      param({ name: 'planId', type: '常量', dataType: 'uint32', desc: '计划编号' }),
-      param({ name: 'eta', type: '常量', dataType: 'uint16', desc: '预计飞行时间 min' }),
-    ]
-  }),
-  _i({
-    name: '载荷参数配置', path: '/uav/payload/config',
-    transportType: '4908A',
-    transportConfig: { port: 2002, timeout: 1000 },
-    protocolRefs: [protoByName('sys-uav', '载荷控制帧字段')],
-    systemId: 'sys-uav', moduleId: byName('sys-uav', '任务载荷模块'),
-    desc: '配置任务载荷工作参数',
-    request: [
-      param({ name: 'payloadType', type: '常量', dataType: 'uint8', desc: '载荷类型' }),
-      param({ name: 'config', type: '共识体', desc: '配置项', children: [
-        param({ name: 'mode', type: '常量', dataType: 'uint8', desc: '工作模式' }),
-        param({ name: 'zoom', type: '常量', dataType: 'uint8', desc: '变焦倍率' }),
-        param({ name: 'exposure', type: '常量', dataType: 'uint16', desc: '曝光 ms' }),
-      ]}),
-    ],
-    response: [
-      param({ name: 'code', type: '常量', dataType: 'int32' }),
-      param({ name: 'rawFrame', type: '位组序流', desc: '载荷控制帧' }),
-    ]
-  }),
-  _i({
-    name: '实时图像流订阅', path: '/uav/video/stream',
-    transportType: 'OSE',
-    transportConfig: { method: 'POST', contentType: 'application/json', headers: [{ key: 'Accept', value: 'application/json' }], auth: { type: 'bearer', token: '' } },
-    protocolRefs: [],
-    systemId: 'sys-uav', moduleId: byName('sys-uav', '图像接收模块'),
-    desc: '订阅无人机下传实时图像流',
-    request: [
-      param({ name: 'uavId', type: '常量', dataType: 'uint16', desc: '无人机编号' }),
-      param({ name: 'quality', type: '常量', dataType: 'uint8', desc: '0=标清 1=高清 2=原始' }),
-    ],
-    response: [
-      param({ name: 'streamUrl', type: '常量', dataType: 'string', desc: '流地址' }),
-      param({ name: 'bitrate', type: '常量', dataType: 'uint32', desc: '码率 bps' }),
-      param({ name: 'codec', type: '常量', dataType: 'string', desc: '编码格式' }),
-    ]
-  }),
-
-  // ── 指挥控制 ──
-  _i({
-    name: '态势数据推送', path: '/cmd/situation/push',
-    transportType: 'OSE',
-    transportConfig: { method: 'POST', contentType: 'application/json', headers: [{ key: 'Authorization', value: 'Bearer {token}' }, { key: 'X-Request-Id', value: '{uuid}' }], auth: { type: 'bearer', token: '' } },
-    protocolRefs: [protoByName('sys-cmd', '态势标注帧字段')],
-    systemId: 'sys-cmd', moduleId: byName('sys-cmd', '态势感知模块'),
-    desc: '推送融合后的战场态势数据',
-    request: [
-      param({ name: 'area', type: '共识体', desc: '关注区域', children: [
-        param({ name: 'centerLat', type: '常量', dataType: 'double' }),
-        param({ name: 'centerLon', type: '常量', dataType: 'double' }),
-        param({ name: 'radius', type: '常量', dataType: 'uint32', desc: '半径 m' }),
-      ]}),
-      param({ name: 'filter', type: '常量', dataType: 'uint8', desc: '目标过滤类型' }),
-    ],
-    response: [
-      param({ name: 'entities', type: '结构矩阵', desc: '态势实体列表', children: [
-        param({ name: 'id', type: '常量', dataType: 'uint16' }),
-        param({ name: 'type', type: '常量', dataType: 'uint8' }),
-        param({ name: 'lat', type: '常量', dataType: 'double' }),
-        param({ name: 'lon', type: '常量', dataType: 'double' }),
-      ]}),
-      param({ name: 'rawFrame', type: '位组序流', desc: '态势标注帧' }),
-    ]
-  }),
-  _i({
-    name: '作战方案生成', path: '/cmd/plan/generate',
-    transportType: 'OSE',
-    transportConfig: { method: 'POST', contentType: 'multipart/form-data', headers: [{ key: 'Authorization', value: 'Bearer {token}' }, { key: 'X-Api-Version', value: '2.0' }], auth: { type: 'bearer', token: '' } },
-    protocolRefs: [],
-    systemId: 'sys-cmd', moduleId: byName('sys-cmd', '作战筹划模块'),
-    desc: '基于态势数据生成作战方案',
-    request: [
-      param({ name: 'missionType', type: '常量', dataType: 'uint8', desc: '任务类型' }),
-      param({ name: 'constraints', type: '共识体', desc: '约束条件', children: [
-        param({ name: 'maxTime', type: '常量', dataType: 'uint16', desc: '最大时长 min' }),
-        param({ name: 'resources', type: '常量', dataType: 'uint8', desc: '可用资源数' }),
-        param({ name: 'riskLevel', type: '常量', dataType: 'uint8', desc: '风险容忍度' }),
-      ]}),
-    ],
-    response: [
-      param({ name: 'planDoc', type: '流文件', desc: '作战方案文档' }),
-      param({ name: 'score', type: '常量', dataType: 'float', desc: '方案评分' }),
-      param({ name: 'alternatives', type: '常量', dataType: 'uint8', desc: '备选方案数' }),
-    ]
-  }),
-  _i({
-    name: '指令分发确认', path: '/cmd/order/dispatch',
-    transportType: '4908A',
-    transportConfig: { port: 1003, timeout: 2000 },
-    protocolRefs: [protoByName('sys-cmd', '作战指令编码字段')],
-    systemId: 'sys-cmd', moduleId: byName('sys-cmd', '指令下发模块'),
-    desc: '分发作战指令并获取回执',
-    request: [
-      param({ name: 'orderType', type: '常量', dataType: 'uint8', desc: '指令类型' }),
-      param({ name: 'targets', type: '结构矩阵', desc: '接收单位列表', children: [
-        param({ name: 'unitId', type: '常量', dataType: 'uint16' }),
-        param({ name: 'role', type: '常量', dataType: 'uint8' }),
-      ]}),
-      param({ name: 'content', type: '位组序流', desc: '指令编码帧' }),
-    ],
-    response: [
-      param({ name: 'orderId', type: '常量', dataType: 'uint32', desc: '指令流水号' }),
-      param({ name: 'ackCount', type: '常量', dataType: 'uint8', desc: '已确认单位数' }),
-      param({ name: 'status', type: '常量', dataType: 'uint8', desc: '0=待确认 1=全部确认' }),
-    ]
-  }),
-  _i({
-    name: '操作日志查询', path: '/cmd/audit/log',
-    transportType: 'OSE',
-    transportConfig: { method: 'GET', contentType: 'application/json', headers: [{ key: 'Accept', value: 'application/json' }], auth: { type: 'bearer', token: '' } },
-    protocolRefs: [],
-    systemId: 'sys-cmd', moduleId: byName('sys-cmd', '日志审计模块'),
-    desc: '查询指定时段的操作日志',
-    request: [
-      param({ name: 'timeRange', type: '共识体', desc: '时间范围', children: [
-        param({ name: 'start', type: '常量', dataType: 'uint32', desc: '起始时间戳' }),
-        param({ name: 'end', type: '常量', dataType: 'uint32', desc: '结束时间戳' }),
-      ]}),
-      param({ name: 'operator', type: '常量', dataType: 'string', desc: '操作员过滤' }),
-      param({ name: 'level', type: '常量', dataType: 'uint8', desc: '最低日志级别' }),
-    ],
-    response: [
-      param({ name: 'logs', type: '结构矩阵', desc: '日志条目', children: [
-        param({ name: 'timestamp', type: '常量', dataType: 'uint32' }),
-        param({ name: 'operator', type: '常量', dataType: 'string' }),
-        param({ name: 'action', type: '常量', dataType: 'string' }),
-        param({ name: 'level', type: '常量', dataType: 'uint8' }),
-      ]}),
-      param({ name: 'total', type: '常量', dataType: 'uint32', desc: '总条数' }),
-    ]
-  }),
-
 ]
-const scopedMessages = allInterfaces.filter(inSeedScope)
+
+// 报文导出：把内联字段提升为 __inline 字段协议，并生成 protocolRefs
+const inlineFieldPool = []
+const messageWithRefs = (message) => {
+  const fields = message.fields || []
+  const refs = fields.map((f) => {
+    inlineFieldPool.push(f)
+    return { protocolId: f.id }
+  })
+  const { fields: _fields, ...rest } = message
+  return { ...rest, protocolRefs: refs }
+}
+
+const scopedMessages = allInterfaces.filter(inSeedScope).map(messageWithRefs)
 const withSuffix = (name, suffix) => name.endsWith(suffix) ? name : `${name}${suffix}`
 
-// 报文与接口是两个独立层级：
-// 字段 → 报文 → 数据集 → 接口 → 发送/接收。
+// 报文字段池：全部为报文中内联定义的字段（__inline）
+export const protocols = inlineFieldPool
+
+// 报文与接口是两个独立层级：字段 → 报文 → 数据集 → 接口 → 发送/接收。
+// 报文不再携带传输类型，传输配置在收发监控侧按需定义。
 export const interfaces = scopedMessages.map((message) => ({
   ...message,
   name: withSuffix(message.name, '报文'),
