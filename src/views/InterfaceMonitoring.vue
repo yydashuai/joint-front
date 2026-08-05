@@ -38,6 +38,48 @@
       </div>
 
       <div class="main-panel">
+        <!-- 接口详情：选中系统接口/报文时显示，含报文列表（1:N） -->
+        <el-card v-if="detailIface" shadow="never" class="iface-detail">
+          <div class="iface-detail__head">
+            <div class="iface-detail__title">
+              <el-icon class="iface-detail__icon"><Link /></el-icon>
+              <span class="iface-detail__name">{{ detailIface.name }}</span>
+              <el-tag size="small" type="info" effect="plain">{{ ifaceTransportType(detailIface) }}</el-tag>
+              <el-tag size="small" effect="plain">{{ (detailIface.messageIds || []).length }} 报文</el-tag>
+            </div>
+            <el-button link type="primary" size="small" @click="openIfaceConfig(detailIface.id)">编辑接口</el-button>
+          </div>
+          <div class="iface-detail__meta">
+            {{ ifaceSystemName(detailIface) }} / {{ ifaceModuleName(detailIface) }}
+            <span v-if="detailIface.desc">· {{ detailIface.desc }}</span>
+          </div>
+          <div class="iface-detail__list">
+            <table class="iface-detail__table">
+              <thead>
+                <tr>
+                  <th>报文名称</th><th>传输类型</th><th>字段数</th><th>关联数据</th><th class="ta-r">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="m in ifaceMessages(detailIface)" :key="m.id">
+                  <td class="m-name">{{ m.name }}</td>
+                  <td>{{ m.transportType || '—' }}</td>
+                  <td>{{ messageFieldCount(m) }}</td>
+                  <td>{{ (m.datasetIds || []).length }}</td>
+                  <td class="ta-r m-ops">
+                    <el-button link type="primary" size="small" @click="goEditMessage(m)">配置</el-button>
+                    <el-button link type="success" size="small" @click="addSendInterface(detailIface.id)">发送</el-button>
+                    <el-button link type="info" size="small" @click="addReceiveInterface(detailIface.id)">接收</el-button>
+                  </td>
+                </tr>
+                <tr v-if="!ifaceMessages(detailIface).length">
+                  <td colspan="5" class="m-empty">该接口未配置报文，点击右上角「编辑接口」添加</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </el-card>
+
         <el-card shadow="never" class="monitoring-wizard">
           <div class="wizard-shell">
             <div class="wizard-steps" aria-label="接口收发监控">
@@ -246,7 +288,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, RefreshRight, Search, SwitchButton, Tickets, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import { Link, Plus, RefreshRight, Search, SwitchButton, Tickets, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import MonitorTree from '@/components/execution/MonitorTree.vue'
 import CustomIfaceDialog from '@/components/execution/CustomIfaceDialog.vue'
 import ListenConfigDialog from '@/components/execution/ListenConfigDialog.vue'
@@ -264,6 +306,8 @@ import { useTestDataStore } from '@/stores/testData'
 import { useTestTaskStore } from '@/stores/testTask'
 import { usePlanSchemeStore } from '@/stores/planScheme'
 import { useRunBatchStore } from '@/stores/runBatch'
+import { useSystemStore } from '@/stores/system'
+import { useConnectionStore } from '@/stores/connection'
 import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const route = useRoute()
@@ -276,6 +320,8 @@ const testDataStore = useTestDataStore()
 const taskStore = useTestTaskStore()
 const schemeStore = usePlanSchemeStore()
 const batchStore = useRunBatchStore()
+const systemStore = useSystemStore()
+const connStore = useConnectionStore()
 const { nextUniqueName, validateName } = useEntityNameGuard()
 
 protocolStore.migrateAllFromV1()
@@ -301,17 +347,38 @@ watch(() => route.query.mode, (mode) => {
   activeMode.value = mode === 'receive' ? 'receive' : 'send'
 })
 
-/* ---- 选中：系统接口 / 自定义接口 ---- */
+/* ---- 选中：系统接口 / 报文 / 自定义接口 ---- */
 const selectedIface = computed(() => {
   const match = selectedKey.value.match(/^iface-(.+)$/)
   if (!match) return null
   return protocolStore.testInterfaces.find((iface) => String(iface.id) === String(match[1])) || null
+})
+const selectedMessage = computed(() => {
+  const match = selectedKey.value.match(/^msg-(.+)$/)
+  if (!match) return null
+  return protocolStore.interfaces.find((m) => String(m.id) === String(match[1])) || null
 })
 const selectedCustom = computed(() => {
   const match = selectedKey.value.match(/^custom-(.+)$/)
   if (!match) return null
   return customStore.byId(match[1])
 })
+/** 报文所属接口（排他归属） */
+const ownerIfaceOf = (message) => {
+  if (!message?.ownerIfaceId) return null
+  return protocolStore.testInterfaces.find((i) => String(i.id) === String(message.ownerIfaceId)) || null
+}
+/** 右侧详情卡片的接口：选中接口本体，或选中其名下报文时取所属接口 */
+const detailIface = computed(() => selectedIface.value || ownerIfaceOf(selectedMessage.value))
+/** 接口名下报文（1:N） */
+const ifaceMessages = (iface) => (iface?.messageIds || [])
+  .map((id) => protocolStore.interfaces.find((m) => String(m.id) === String(id)))
+  .filter(Boolean)
+/** 接口聚合传输类型（取首个报文） */
+const ifaceTransportType = (iface) => ifaceMessages(iface)[0]?.transportType || '—'
+const messageFieldCount = (message) => (message?.protocolRefs || []).length
+const ifaceSystemName = (iface) => systemStore.systems.find((s) => s.id === iface?.systemId)?.name || '—'
+const ifaceModuleName = (iface) => connStore.nodes.find((n) => n.id === iface?.moduleId)?.name || '—'
 
 const transportConfigVisible = ref(false)
 const sendPlanInterfaces = computed(() => execution.planItems.map((item) => item.iface).filter(Boolean))
@@ -334,8 +401,8 @@ const totalEstimatedRequests = computed(() =>
 
 /* ---- 树徽标 ---- */
 const ifaceBadge = (iface) => {
-  const datasetCount = (iface.datasetIds || []).length
-  return datasetCount ? `${datasetCount} 数据集` : '未关联数据'
+  const count = (iface.messageIds || []).length
+  return count ? `${count} 报文` : '未配置报文'
 }
 const schemeBadge = (scheme) => `${(scheme.interfaceIds || []).length} 接口`
 const customBadge = (custom) =>
@@ -343,7 +410,7 @@ const customBadge = (custom) =>
 
 /* ---- 树事件 ---- */
 const onTreeSelect = (data) => {
-  if (['iface', 'custom'].includes(data.kind) && data.ref) {
+  if (['iface', 'custom', 'message'].includes(data.kind) && data.ref) {
     selectedKey.value = data.key
     return
   }
@@ -382,12 +449,43 @@ const onLeafAction = ({ action, data }) => {
     ElMessage.success('方案已删除')
   }
   if (action === 'config-iface') openIfaceConfig(data.ref.id)
+  if (action === 'add-message') openIfaceConfig(data.ref.id)
   if (action === 'iface-to-send') addSendInterface(data.ref.id)
   if (action === 'iface-to-receive') addReceiveInterface(data.ref.id)
   if (action === 'iface-test') addSendInterface(data.ref.id, { test: true })
   if (action === 'delete-iface') {
-    protocolStore.removeTestInterface(data.ref.id)
-    ElMessage.success('接口已删除')
+    const count = (data.ref.messageIds || []).length
+    const tip = count ? `接口名下 ${count} 个报文将一并删除，此操作不可撤销。` : ''
+    ElMessageBox.confirm(`${tip}确定删除接口「${data.ref.name}」吗？`, '删除接口', {
+      type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消',
+    }).then(() => {
+      protocolStore.removeTestInterface(data.ref.id)
+      selectedKey.value = ''
+      ElMessage.success('接口已删除')
+    }).catch(() => {})
+  }
+  if (action === 'config-message') goEditMessage(data.ref)
+  if (action === 'message-to-send') {
+    const owner = ownerIfaceOf(data.ref)
+    if (owner) addSendInterface(owner.id)
+  }
+  if (action === 'message-to-receive') {
+    const owner = ownerIfaceOf(data.ref)
+    if (owner) addReceiveInterface(owner.id)
+  }
+  if (action === 'message-test') {
+    const owner = ownerIfaceOf(data.ref)
+    if (owner) addSendInterface(owner.id, { test: true })
+  }
+  if (action === 'delete-message') {
+    const owner = ownerIfaceOf(data.ref)
+    ElMessageBox.confirm(`确定从接口「${owner?.name || '—'}」删除报文「${data.ref.name}」吗？`, '删除报文', {
+      type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消',
+    }).then(() => {
+      if (owner) protocolStore.removeMessageFromInterface(owner.id, data.ref.id)
+      selectedKey.value = ''
+      ElMessage.success('报文已删除')
+    }).catch(() => {})
   }
   if (action === 'config-custom') openCustomDialog(data.ref.id)
   if (action === 'listen-custom') openListenDialog(data.ref.id)
@@ -398,6 +496,14 @@ const onLeafAction = ({ action, data }) => {
     customStore.remove(data.ref.id)
     ElMessage.success('自定义接口已删除')
   }
+}
+
+/** 跳转报文字段管理页编辑指定报文 */
+const goEditMessage = (message) => {
+  if (!message) return
+  protocolStore.selectedInterfaceId = message.id
+  if (message.systemId) systemStore.setCurrent(message.systemId)
+  router.push({ path: '/protocol', query: { kind: 'interface', iface: String(message.id) } })
 }
 
 /* ---- 系统接口配置 ---- */
@@ -430,8 +536,8 @@ const openListenDialog = (id) => {
 
 const interfaceReadiness = (iface, role) => {
   const reasons = []
-  if (!(iface.datasetIds || []).length) {
-    reasons.push('未关联测试数据集')
+  if (!(iface.messageIds || []).length) {
+    reasons.push('未配置报文')
   } else if (!collectTestInterfaceFields(
     iface,
     testDataStore.datasets,
@@ -439,7 +545,7 @@ const interfaceReadiness = (iface, role) => {
     protocolStore.protocols,
     role,
   ).length) {
-    reasons.push(`关联的数据集没有可用${role === 'send' ? '发送' : '接收'}字段`)
+    reasons.push('接口名下报文没有可用字段')
   }
   return { ok: reasons.length === 0, reasons }
 }
@@ -837,8 +943,59 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   display: flex;
+  flex-direction: column;
+  gap: 10px;
   overflow: hidden;
 }
+.iface-detail {
+  flex-shrink: 0;
+  border-radius: 8px;
+  :deep(.el-card__body) { padding: 12px 16px; }
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  &__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  &__icon { color: var(--el-color-success); font-size: 15px; }
+  &__name { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__meta {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  &__list { margin-top: 10px; max-height: 220px; overflow: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
+  &__table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: 12px;
+    th, td { padding: 6px 10px; text-align: left; }
+    thead th {
+      color: var(--el-text-color-secondary);
+      background: var(--el-fill-color-light);
+      font-weight: 500;
+      position: sticky;
+      top: 0;
+    }
+    tbody tr { border-top: 1px solid var(--el-border-color-lighter); }
+    tbody tr:hover { background: var(--el-fill-color-extra-light); }
+    .m-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .m-empty { color: var(--el-text-color-placeholder); text-align: center; padding: 12px 0; }
+    .m-ops { white-space: nowrap; }
+  }
+}
+.ta-r { text-align: right !important; }
 .monitoring-wizard {
   flex: 1;
   min-height: 0;

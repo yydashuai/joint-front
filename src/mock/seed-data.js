@@ -327,29 +327,54 @@ const withSuffix = (name, suffix) => name.endsWith(suffix) ? name : `${name}${su
 // 报文字段池：全部为报文中内联定义的字段（__inline）
 export const protocols = inlineFieldPool
 
-// 报文与接口是两个独立层级：字段 → 报文 → 数据集 → 接口 → 发送/接收。
-// 报文不再携带传输类型，传输配置在收发监控侧按需定义。
+// ── 接口分组：报文排他归属（一个报文只属于一个接口；一个接口可挂多个报文）──
+// 演示 1:N：查询设备状态接口挂 2 报文（查询设备状态 + 帧控制指令），
+// 目标分配解算接口挂 2 报文（目标分配解算 + 遥测帧上报），其余 1:1。
+const IFACE_GROUPS = [
+  ['查询设备状态', '帧控制指令'],
+  ['武器装订指令'],
+  ['上报弹药余量'],
+  ['挂载状态查询'],
+  ['目标分配解算', '遥测帧上报'],
+  ['指挥指令下发'],
+]
+const ownerOfMessage = new Map() // 报文名 → 接口 id
+IFACE_GROUPS.forEach((names) => {
+  const first = scopedMessages.find((m) => m.name === names[0])
+  if (!first) return
+  const ifaceId = `endpoint-${first.id}`
+  names.forEach((n) => ownerOfMessage.set(n, ifaceId))
+})
+
+// 报文实体：携带传输配置与字段引用；ownerIfaceId 标注排他归属
 export const interfaces = scopedMessages.map((message) => ({
   ...message,
   name: withSuffix(message.name, '报文'),
+  ownerIfaceId: ownerOfMessage.get(message.name) || null,
 }))
 
-export const testInterfaces = scopedMessages.map((message) => ({
-  id: `endpoint-${message.id}`,
-  name: withSuffix(message.name, '接口'),
-  systemId: message.systemId,
-  moduleId: message.moduleId,
-  datasetIds: [...(message.datasetIds || [])],
-  desc: `${message.name}联试接口`,
-  strategy: {
-    trigger: 'manual',
-    scheduleAt: null,
-    periodicInterval: 60,
-    periodicUnit: 's',
-    periodicCount: null,
-  },
-  sendInterval: 500,
-}))
+// 测试接口：直挂报文（messageIds）
+export const testInterfaces = IFACE_GROUPS.map((names) => {
+  const msgs = names.map((n) => scopedMessages.find((m) => m.name === n)).filter(Boolean)
+  const first = msgs[0]
+  return {
+    id: ownerOfMessage.get(first.name),
+    name: withSuffix(first.name, '接口'),
+    systemId: first.systemId,
+    moduleId: first.moduleId,
+    datasetIds: [...new Set(msgs.flatMap((m) => m.datasetIds || []))],
+    desc: `${first.name}联试接口`,
+    strategy: {
+      trigger: 'manual',
+      scheduleAt: null,
+      periodicInterval: 60,
+      periodicUnit: 's',
+      periodicCount: null,
+    },
+    sendInterval: 500,
+    messageIds: msgs.map((m) => m.id),
+  }
+})
 
 /* ────────────────────────────────────────────
  *  五、联试任务 (Tasks)

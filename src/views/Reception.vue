@@ -339,11 +339,11 @@ const openHeaderIfaceDialog = () => {
   openIfaceConfig(null, null)
 }
 
-/* ---- 接收侧就绪：接口关联数据集；数据集再关联报文和字段。 ---- */
+/* ---- 接收侧就绪：接口需配置报文；报文再解析字段。 ---- */
 const interfaceReadiness = (iface) => {
   const reasons = []
-  if (!(iface.datasetIds || []).length) {
-    reasons.push('未关联测试数据集')
+  if (!(iface.messageIds || []).length) {
+    reasons.push('未配置报文')
   } else if (!collectTestInterfaceFields(
     iface,
     testDataStore.datasets,
@@ -351,7 +351,7 @@ const interfaceReadiness = (iface) => {
     protocolStore.protocols,
     'receive',
   ).length) {
-    reasons.push('关联的数据集没有可用报文或字段')
+    reasons.push('接口名下报文没有可用字段')
   }
   return { ok: !reasons.length, reasons }
 }

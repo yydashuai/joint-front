@@ -413,11 +413,11 @@ const openHeaderIfaceDialog = () => {
   openIfaceConfig(null, null)
 }
 
-/* ---- 接口完整性校验：接口只需显式关联数据集；报文与字段由数据集向下解析。 ---- */
+/* ---- 接口完整性校验：接口需配置报文（排他归属 1:N）；字段由报文解析。 ---- */
 const interfaceReadiness = (iface) => {
   const reasons = []
-  if (!(iface.datasetIds || []).length) {
-    reasons.push('未关联测试数据集（请在接口配置中绑定至少一个数据集）')
+  if (!(iface.messageIds || []).length) {
+    reasons.push('未配置报文（请在接口配置中添加至少一个报文）')
   } else if (!collectTestInterfaceFields(
     iface,
     testDataStore.datasets,
@@ -425,7 +425,7 @@ const interfaceReadiness = (iface) => {
     protocolStore.protocols,
     'send',
   ).length) {
-    reasons.push('关联的数据集没有可用报文或字段')
+    reasons.push('接口名下报文没有可用字段')
   }
   return { ok: !reasons.length, reasons }
 }

@@ -5,6 +5,7 @@ import {
   testInterfaces as seedTestInterfaces,
 } from '@/mock/seed-data'
 import { makeUniqueName } from '@/utils/entityName'
+import { useTestDataStore } from '@/stores/testData'
 
 let seq = 2000
 export const uid = () => ++seq
@@ -85,8 +86,9 @@ export const collectInterfaceFields = (iface, protocols = [], role = null) => {
 }
 
 /**
- * 按“接口 → 数据集 → 报文 → 字段”链路收集接口最终使用的字段。
- * datasets 中的 linkedInterface 是历史字段名，实际表示其关联报文名称。
+ * 按“接口 → 报文 → 字段”链路收集接口最终使用的字段（报文排他归属模型）。
+ * 优先走接口直挂报文（testInterface.messageIds → 报文实体），
+ * 无 messageIds 时回退旧链路（接口 → 数据集 → 数据集关联报文），保证老数据兼容。
  */
 export const collectTestInterfaceFields = (
   testInterface,
@@ -96,20 +98,27 @@ export const collectTestInterfaceFields = (
   role = null,
 ) => {
   if (!testInterface) return []
+  const seen = new Set()
+  const dedup = (list) => list.filter((field) => {
+    const key = String(field.id ?? field.name)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  // 新链路：接口直接持有报文（1:N）
+  const ownedIds = new Set((testInterface.messageIds || []).map((id) => String(id)))
+  const ownedMessages = messages.filter((message) => ownedIds.has(String(message.id)))
+  if (ownedMessages.length) {
+    return dedup(ownedMessages.flatMap((message) => collectInterfaceFields(message, protocols, role)))
+  }
+  // 旧链路（兼容）：接口 → 数据集 → 数据集关联报文
   const datasetIds = new Set((testInterface.datasetIds || []).map((id) => String(id)))
   const linkedDatasets = datasets.filter((dataset) => datasetIds.has(String(dataset.id)))
   const linkedMessageNames = new Set(linkedDatasets
     .map((dataset) => dataset.linkedInterface || dataset.linkedMessage)
     .filter(Boolean))
   const linkedMessages = messages.filter((message) => linkedMessageNames.has(message.name))
-  const fields = linkedMessages.flatMap((message) => collectInterfaceFields(message, protocols, role))
-  const seen = new Set()
-  return fields.filter((field) => {
-    const key = String(field.id ?? field.name)
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
+  return dedup(linkedMessages.flatMap((message) => collectInterfaceFields(message, protocols, role)))
 }
 
 /**
@@ -780,10 +789,14 @@ export const useProtocolStore = defineStore('protocol', {
         if (!Array.isArray(i.datasetIds)) i.datasetIds = []
         if (!i.strategy) i.strategy = defaultIfaceStrategy()
         if (!i.sendInterval) i.sendInterval = 500
+        if (i.ownerIfaceId === undefined) i.ownerIfaceId = null // 排他归属：所属接口 id
         return i
       }),
-    // 接口独立于报文：接口只关联数据集；数据集再关联报文，报文再引用字段。
-    testInterfaces: JSON.parse(JSON.stringify(seedTestInterfaces)),
+    // 接口独立于报文：接口持有报文（messageIds，排他归属），报文再引用字段。
+    testInterfaces: JSON.parse(JSON.stringify(seedTestInterfaces)).map((i) => ({
+      ...i,
+      messageIds: Array.isArray(i.messageIds) ? i.messageIds : [],
+    })),
     selectedProtocolId: null,
     selectedInterfaceId: null,
     selectedTestInterfaceId: null,
@@ -801,6 +814,9 @@ export const useProtocolStore = defineStore('protocol', {
   actions: {
     /* ---- v1 → v2 数据迁移 ---- */
     migrateAllFromV1() {
+      // ── 阶段0: 报文排他归属迁移（接口直挂报文 messageIds / 报文 ownerIfaceId）──
+      this.migrateMessageOwnership()
+
       // ── 阶段1: 迁移报文传输配置与显式字段引用 ──
       // 字段与报文是独立层级，不再把旧 request/response 自动生成顶层字段。
       this.interfaces = this.interfaces.map((iface) => {
@@ -870,6 +886,101 @@ export const useProtocolStore = defineStore('protocol', {
             : 'struct'
         }
       })
+    },
+
+    /* ---- 报文排他归属迁移：接口直挂报文 ----
+     * 新模型：报文只属于一个接口（ownerIfaceId），接口持 messageIds 顺序索引。
+     * 迁移：对没有 messageIds 的旧接口，从旧链路
+     *   datasetIds → 数据集.linkedInterface/linkedMessage → 报文实体 反推归属回填。
+     * 幂等：已有 messageIds 的接口跳过。
+     */
+    migrateMessageOwnership() {
+      const dataStore = useTestDataStore()
+      // 1) 接口缺 messageIds → 从旧数据集链路反推
+      this.testInterfaces.forEach((iface) => {
+        if (!iface || !Array.isArray(iface.messageIds) || !iface.messageIds.length) {
+          const ids = new Set((iface?.datasetIds || []).map((id) => String(id)))
+          const names = (dataStore.datasets || [])
+            .filter((d) => ids.has(String(d.id)))
+            .map((d) => d.linkedInterface || d.linkedMessage)
+            .filter(Boolean)
+          const owned = this.interfaces.filter((m) =>
+            names.some((n) => m.name === n || String(m.id) === String(n))
+          )
+          iface.messageIds = owned.map((m) => m.id)
+          owned.forEach((m) => { m.ownerIfaceId = iface.id })
+        }
+      })
+      // 2) 反向：报文已标归属但接口未回填 → 补回
+      this.interfaces.forEach((m) => {
+        if (!m.ownerIfaceId) return
+        const iface = this.testInterfaces.find((i) => String(i.id) === String(m.ownerIfaceId))
+        if (iface && !(iface.messageIds || []).some((id) => String(id) === String(m.id))) {
+          iface.messageIds = [...(iface.messageIds || []), m.id]
+        }
+      })
+    },
+
+    /* ---- 报文：接口下新增（排他归属） ----
+     * 新建报文实体并归属到指定接口；transportType 在报文体上配置。
+     */
+    addMessageToInterface(ifaceId, payload = {}) {
+      const iface = this.testInterfaces.find((i) => String(i.id) === String(ifaceId))
+      if (!iface) return null
+      const message = this.addInterface({
+        name: payload.name || '新建报文',
+        transportType: payload.transportType || 'OSE',
+        ownerIfaceId: ifaceId,
+        desc: payload.desc || '',
+        systemId: payload.systemId ?? iface.systemId ?? null,
+        moduleId: payload.moduleId ?? iface.moduleId ?? null,
+      })
+      iface.messageIds = [...(iface.messageIds || []), message.id]
+      return message
+    },
+
+    /* ---- 报文：移动到接口（排他归属：自动从原接口摘除） ---- */
+    attachMessageToInterface(ifaceId, messageId) {
+      const iface = this.testInterfaces.find((i) => String(i.id) === String(ifaceId))
+      const message = this.interfaces.find((m) => String(m.id) === String(messageId))
+      if (!iface || !message) return false
+      // 从原归属接口摘除
+      this.testInterfaces.forEach((i) => {
+        if (String(i.id) === String(ifaceId)) return
+        const idx = (i.messageIds || []).findIndex((id) => String(id) === String(messageId))
+        if (idx >= 0) i.messageIds.splice(idx, 1)
+      })
+      message.ownerIfaceId = ifaceId
+      if (!(iface.messageIds || []).some((id) => String(id) === String(messageId))) {
+        iface.messageIds = [...(iface.messageIds || []), messageId]
+      }
+      return true
+    },
+
+    /* ---- 报文：从接口移除（排他归属下删除即移除，报文实体一并删除） ---- */
+    removeMessageFromInterface(ifaceId, messageId) {
+      const iface = this.testInterfaces.find((i) => String(i.id) === String(ifaceId))
+      if (iface) {
+        iface.messageIds = (iface.messageIds || []).filter((id) => String(id) !== String(messageId))
+      }
+      this._removeInterfaceEntity(messageId)
+      return true
+    },
+
+    // 删除报文实体（含 __inline 字段协议清理）
+    _removeInterfaceEntity(id) {
+      const target = this.interfaces.find((m) => String(m.id) === String(id))
+      const idx = this.interfaces.findIndex((m) => String(m.id) === String(id))
+      if (idx >= 0) this.interfaces.splice(idx, 1)
+      // 内联字段协议一并清理
+      if (target) {
+        ;(target.protocolRefs || []).forEach((ref) => {
+          const pid = ref && typeof ref === 'object' ? ref.protocolId : ref
+          const proto = this.protocols.find((p) => p.id === pid)
+          if (proto?.__inline) this.removeProtocol(pid)
+        })
+      }
+      if (this.selectedInterfaceId === id) this.selectedInterfaceId = this.interfaces[0]?.id ?? null
     },
 
     /* ---- 字段 ---- */
@@ -1048,6 +1159,7 @@ export const useProtocolStore = defineStore('protocol', {
         desc: it.desc || '',
         operationType: it.operationType || '',
         datasetIds: it.datasetIds || [],
+        ownerIfaceId: it.ownerIfaceId ?? null, // 排他归属：所属接口 id
         strategy: it.strategy || defaultIfaceStrategy(),
         sendInterval: it.sendInterval || 500,
       }
@@ -1058,9 +1170,13 @@ export const useProtocolStore = defineStore('protocol', {
     removeInterface(id) {
       const i = this.interfaces.findIndex((x) => x.id === id)
       if (i >= 0) this.interfaces.splice(i, 1)
+      // 排他归属：清理接口对已删报文的引用
+      this.testInterfaces.forEach((iface) => {
+        iface.messageIds = (iface.messageIds || []).filter((mid) => String(mid) !== String(id))
+      })
       if (this.selectedInterfaceId === id) this.selectedInterfaceId = this.interfaces[0]?.id ?? null
     },
-    /* ---- 接口（位于数据集之上，与报文分离） ---- */
+    /* ---- 接口（排他归属报文，1:N） ---- */
     addTestInterface(it = {}) {
       const ni = {
         id: `endpoint-${uid()}`,
@@ -1071,6 +1187,7 @@ export const useProtocolStore = defineStore('protocol', {
         systemId: it.systemId ?? null,
         moduleId: it.moduleId ?? null,
         datasetIds: it.datasetIds || [],
+        messageIds: it.messageIds || [], // 排他归属的报文 id 列表（顺序索引）
         desc: it.desc || '',
         strategy: it.strategy || defaultIfaceStrategy(),
         sendInterval: it.sendInterval || 500,
@@ -1081,7 +1198,14 @@ export const useProtocolStore = defineStore('protocol', {
     },
     removeTestInterface(id) {
       const i = this.testInterfaces.findIndex((item) => item.id === id)
-      if (i >= 0) this.testInterfaces.splice(i, 1)
+      if (i >= 0) {
+        // 排他归属：删除接口时级联删除其名下报文（不产生孤儿报文）
+        const iface = this.testInterfaces[i]
+        ;[...(iface.messageIds || [])].forEach((messageId) => {
+          this._removeInterfaceEntity(messageId)
+        })
+        this.testInterfaces.splice(i, 1)
+      }
       if (this.selectedTestInterfaceId === id) {
         this.selectedTestInterfaceId = this.testInterfaces[0]?.id ?? null
       }
