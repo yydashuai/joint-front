@@ -62,6 +62,23 @@ const historyRowsFromDataset = (dataset) => {
   }))
 }
 
+/**
+ * 解析数据集关联的报文实体（1 报文 : N 数据集）：
+ * 优先按 messageId（报文实体 id），回退按 linkedInterface（报文名，兼容旧数据）。
+ */
+const resolveLinkedIface = (ds, protocolStore) => {
+  if (ds?.messageId != null && ds.messageId !== '') {
+    const m = protocolStore.interfaces.find((i) => String(i.id) === String(ds.messageId))
+    if (m) return m
+  }
+  if (ds?.linkedInterface) {
+    return protocolStore.interfaces.find(
+      (i) => i.name === ds.linkedInterface || String(i.id) === String(ds.linkedInterface)
+    ) || null
+  }
+  return null
+}
+
 const normalizeDatasets = () => {
   const list = clone(seedDatasets).map(dataset => ({
     ...dataset,
@@ -87,6 +104,10 @@ export const useTestDataStore = defineStore('testData', {
 
     datasetsOfModule: (state) => (moduleName, systemId) =>
       state.datasets.filter(d => d.systemId === systemId && d.moduleName === moduleName),
+
+    /** 按报文实体 id 取数据集（1 报文 : N 数据集） */
+    datasetsOfMessage: (state) => (messageId) =>
+      state.datasets.filter(d => String(d.messageId) === String(messageId)),
 
     filesOfModule: (state) => (moduleName, systemId) =>
       state.files.filter(f => f.systemId === systemId && f.moduleName === moduleName),
@@ -132,7 +153,7 @@ export const useTestDataStore = defineStore('testData', {
 
     /**
      * 按数据集解析其关联字段定义（含约束与说明），供编辑弹窗预填与悬浮提示使用。
-     * 解析优先级：linkedInterface（报文 → protocolRefs 字段）> linkedProtocol（协议字段）。
+     * 解析优先级：messageId（报文实体）> linkedInterface（报文名）> linkedProtocol（协议字段）。
      * 字段名去重，返回 [{ name, constraint, desc }]。
      */
     fieldDefsOfDataset: (state) => (datasetId) => {
@@ -140,12 +161,8 @@ export const useTestDataStore = defineStore('testData', {
       if (!ds) return []
       const protocolStore = useProtocolStore()
       let fields = []
-      if (ds.linkedInterface) {
-        const iface = protocolStore.interfaces.find(
-          (i) => i.name === ds.linkedInterface || String(i.id) === String(ds.linkedInterface)
-        )
-        if (iface) fields = collectInterfaceDatasetFields(iface, protocolStore.protocols)
-      }
+      const iface = resolveLinkedIface(ds, protocolStore)
+      if (iface) fields = collectInterfaceDatasetFields(iface, protocolStore.protocols)
       if (!fields.length && ds.linkedProtocol) {
         const proto = protocolStore.protocols.find(
           (p) => p.name === ds.linkedProtocol || String(p.id) === String(ds.linkedProtocol)
@@ -174,13 +191,21 @@ export const useTestDataStore = defineStore('testData', {
 
     /* ========== 数据集 CRUD ========== */
     addDataset(data) {
+      const protocolStore = useProtocolStore()
+      // messageId 优先：新建数据集绑定报文（1 报文 : N 数据集）；顺带回填 linkedInterface 兼容旧逻辑
+      let linkedInterface = data.linkedInterface || null
+      if (data.messageId && !linkedInterface) {
+        const m = protocolStore.interfaces.find((i) => String(i.id) === String(data.messageId))
+        if (m) linkedInterface = m.name
+      }
       const ds = {
         id: ++_dsSeq,
         name: makeUniqueName(this.datasets, data.name || '新建数据集'),
         systemId: data.systemId,
         moduleName: data.moduleName,
         linkedProtocol: data.linkedProtocol || null,
-        linkedInterface: data.linkedInterface || null,
+        linkedInterface,
+        messageId: data.messageId || null,
         desc: data.desc || '',
         createdAt: new Date().toISOString().slice(0, 10),
         rows: [],
@@ -189,6 +214,20 @@ export const useTestDataStore = defineStore('testData', {
       this.datasets.unshift(ds)
       this.selectedDatasetId = ds.id
       return ds
+    },
+
+    /** 报文归属迁移：从 linkedInterface（报文名）反查报文实体 id 回填 messageId（幂等） */
+    migrateMessageLink() {
+      const protocolStore = useProtocolStore()
+      this.datasets.forEach((ds) => {
+        if (ds.messageId != null && ds.messageId !== '') return
+        const iface = ds.linkedInterface
+          ? protocolStore.interfaces.find(
+            (i) => i.name === ds.linkedInterface || String(i.id) === String(ds.linkedInterface)
+          )
+          : null
+        ds.messageId = iface ? iface.id : null
+      })
     },
 
     removeDataset(id) {
@@ -405,13 +444,9 @@ export const useTestDataStore = defineStore('testData', {
       if (!ds) return false
       const protocolStore = useProtocolStore()
       let fields = []
-      // 1) 优先按接口（报文）解析字段
-      if (ds.linkedInterface) {
-        const iface = protocolStore.interfaces.find(
-          (i) => i.name === ds.linkedInterface || String(i.id) === String(ds.linkedInterface)
-        )
-        if (iface) fields = collectInterfaceDatasetFields(iface, protocolStore.protocols)
-      }
+      // 1) 优先按报文解析字段（messageId → linkedInterface 兼容）
+      const iface = resolveLinkedIface(ds, protocolStore)
+      if (iface) fields = collectInterfaceDatasetFields(iface, protocolStore.protocols)
       // 2) 退化：按协议（字段）解析
       if (!fields.length && ds.linkedProtocol) {
         const proto = protocolStore.protocols.find(
@@ -469,12 +504,8 @@ export const useTestDataStore = defineStore('testData', {
       // 解析字段定义（含约束），用于生成合规 / 违规数据
       const protocolStore = useProtocolStore()
       let defs = []
-      if (ds.linkedInterface) {
-        const iface = protocolStore.interfaces.find(
-          (i) => i.name === ds.linkedInterface || String(i.id) === String(ds.linkedInterface)
-        )
-        if (iface) defs = collectInterfaceDatasetFields(iface, protocolStore.protocols)
-      }
+      const iface = resolveLinkedIface(ds, protocolStore)
+      if (iface) defs = collectInterfaceDatasetFields(iface, protocolStore.protocols)
       if (!defs.length && ds.linkedProtocol) {
         const proto = protocolStore.protocols.find(
           (p) => p.name === ds.linkedProtocol || String(p.id) === String(ds.linkedProtocol)

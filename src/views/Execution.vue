@@ -413,19 +413,24 @@ const openHeaderIfaceDialog = () => {
   openIfaceConfig(null, null)
 }
 
-/* ---- 接口完整性校验：接口需配置报文（排他归属 1:N）；字段由报文解析。 ---- */
+/* ---- 接口完整性校验：接口需配置报文（排他归属 1:N）；文件报文放行字段检查。 ---- */
 const interfaceReadiness = (iface) => {
   const reasons = []
   if (!(iface.messageIds || []).length) {
     reasons.push('未配置报文（请在接口配置中添加至少一个报文）')
-  } else if (!collectTestInterfaceFields(
-    iface,
-    testDataStore.datasets,
-    protocolStore.interfaces,
-    protocolStore.protocols,
-    'send',
-  ).length) {
-    reasons.push('接口名下报文没有可用字段')
+  } else {
+    const msgs = (iface.messageIds || [])
+      .map((id) => protocolStore.interfaces.find((m) => String(m.id) === String(id)))
+      .filter(Boolean)
+    if (!msgs.some((m) => m.fileId) && !collectTestInterfaceFields(
+      iface,
+      testDataStore.datasets,
+      protocolStore.interfaces,
+      protocolStore.protocols,
+      'send',
+    ).length) {
+      reasons.push('接口名下报文没有可用字段')
+    }
   }
   return { ok: !reasons.length, reasons }
 }

@@ -61,6 +61,22 @@ const taskDatasets = (task, dataStore) => {
   return dataStore.datasets.filter((item) => ids.some((id) => normalizeId(id) === normalizeId(item.id)))
 }
 
+/** 接口名下报文（排他归属 1:N） */
+const ifaceMessages = (iface, protocolStore) => (iface?.messageIds || [])
+  .map((id) => protocolStore.interfaces.find((m) => String(m.id) === String(id)))
+  .filter(Boolean)
+
+/** 文本内容转 hex 字节串（UTF-16 code unit 逐字符，适用于文本/ASCII/中文 BMP） */
+const textToHex = (text) => {
+  const str = String(text ?? '')
+  if (!str) return ''
+  const bytes = []
+  for (let i = 0; i < str.length; i += 1) {
+    bytes.push(str.charCodeAt(i) & 0xFF)
+  }
+  return bytes.map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')
+}
+
 /**
  * 按字段约束补齐一条待发送数据的完整字段值。
  * 数据集行已有的值优先保留；缺失的字段按约束生成默认发送值
@@ -356,6 +372,34 @@ export const useExecutionStore = defineStore('execution', {
           }
           continue
         }
+        // 文件直发：接口名下存在带 fileId 的报文 → 文件内容原样直发（不修改不校验）
+        const fileMessage = ifaceMessages(item.iface, protocolStore).find((m) => m.fileId)
+        if (fileMessage) {
+          const file = useTestDataStore().files.find((f) => String(f.id) === String(fileMessage.fileId))
+          const content = file?.content || ''
+          const fileHex = textToHex(content)
+          queue.push({
+            id: uid('sq'),
+            taskId: item.taskId,
+            planIndex: item.index,
+            iface: item.iface?.name || '未命名接口',
+            proto: item.iface?.path?.startsWith('/') ? 'HTTP' : 'TCP',
+            label: `文件直发·${file?.name || '文件'}`,
+            datasetName: '',
+            datasetId: null,
+            fields: [],
+            values: { 文件内容: content },
+            variant: 'normal',
+            issues: [],
+            status: 'pending',            // pending | sent
+            time: '',
+            hex: fileHex,
+            fileHex,
+            isFileDirect: true,
+            interval: item.interval ?? 500,
+          })
+          continue
+        }
         const fields = item.iface
           ? collectTestInterfaceFields(
             item.iface,
@@ -616,7 +660,8 @@ export const useExecutionStore = defineStore('execution', {
 
       this.activeTaskId = entry.taskId
       this.activePlanIndex = entry.planIndex
-      const reqHex = makeHex(rnd(10, 18))
+      // 文件直发/自定义直发：保留原始报文内容 hex；其余按随机 hex 模拟
+      const reqHex = entry.fileHex || makeHex(rnd(10, 18))
       const isAbnormal = entry.variant === 'abnormal'
 
       entry.status = 'sent'

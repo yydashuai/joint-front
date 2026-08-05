@@ -44,9 +44,9 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="关联模块" width="180" sortable="custom" prop="moduleName">
+      <el-table-column label="来源" width="120" sortable="custom" prop="moduleName">
         <template #default="{ row }">
-          <span class="text-sub">{{ row.moduleName || '—' }}</span>
+          <span class="text-sub">{{ row.moduleName ? `模块·${row.moduleName}` : '文件库' }}</span>
         </template>
       </el-table-column>
       <el-table-column label="格式" width="80" align="center" sortable="custom" prop="format">

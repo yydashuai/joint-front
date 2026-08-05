@@ -1,15 +1,15 @@
 <template>
-  <el-card class="mtree" shadow="never" :body-style="bodyStyle">
+  <el-card class="dtree" shadow="never" :body-style="bodyStyle">
     <template #header>
-      <div class="mtree__head">
-        <span class="mtree__title">{{ title }}</span>
+      <div class="dtree__head">
+        <span class="dtree__title">{{ title }}</span>
         <el-button link type="info" size="small" :icon="treeFullyExpanded ? Fold : Expand" @click="toggleAll">
           {{ treeFullyExpanded ? '全部收起' : '全部展开' }}
         </el-button>
       </div>
     </template>
 
-    <el-scrollbar class="mtree__scroll">
+    <el-scrollbar class="dtree__scroll">
       <el-tree
         ref="treeRef"
         :data="treeData"
@@ -24,12 +24,7 @@
         @node-contextmenu="onContextMenu"
       >
         <template #default="{ data }">
-          <div
-            class="tnode"
-            :class="[`tnode--${data.kind}`, { 'tnode--draggable': isDraggableLeaf(data) }]"
-            :draggable="isDraggableLeaf(data)"
-            @dragstart="onDragStart($event, data)"
-          >
+          <div class="tnode" :class="`tnode--${data.kind}`">
             <el-icon class="tnode__icon"><component :is="data.icon" /></el-icon>
             <span class="tnode__label">{{ data.label }}</span>
             <span v-if="data.badge" class="tnode__badge">{{ data.badge }}</span>
@@ -65,150 +60,138 @@
 
 <script setup>
 /**
- * 接口收发监控专用树：三个固定顶级分组（系统接口 / 方案 / 自定义接口）。
- * - 不再展示与管理系统、模块层级。
- * - 系统接口：接口直挂报文（1:N，排他归属）；接口展开显示其报文，报文徽标 = 传输类型·字段数。
- * - 方案：叶子 = 接口方案，展开显示方案内接口（系统接口可继续展开报文；自定义接口为密文叶子）。
- * - 自定义接口：密文接口为叶子，无报文/字段（点击不打开界面，仅右键/拖拽可用）。
- * 徽标由页面通过 badge 函数注入，避免组件耦合具体 store 计算。
+ * 测试数据集树：三个固定顶级分组。
+ * - 系统接口：接口 → 报文 → 数据集（接口直挂报文 1:N，报文直挂数据集 1:N）。
+ * - 数据集方案：方案 → 数据集成员。
+ * - 未关联报文：游离数据集（messageId 未指向有效报文的旧数据兼容）。
+ * 密文接口（自定义接口）无报文/字段，不在此树展示。
  */
 import { computed, nextTick, ref, watch } from 'vue'
 import { Fold, Expand } from '@element-plus/icons-vue'
 import { useProtocolStore } from '@/stores/protocol'
-import { usePlanSchemeStore } from '@/stores/planScheme'
-import { useCustomIfaceStore } from '@/stores/customIface'
+import { useTestDataStore } from '@/stores/testData'
+import { useDatasetSchemeStore } from '@/stores/datasetScheme'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
-  title: { type: String, default: '接口监控树' },
+  title: { type: String, default: '测试数据集' },
   search: { type: String, default: '' },
-  emptyText: { type: String, default: '暂无接口，请先在报文/数据管理中定义' },
-  ifaceBadge: { type: Function, default: () => '' },
-  schemeBadge: { type: Function, default: () => '' },
-  customBadge: { type: Function, default: () => '' },
-  messageBadge: { type: Function, default: null }, // 缺省按「传输类型·N字段」计算
-  editorMode: { type: Boolean, default: false },    // 编辑器模式（报文字段管理页）：精简右键菜单、仅系统接口分组显示添加按钮
-  extraContextActions: { type: Function, default: () => [] }, // 节点额外右键项，如 [{label, action}]
+  emptyText: { type: String, default: '暂无数据集，请先配置报文并新建数据集' },
+  datasetBadge: { type: Function, default: null }, // 缺省按「N 行」计算
   bodyStyle: {
     type: Object,
     default: () => ({ padding: '0', flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }),
   },
 })
-const emit = defineEmits(['update:modelValue', 'select', 'add-leaf', 'delete-leaf', 'leaf-action'])
+const emit = defineEmits(['update:modelValue', 'select', 'add-leaf', 'leaf-action'])
 
 const protocolStore = useProtocolStore()
-const schemeStore = usePlanSchemeStore()
-const customStore = useCustomIfaceStore()
+const tdStore = useTestDataStore()
+const schemeStore = useDatasetSchemeStore()
 
 const treeRef = ref()
 const expandedKeys = ref([])
 const collapsedKeys = ref(new Set())
 const expansionReady = ref(false)
 
+/* ---- 数据解析 ---- */
 const matches = (name, desc = '') => {
   const kw = props.search.trim().toLowerCase()
   if (!kw) return true
   return name.toLowerCase().includes(kw) || desc.toLowerCase().includes(kw)
 }
-
-/* ---- 报文节点（排他归属：接口直挂报文 1:N） ---- */
+const rowCountOf = (ds) => (ds.rows || []).length
+const datasetBadgeOf = (ds) => (props.datasetBadge ? props.datasetBadge(ds) : `${rowCountOf(ds)} 行`)
 const ifaceMessages = (iface) => (iface?.messageIds || [])
   .map((id) => protocolStore.interfaces.find((m) => String(m.id) === String(id)))
   .filter(Boolean)
-const defaultMessageBadge = (m) => m.fileId
-  ? `文件·${m.transportType || '—'}`
-  : `${m.transportType || '—'}·${(m.protocolRefs || []).length} 字段`
-const messageBadgeOf = (m) => (props.messageBadge ? props.messageBadge(m) : defaultMessageBadge(m))
+const messageDatasets = (message) => tdStore.datasets.filter((d) => String(d.messageId) === String(message.id))
+
+const datasetNode = (ds) => ({
+  key: `ds-${ds.id}`,
+  kind: 'dataset',
+  icon: 'Grid',
+  label: ds.name,
+  badge: datasetBadgeOf(ds),
+  ref: ds,
+})
 const messageNode = (m) => ({
   key: `msg-${m.id}`,
   kind: 'message',
   icon: 'Document',
   label: m.name,
-  badge: messageBadgeOf(m),
+  badge: `${messageDatasets(m).length} 数据集`,
   ref: m,
+  children: messageDatasets(m).map(datasetNode),
+})
+const ifaceNode = (i) => ({
+  key: `iface-${i.id}`,
+  kind: 'iface',
+  icon: 'Link',
+  label: i.name,
+  badge: `${ifaceMessages(i).length} 报文`,
+  ref: i,
+  children: ifaceMessages(i).map(messageNode),
 })
 
-const schemeChildren = (scheme) => (scheme.interfaceIds || [])
-  .map((id) => {
-    const sys = protocolStore.testInterfaces.find((i) => String(i.id) === String(id))
-    if (sys) return {
-      key: `sin-${id}`,
-      kind: 'schemeItem',
-      icon: 'Link',
-      label: sys.name,
-      badge: props.ifaceBadge(sys) || '系统',
-      ref: sys,
-      children: ifaceMessages(sys).map(messageNode),
-    }
-    const custom = customStore.byId(id)
-    if (custom) return { key: `cin-${id}`, kind: 'schemeItem', icon: 'Lock', label: custom.name, badge: '自定义', ref: custom }
-    return null
-  })
-  .filter(Boolean)
-
 const treeData = computed(() => {
-  const sysIfaces = protocolStore.testInterfaces.filter((i) => matches(i.name, i.desc))
+  // 分组① 系统接口：接口 → 报文 → 数据集
+  const ifaces = protocolStore.testInterfaces
+    .filter((i) => matches(i.name, i.desc))
+    .map(ifaceNode)
+  // 分组② 数据集方案
   const schemes = schemeStore.schemes
-    .filter((s) => matches(s.name, s.remark))
+    .filter((s) => matches(s.name, s.remark || ''))
     .map((s) => ({
-      key: `scheme-${s.id}`,
+      key: `dsScheme-${s.id}`,
       kind: 'scheme',
       icon: 'Notebook',
       label: s.name,
-      badge: props.schemeBadge(s),
+      badge: `${(s.datasetIds || []).length} 数据集`,
       ref: s,
-      children: schemeChildren(s),
+      children: (s.datasetIds || [])
+        .map((id) => tdStore.datasets.find((d) => String(d.id) === String(id)))
+        .filter(Boolean)
+        .map(datasetNode),
     }))
-  const customs = customStore.customIfaces
-    .filter((i) => matches(i.name, i.remark))
-    .map((i) => ({
-      key: `custom-${i.id}`,
-      kind: 'custom',
-      icon: 'Lock',
-      label: i.name,
-      badge: props.customBadge(i),
-      ref: i,
-    }))
+  // 分组③ 未关联报文：游离数据集（无 messageId 或指向不存在报文）
+  const validMessageIds = new Set(protocolStore.interfaces.map((m) => String(m.id)))
+  const orphans = tdStore.datasets.filter((d) => {
+    if (!matches(d.name, d.desc)) return false
+    if (d.messageId == null || d.messageId === '') return true
+    return !validMessageIds.has(String(d.messageId))
+  })
   return [
     {
-      key: 'grp-sys',
-      kind: 'groupSys',
+      key: 'grp-iface',
+      kind: 'groupIface',
       icon: 'FolderOpened',
       label: '系统接口',
-      count: sysIfaces.length,
+      count: ifaces.length,
       addActions: [{ groupKind: 'iface', label: '+接口', type: 'success' }],
-      children: sysIfaces.map((i) => ({
-        key: `iface-${i.id}`,
-        kind: 'iface',
-        icon: 'Link',
-        label: i.name,
-        badge: props.ifaceBadge(i),
-        ref: i,
-        children: ifaceMessages(i).map(messageNode),
-      })),
+      children: ifaces,
     },
     {
       key: 'grp-scheme',
       kind: 'groupScheme',
       icon: 'FolderOpened',
-      label: '方案',
+      label: '数据集方案',
       count: schemes.length,
-      addActions: props.editorMode ? [] : [{ groupKind: 'scheme', label: '+方案', type: 'warning' }],
+      addActions: [{ groupKind: 'scheme', label: '+方案', type: 'warning' }],
       children: schemes,
     },
     {
-      key: 'grp-custom',
-      kind: 'groupCustom',
+      key: 'grp-orphan',
+      kind: 'groupOrphan',
       icon: 'FolderOpened',
-      label: '自定义接口',
-      count: customs.length,
-      addActions: props.editorMode ? [] : [{ groupKind: 'custom', label: '+自定义', type: 'primary' }],
-      children: customs,
+      label: '未关联报文',
+      count: orphans.length,
+      children: orphans.map(datasetNode),
     },
   ].filter((g) => g.children.length || !props.search)
 })
 
-/* ---- 展开/收起状态 ---- */
+/* ---- 展开/收起状态（同接口监控树） ---- */
 const collectExpandableKeys = (nodes) => {
   const keys = []
   const walk = (items) => {
@@ -261,36 +244,22 @@ const collapseAll = () => {
 }
 const toggleAll = () => (treeFullyExpanded.value ? collapseAll() : expandAll())
 
-/* ---- 选中与拖拽 ---- */
-const isSelectableLeaf = (d) => ['iface', 'custom', 'scheme', 'message'].includes(d.kind) && !!d.ref
-const isDraggableLeaf = (d) => ['iface', 'custom', 'scheme', 'message'].includes(d.kind) && !!d.ref
-
+/* ---- 选中与事件 ---- */
 const visibleCurrentNodeKey = computed(() => props.modelValue || null)
-
+const selectableKinds = ['dataset', 'message', 'iface', 'scheme']
 const onNodeClick = (d) => {
-  if (isSelectableLeaf(d)) {
-    emit('update:modelValue', d.key)
-    emit('select', d)
-  }
+  if (!selectableKinds.includes(d.kind) || !d.ref) return
+  // 接口节点仅展开（右侧无接口详情需求），其余节点触发选中
+  if (d.kind === 'iface') return
+  emit('update:modelValue', d.key)
+  emit('select', d)
 }
-const onDragStart = (event, data) => {
-  if (!isDraggableLeaf(data)) return
-  event.dataTransfer.effectAllowed = 'copy'
-  event.dataTransfer.setData('application/json', JSON.stringify({
-    key: data.key,
-    kind: data.kind,
-    id: data.ref?.id || '',
-    source: data.kind === 'iface' ? 'sys' : data.kind,
-  }))
-  event.dataTransfer.setData('text/plain', data.ref?.id || data.key)
-}
-
 const emitAdd = (groupKind) => emit('add-leaf', { groupKind })
 
 /* ---- 右键菜单 ---- */
 const ctx = ref({ visible: false, x: 0, y: 0, data: null })
 const onContextMenu = (event, data) => {
-  if (!data?.ref || !['iface', 'custom', 'scheme', 'message'].includes(data.kind)) return
+  if (!data?.ref || !selectableKinds.includes(data.kind)) return
   event.preventDefault()
   ctx.value = { visible: true, x: event.clientX, y: event.clientY, data }
 }
@@ -299,46 +268,24 @@ const closeCtx = () => { ctx.value.visible = false }
 const ctxActions = computed(() => {
   const d = ctx.value.data
   if (!d) return []
-  const extra = props.extraContextActions ? props.extraContextActions(d) : []
-  if (d.kind === 'scheme') return [
+  if (d.kind === 'dataset') return [
+    { label: '编辑', action: 'edit-dataset' },
+    { label: '复制数据集', action: 'copy-dataset' },
+    { label: '粘贴到该报文', action: 'paste-dataset' },
+    { label: '删除', action: 'delete-dataset', danger: true },
+  ]
+  if (d.kind === 'message') return [
+    { label: '新建数据集', action: 'new-dataset' },
+    { label: '配置报文', action: 'config-message' },
+  ]
+  if (d.kind === 'iface') return [
+    { label: '配置接口', action: 'config-iface' },
+    { label: '新建报文', action: 'add-message' },
+  ]
+  return [
     { label: '编辑方案', action: 'edit-scheme' },
     { label: '删除', action: 'delete-scheme', danger: true },
   ]
-  if (d.kind === 'custom') {
-    // 编辑器模式：密文接口无报文/字段配置，仅保留删除
-    if (props.editorMode) return [{ label: '删除', action: 'delete-custom', danger: true }]
-    return [
-      { label: '配置接口', action: 'config-custom' },
-      { label: '监听配置', action: 'listen-custom' },
-      { label: '加入发送监控', action: 'custom-to-send' },
-      { label: '加入接收监控', action: 'custom-to-receive' },
-      { label: '立即发送', action: 'custom-test' },
-      { label: '删除', action: 'delete-custom', danger: true },
-    ]
-  }
-  if (d.kind === 'message') {
-    const base = props.editorMode
-      ? [{ label: '编辑', action: 'config-message' }]
-      : [
-          { label: '配置报文', action: 'config-message' },
-          { label: '加入发送监控', action: 'message-to-send' },
-          { label: '加入接收监控', action: 'message-to-receive' },
-          { label: '立即发送', action: 'message-test' },
-        ]
-    return [...base, ...extra, { label: '删除', action: 'delete-message', danger: true }]
-  }
-  const base = [
-    { label: '配置接口', action: 'config-iface' },
-    { label: '添加报文', action: 'add-message' },
-  ]
-  if (!props.editorMode) {
-    base.push(
-      { label: '加入发送监控', action: 'iface-to-send' },
-      { label: '加入接收监控', action: 'iface-to-receive' },
-      { label: '立即发送', action: 'iface-test' },
-    )
-  }
-  return [...base, ...extra, { label: '删除', action: 'delete-iface', danger: true }]
 })
 const emitAction = (action) => {
   emit('leaf-action', { action, data: ctx.value.data })
@@ -347,16 +294,16 @@ const emitAction = (action) => {
 </script>
 
 <style scoped lang="scss">
-.mtree {
+.dtree {
   width: 100%;
   min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-.mtree__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.mtree__title { font-size: 14px; font-weight: 600; line-height: 1.35; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mtree__scroll { flex: 1; min-height: 0; padding: 6px 4px; }
+.dtree__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dtree__title { font-size: 14px; font-weight: 600; line-height: 1.35; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dtree__scroll { flex: 1; min-height: 0; padding: 6px 4px; }
 
 .tnode {
   display: flex;
@@ -385,21 +332,16 @@ const emitAction = (action) => {
     flex-shrink: 0;
   }
   &__ops { display: inline-flex; flex-shrink: 0; gap: 2px; white-space: nowrap; }
-  &--groupSys, &--groupScheme, &--groupCustom { font-weight: 600; }
-  &--groupSys .tnode__icon { color: var(--el-color-success); }
+  &--groupIface, &--groupScheme, &--groupOrphan { font-weight: 600; }
+  &--groupIface .tnode__icon { color: var(--el-color-success); }
   &--groupScheme .tnode__icon { color: var(--el-color-warning); }
-  &--groupCustom .tnode__icon { color: var(--el-color-primary); }
+  &--groupOrphan .tnode__icon { color: var(--el-text-color-placeholder); }
   &--iface .tnode__icon { color: var(--el-color-success); }
-  &--scheme .tnode__icon { color: #e6a23c; }
-  &--custom .tnode__icon { color: var(--el-color-primary); }
   &--message .tnode__icon { color: var(--el-text-color-secondary); }
-  &--message { font-size: 12px; }
-  &--message .tnode__badge { font-size: 10px; }
-  &--schemeItem .tnode__icon { color: var(--el-text-color-secondary); }
-  &--schemeItem { font-size: 12px; }
-  &--schemeItem .tnode__badge { font-size: 10px; }
-  &--draggable { cursor: grab; }
-  &--draggable:active { cursor: grabbing; }
+  &--dataset .tnode__icon { color: var(--el-color-primary); }
+  &--scheme .tnode__icon { color: #e6a23c; }
+  &--message, &--dataset { font-size: 12px; }
+  &--message .tnode__badge, &--dataset .tnode__badge { font-size: 10px; }
 }
 
 /* 右键菜单 */

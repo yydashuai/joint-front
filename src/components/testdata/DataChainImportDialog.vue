@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="导入数据链文件"
+    title="文件解析"
     width="860px"
     top="5vh"
     destroy-on-close
@@ -30,144 +30,115 @@
           <el-radio-button value="fields">字段定义</el-radio-button>
           <el-radio-button value="matrix">数据矩阵</el-radio-button>
         </el-radio-group>
+        <span class="dci-view-toggle__hint">解析结果默认折叠，点击报文卡片展开查看 / 编辑</span>
       </div>
 
-      <!-- 保存目标（可选、不互斥） -->
+      <!-- 解析结果：报文卡片，默认折叠 -->
+      <div class="dci-paras">
+        <div
+          v-for="(para, pi) in parsed"
+          :key="pi"
+          class="dci-para-card"
+          :class="{ 'dci-para-card--open': expandedSet.has(pi) }"
+        >
+          <div class="dci-para-card__head" @click="togglePara(pi)">
+            <el-tag size="small" type="primary" effect="plain">{{ pi + 1 }}</el-tag>
+            <span class="dci-para-card__name">{{ para.name }}</span>
+            <span class="dci-para-card__meta">{{ para.fieldNames.length }} 字段 · {{ para.rows.length }} 行</span>
+            <span class="dci-para-card__arrow">{{ expandedSet.has(pi) ? '收起 ▴' : '展开 ▾' }}</span>
+          </div>
+
+          <div v-if="expandedSet.has(pi)" class="dci-para-card__body">
+            <!-- 字段定义 -->
+            <template v-if="viewMode === 'fields'">
+              <el-table :data="para.fields" size="small" border class="dci-field-table">
+                <el-table-column prop="name" label="字段名" min-width="160" show-overflow-tooltip />
+                <el-table-column label="取值约束" min-width="230">
+                  <template #default="{ row }">
+                    <div v-if="row.kind === 'numeric'" class="dci-constraint">
+                      <el-input-number v-model="row.constraint.min" :controls="false" size="small" class="dci-cnum" />
+                      <span class="dci-tilde">~</span>
+                      <el-input-number v-model="row.constraint.max" :controls="false" size="small" class="dci-cnum" />
+                    </div>
+                    <el-input
+                      v-else
+                      v-model="row.constraint.enumText"
+                      size="small"
+                      placeholder="枚举值用 / 分隔，留空为自由文本"
+                    />
+                  </template>
+                </el-table-column>
+                <el-table-column label="字段类型" width="180">
+                  <template #default="{ row }">
+                    <el-select v-model="row.type" size="small" style="width: 100%;">
+                      <el-option-group v-for="grp in typeGroups" :key="grp.label" :label="grp.label">
+                        <el-option v-for="t in grp.options" :key="t.value" :label="t.label" :value="t.value" />
+                      </el-option-group>
+                    </el-select>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </template>
+            <!-- 数据矩阵 -->
+            <template v-else>
+              <el-table :data="para.rows" size="small" border class="dci-matrix-table" :fit="false" style="width: 100%;">
+                <el-table-column type="index" label="#" width="48" align="center" fixed="left" />
+                <el-table-column
+                  v-for="fn in para.fieldNames"
+                  :key="fn"
+                  :prop="fn"
+                  :label="fn"
+                  :width="130"
+                >
+                  <template #default="{ row }">
+                    <el-input v-model="row[fn]" size="small" />
+                  </template>
+                </el-table-column>
+              </el-table>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- 保存目标（不关联系统/模块） -->
       <div class="dci-targets">
         <span class="dci-targets__label">保存到：</span>
-        <el-checkbox v-model="saveFields">报文字段管理（生成字段 + 报文定义）</el-checkbox>
-        <el-checkbox v-model="saveDatasets">测试数据管理（生成数据集 + 历史数据）</el-checkbox>
-        <el-tooltip content="两项均不勾选时，仅将文件登记到数据文件管理，可稍后在文件列表中重新解析" placement="top">
-          <el-icon class="dci-targets__help"><QuestionFilled /></el-icon>
-        </el-tooltip>
+        <el-checkbox v-model="attachIface">生成报文并挂到接口</el-checkbox>
+        <template v-if="attachIface">
+          <span class="dci-targets__sub">目标接口：</span>
+          <el-select v-model="targetIfaceId" size="small" style="width: 190px">
+            <el-option v-for="i in protoStore.testInterfaces" :key="i.id" :label="i.name" :value="i.id" />
+            <el-option label="＋ 新建接口" value="__new__" />
+          </el-select>
+          <el-input
+            v-if="targetIfaceId === '__new__'"
+            v-model="newIfaceName"
+            size="small"
+            placeholder="新接口名称"
+            style="width: 160px"
+          />
+        </template>
+        <el-checkbox v-model="saveDatasets">生成数据集</el-checkbox>
       </div>
-
-      <!-- 每个报文的字段类型编辑 -->
-      <el-scrollbar v-if="viewMode === 'fields'" class="dci-scroll" max-height="42vh">
-        <div v-for="(para, pi) in parsed" :key="pi" class="dci-para">
-          <div class="dci-para__head">
-            <el-tag size="small" type="primary" effect="plain">{{ pi + 1 }}</el-tag>
-            <span class="dci-para__name">{{ para.name }}</span>
-            <span class="dci-para__meta">{{ para.fieldNames.length }} 字段 · {{ para.rows.length }} 行</span>
-          </div>
-          <el-table :data="para.fields" size="small" border class="dci-field-table">
-            <el-table-column prop="name" label="字段名" min-width="160" show-overflow-tooltip />
-            <el-table-column label="取值约束" min-width="230">
-              <template #default="{ row }">
-                <div v-if="row.kind === 'numeric'" class="dci-constraint">
-                  <el-input-number v-model="row.constraint.min" :controls="false" size="small" class="dci-cnum" />
-                  <span class="dci-tilde">~</span>
-                  <el-input-number v-model="row.constraint.max" :controls="false" size="small" class="dci-cnum" />
-                </div>
-                <el-input
-                  v-else
-                  v-model="row.constraint.enumText"
-                  size="small"
-                  placeholder="枚举值用 / 分隔，留空为自由文本"
-                />
-              </template>
-            </el-table-column>
-            <el-table-column label="字段类型" width="180">
-              <template #default="{ row }">
-                <el-select v-model="row.type" size="small" style="width: 100%;" @change="(v) => onTypeChange(para, row, v)">
-                  <el-option-group v-for="grp in typeGroups" :key="grp.label" :label="grp.label">
-                    <el-option v-for="t in grp.options" :key="t.value" :label="t.label" :value="t.value" />
-                  </el-option-group>
-                </el-select>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </el-scrollbar>
-
-      <!-- 数据矩阵（可编辑） -->
-      <el-scrollbar v-else class="dci-scroll" max-height="42vh">
-        <div v-for="(para, pi) in parsed" :key="pi" class="dci-para">
-          <div class="dci-para__head">
-            <el-tag size="small" type="primary" effect="plain">{{ pi + 1 }}</el-tag>
-            <span class="dci-para__name">{{ para.name }}</span>
-            <span class="dci-para__meta">{{ para.fieldNames.length }} 字段 · {{ para.rows.length }} 行</span>
-          </div>
-          <el-table :data="para.rows" size="small" border class="dci-matrix-table" :fit="false" style="width: 100%;">
-            <el-table-column type="index" label="#" width="48" align="center" fixed="left" />
-            <el-table-column
-              v-for="fn in para.fieldNames"
-              :key="fn"
-              :prop="fn"
-              :label="fn"
-              :width="130"
-            >
-              <template #default="{ row }">
-                <el-input v-model="row[fn]" size="small" />
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </el-scrollbar>
+      <div class="dci-targets__tip">
+        报文将记录文件数据源（fileId），发送测试时文件内容原样直发，不修改不校验。
+      </div>
     </div>
 
     <template #footer>
       <el-button v-if="parsed.length" text type="info" @click="resetAll">重新选择文件</el-button>
       <el-button @click="visible = false">取消</el-button>
-      <el-button v-if="parsed.length" type="primary" :disabled="!canImport" @click="openAssignmentDialog">
+      <el-button v-if="parsed.length" type="primary" :disabled="!canImport" @click="performImport">
         {{ confirmLabel }}
       </el-button>
-    </template>
-  </el-dialog>
-
-  <el-dialog
-    v-model="assignmentVisible"
-    title="选择导入位置"
-    width="480px"
-    append-to-body
-    destroy-on-close
-  >
-    <el-alert
-      title="选择本次导入数据的所属系统和模块"
-      :description="`将导入 ${parsed.length} 个报文、${totalRows} 条数据，可选择任意系统及其模块。`"
-      type="info"
-      :closable="false"
-      show-icon
-      class="dci-assignment-hint"
-    />
-    <el-form :model="form" label-width="82px" class="dci-assignment-form">
-      <el-form-item label="所属系统" required>
-        <el-select
-          v-model="form.systemId"
-          placeholder="选择系统"
-          clearable
-          filterable
-          style="width: 100%;"
-          @change="onSystemChange"
-        >
-          <el-option v-for="sys in systemStore.systems" :key="sys.id" :label="sys.name" :value="sys.id" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="所属模块" required>
-        <el-select
-          v-model="form.moduleId"
-          placeholder="选择模块"
-          clearable
-          filterable
-          style="width: 100%;"
-          :disabled="!form.systemId"
-        >
-          <el-option v-for="mod in moduleOptions" :key="mod.id" :label="mod.name" :value="mod.id" />
-        </el-select>
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="assignmentVisible = false">返回检查</el-button>
-      <el-button type="primary" :disabled="!canAssign" @click="performImport">确认导入</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
-import { UploadFilled, QuestionFilled } from '@element-plus/icons-vue'
+import { UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
 import { useProtocolStore, SCALAR_ENCODINGS, uid } from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
@@ -178,12 +149,11 @@ const props = defineProps({
   modelValue: Boolean,
   currentSystemId: { type: [String, Number], default: '' },
   currentModuleName: { type: String, default: '' },
-  /** 预载文件（从数据文件管理「解析」进入）：{ name, content, systemId?, moduleName? } */
+  /** 预载文件（从数据文件管理「解析」进入）：{ name, content } */
   presetFile: { type: Object, default: null }
 })
 const emit = defineEmits(['update:modelValue', 'imported'])
 
-const systemStore = useSystemStore()
 const connStore = useConnectionStore()
 const protoStore = useProtocolStore()
 const tdStore = useTestDataStore()
@@ -199,26 +169,18 @@ const fileName = ref('')
 const rawText = ref('')
 const fromPreset = ref(false)
 
-// 保存目标（可选、不互斥）
-const saveFields = ref(true)
-const saveDatasets = ref(true)
+// 保存目标（不关联系统/模块）
+const attachIface = ref(true)
+const saveDatasets = ref(false)
+const targetIfaceId = ref('')
+const newIfaceName = ref('')
+// 文件数据源 id（文件列表中的文件）
+const currentFileId = ref(null)
 
 // 查看模式：字段定义 / 数据矩阵（可编辑）
 const viewMode = ref('fields')
-
-const assignmentVisible = ref(false)
-const form = reactive({ systemId: '', moduleId: '' })
-
-const moduleOptions = computed(() => {
-  if (!form.systemId) return []
-  return connStore.nodes.filter((module) => String(module.systemId) === String(form.systemId))
-})
-const selectedModule = computed(() =>
-  connStore.nodes.find((module) =>
-    String(module.id) === String(form.moduleId) &&
-    String(module.systemId) === String(form.systemId)
-  ) || null
-)
+// 解析结果默认折叠：expandedSet 存展开的段落序号
+const expandedSet = ref(new Set())
 
 const typeGroups = computed(() => {
   const groups = {}
@@ -233,15 +195,21 @@ const typeGroups = computed(() => {
 const totalRows = computed(() => parsed.value.reduce((s, p) => s + p.rows.length, 0))
 
 const canImport = computed(() => parsed.value.length > 0)
-const canAssign = computed(() => !!(form.systemId && form.moduleId && selectedModule.value))
 
 const confirmLabel = computed(() => {
-  const targets = []
-  if (saveFields.value) targets.push('字段/报文')
-  if (saveDatasets.value) targets.push('数据集')
-  if (!targets.length) return `仅登记文件（${parsed.value.length} 个报文）`
-  return `确认导入 ${targets.join(' + ')}（${parsed.value.length} 个报文）`
+  const parts = []
+  if (attachIface.value) parts.push('挂到接口')
+  if (saveDatasets.value) parts.push('生成数据集')
+  if (!parts.length) return '仅保存报文定义'
+  return `确认解析并${parts.join('+')}（${parsed.value.length} 个报文）`
 })
+
+const togglePara = (pi) => {
+  const next = new Set(expandedSet.value)
+  if (next.has(pi)) next.delete(pi)
+  else next.add(pi)
+  expandedSet.value = next
+}
 
 const applyText = (name, text) => {
   parseError.value = ''
@@ -257,7 +225,6 @@ const applyText = (name, text) => {
     p.fields.forEach((f) => {
       f.type = f.inferredType
       if (f.kind === 'numeric') {
-        // 默认取值约束：依据数据范围生成
         f.constraint = { kind: 'range', min: f.min, max: f.max }
       } else {
         const uniq = [...new Set(p.rows.map(r => r[f.name]))].filter(v => v !== '' && v != null)
@@ -266,10 +233,10 @@ const applyText = (name, text) => {
     })
   })
   parsed.value = result
+  expandedSet.value = new Set() // 默认全部折叠
   return true
 }
 
-// 由用户编辑后的「取值约束」构建字段约束对象
 const buildConstraint = (f) => {
   if (f.kind === 'numeric') {
     return { mode: 'range', min: Number(f.constraint?.min ?? 0), max: Number(f.constraint?.max ?? 0) }
@@ -283,20 +250,22 @@ const buildConstraint = (f) => {
 watch(() => props.modelValue, (v) => {
   if (v) {
     resetAll()
-    saveFields.value = true
-    saveDatasets.value = true
+    attachIface.value = true
+    saveDatasets.value = false
     viewMode.value = 'fields'
     // 从数据文件管理「解析」进入：预载文件内容
     if (props.presetFile?.content) {
       fromPreset.value = true
       if (!applyText(props.presetFile.name || '数据链文件', props.presetFile.content)) {
         ElMessage.warning('该文件内容无法解析为数据链格式')
+      } else {
+        // 定位文件列表中的 fileId（文件数据源）
+        const f = tdStore.allFiles.find((x) => x.name === (props.presetFile.name || ''))
+        currentFileId.value = f?.id ?? null
       }
     }
   }
 })
-
-const onSystemChange = () => { form.moduleId = '' }
 
 const onFileChange = async (file) => {
   parseError.value = ''
@@ -305,14 +274,22 @@ const onFileChange = async (file) => {
   try {
     const text = await readFileAsText(raw)
     fromPreset.value = false
-    applyText(raw.name, text)
+    if (applyText(raw.name, text)) {
+      // 弹窗内新上传：登记到文件列表（不关联系统/模块），拿 fileId
+      const f = tdStore.addFile({
+        name: raw.name,
+        format: inferFileFormat(raw.name),
+        size: raw.size || new Blob([text]).size,
+        desc: '',
+        rowCount: totalRows.value,
+        content: text
+      })
+      currentFileId.value = f.id
+    }
   } catch (e) {
     parseError.value = '文件读取失败：' + (e?.message || e)
   }
 }
-
-// 用户切换类型后，若该列被改为数值但样例含字符串，重新推断提示（不强制）
-const onTypeChange = () => {}
 
 const resetAll = () => {
   parsed.value = []
@@ -321,46 +298,47 @@ const resetAll = () => {
   rawText.value = ''
   fromPreset.value = false
   viewMode.value = 'fields'
-  assignmentVisible.value = false
-  form.systemId = ''
-  form.moduleId = ''
+  expandedSet.value = new Set()
+  targetIfaceId.value = ''
+  newIfaceName.value = ''
+  currentFileId.value = null
 }
 
 const onClose = () => {
-  assignmentVisible.value = false
   emit('update:modelValue', false)
 }
 
 /* ============ 构建并写入 stores ============ */
-const openAssignmentDialog = () => {
-  if (!canImport.value) return
-  const preferredSystemId = props.presetFile?.systemId || props.currentSystemId || ''
-  const preferredModuleName = props.presetFile?.moduleName || props.currentModuleName || ''
-  form.systemId = preferredSystemId
-  form.moduleId = connStore.nodes.find(
-    (module) =>
-      String(module.systemId) === String(preferredSystemId) &&
-      module.name === preferredModuleName
-  )?.id || ''
-  assignmentVisible.value = true
+const resolveTargetIface = () => {
+  if (targetIfaceId.value === '__new__') {
+    const name = (newIfaceName.value || '').trim()
+    if (!name) {
+      ElMessage.warning('请输入新接口名称')
+      return null
+    }
+    return protoStore.addTestInterface({ name }).id
+  }
+  if (targetIfaceId.value) return targetIfaceId.value
+  ElMessage.warning('请选择目标接口')
+  return null
 }
 
 const performImport = () => {
-  if (!canAssign.value) {
-    ElMessage.warning('请选择所属系统和模块')
-    return
-  }
-  const systemId = form.systemId
-  const moduleId = form.moduleId
-  const moduleName = selectedModule.value.name
   const createdIds = []
 
   parsed.value.forEach((para) => {
-    let proto = null
     let iface = null
 
-    // 1) 可选：报文字段管理（字段 protocol + 报文 interface）
-    if (saveFields.value) {
+    // 1) 生成报文并挂到接口（文件数据源，内容直发）
+    if (attachIface.value) {
+      const targetId = resolveTargetIface()
+      if (!targetId) return
+      iface = protoStore.attachFileMessageToInterface(targetId, {
+        name: `${para.name}报文`,
+        fileId: currentFileId.value || null,
+        transportType: 'OSE',
+      })
+      // 生成字段定义（供结构查看 / 数据集列）
       const byteFields = para.fields.map((f) => {
         const dataType = f.type
         return {
@@ -377,36 +355,28 @@ const performImport = () => {
           children: []
         }
       })
-
-      proto = protoStore.addProtocol({
+      const proto = protoStore.addProtocol({
         name: `${para.name}字段`,
-        systemId,
-        moduleId,
-        desc: `数据链导入自动生成（${para.fieldNames.length} 字段，${para.rows.length} 行）`,
+        systemId: iface.systemId,
+        moduleId: iface.moduleId,
+        desc: `文件解析自动生成（${para.fieldNames.length} 字段）`,
         fields: byteFields
       })
-      // 兼容 DatasetEditor 读取路径
       proto.config = { fields: byteFields }
-
-      iface = protoStore.addInterface({
-        name: `${para.name}报文`,
-        transportType: 'OSE',
-        systemId,
-        moduleId,
-        protocolRefs: [{ protocolId: proto.id, role: 'send' }],
-        desc: '数据链文件导入自动生成报文'
-      })
+      iface.protocolRefs = [{ protocolId: proto.id, role: 'send' }]
     }
 
-    // 2) 可选：测试数据管理（数据集 + 历史数据）
+    // 2) 可选：生成数据集（挂到该报文下）
     if (saveDatasets.value) {
       const ds = tdStore.addDataset({
         name: `${para.name}数据集`,
-        systemId,
-        moduleName,
-        linkedProtocol: proto?.name || '',
+        systemId: iface?.systemId || null,
+        moduleName: iface?.moduleId
+          ? connStore.nodes.find((n) => String(n.id) === String(iface.moduleId))?.name || ''
+          : '',
         linkedInterface: iface?.name || '',
-        desc: `数据链文件「${fileName.value}」导入（${para.rows.length} 行）`
+        messageId: iface?.id || null,
+        desc: `文件「${fileName.value}」解析生成（${para.rows.length} 行）`
       })
 
       let rowSeq = 90000
@@ -416,7 +386,6 @@ const performImport = () => {
         values: { ...r }
       }))
 
-      // 同时写入历史数据（来源=文件导入，默认正常）
       tdStore.addHistoryRows(ds.id, para.rows.map((r, i) => ({
         label: `行 ${i + 1}`,
         values: { ...r },
@@ -429,27 +398,12 @@ const performImport = () => {
     }
   })
 
-  // 3) 始终：登记到数据文件管理（保留原文内容，可再次解析；预载自文件列表时不重复登记）
-  if (!fromPreset.value && rawText.value) {
-    tdStore.addFile({
-      name: fileName.value || '数据链文件.dat',
-      format: inferFileFormat(fileName.value || '.dat'),
-      size: new Blob([rawText.value]).size,
-      systemId,
-      moduleName,
-      desc: `数据链文件（${parsed.value.length} 个报文 / ${totalRows.value} 条数据）`,
-      rowCount: totalRows.value,
-      content: rawText.value
-    })
-  }
-
   const doneParts = []
-  if (saveFields.value) doneParts.push(`${parsed.value.length} 组字段/报文`)
-  if (saveDatasets.value) doneParts.push(`${createdIds.length} 个数据集（${totalRows.value} 条数据）`)
-  if (!doneParts.length) doneParts.push('文件已登记到数据文件管理')
-  ElMessage.success(`导入完成：${doneParts.join('，')}`)
+  if (attachIface.value) doneParts.push(`${parsed.value.length} 个报文已挂到接口`)
+  if (saveDatasets.value) doneParts.push(`${createdIds.length} 个数据集`)
+  if (!doneParts.length) doneParts.push('已保存报文定义')
+  ElMessage.success(`解析完成：${doneParts.join('，')}（文件内容直发测试，不修改）`)
   emit('imported', createdIds)
-  assignmentVisible.value = false
   visible.value = false
 }
 </script>
@@ -461,45 +415,63 @@ const performImport = () => {
 .dci-parse-error { margin-top: 10px; color: var(--el-color-danger); font-size: 13px; }
 
 .dci-body { display: flex; flex-direction: column; gap: 12px; }
-.dci-targets {
+
+/* 报文卡片（默认折叠） */
+.dci-paras {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 6px 12px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  background: var(--el-fill-color-lighter);
-  &__label { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
-  &__help { color: var(--el-text-color-placeholder); cursor: help; }
+  flex-direction: column;
+  gap: 8px;
+  max-height: 46vh;
+  overflow: auto;
 }
-.dci-scroll { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 4px; }
-.dci-para { padding: 6px 4px; }
-.dci-para + .dci-para { border-top: 1px dashed var(--el-border-color-lighter); }
-.dci-para__head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.dci-para__name { font-weight: 600; font-size: 14px; }
-.dci-para__meta { font-size: 12px; color: var(--el-text-color-secondary); }
-.dci-field-table { margin-bottom: 4px; }
-.dci-matrix-table { margin-bottom: 4px; }
+.dci-para-card {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  overflow: hidden;
+  &--open { border-color: var(--el-color-primary-light-5); }
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    cursor: pointer;
+    user-select: none;
+    &:hover { background: var(--el-fill-color-light); }
+  }
+  &__name { font-weight: 600; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__meta { font-size: 12px; color: var(--el-text-color-secondary); flex-shrink: 0; }
+  &__arrow { margin-left: auto; font-size: 12px; color: var(--el-text-color-secondary); flex-shrink: 0; }
+  &__body { padding: 6px 10px 10px; border-top: 1px solid var(--el-border-color-lighter); }
+}
+.dci-field-table, .dci-matrix-table { margin-bottom: 2px; }
 
 .dci-view-toggle {
   display: flex;
   align-items: center;
   gap: 10px;
-
   &__label { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
   &__hint { font-size: 12px; color: var(--el-text-color-placeholder); }
+}
+
+.dci-targets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-lighter);
+  &__label { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+  &__sub { font-size: 12px; color: var(--el-text-color-secondary); }
+  &__tip {
+    font-size: 12px;
+    color: var(--el-color-warning);
+    padding: 0 2px;
+  }
 }
 
 .dci-constraint { display: flex; align-items: center; gap: 4px; }
 .dci-cnum { width: 92px; }
 .dci-tilde { color: var(--el-text-color-placeholder); }
-
-.mono { font-family: 'Consolas', 'Monaco', monospace; }
-.text-secondary { color: var(--el-text-color-secondary); }
-
-.dci-assignment-hint { margin-bottom: 18px; }
-.dci-assignment-form {
-  padding-right: 12px;
-  :deep(.el-form-item:last-child) { margin-bottom: 0; }
-}
 </style>

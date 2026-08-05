@@ -339,19 +339,24 @@ const openHeaderIfaceDialog = () => {
   openIfaceConfig(null, null)
 }
 
-/* ---- 接收侧就绪：接口需配置报文；报文再解析字段。 ---- */
+/* ---- 接收侧就绪：接口需配置报文；文件报文放行字段检查。 ---- */
 const interfaceReadiness = (iface) => {
   const reasons = []
   if (!(iface.messageIds || []).length) {
     reasons.push('未配置报文')
-  } else if (!collectTestInterfaceFields(
-    iface,
-    testDataStore.datasets,
-    protocolStore.interfaces,
-    protocolStore.protocols,
-    'receive',
-  ).length) {
-    reasons.push('接口名下报文没有可用字段')
+  } else {
+    const msgs = (iface.messageIds || [])
+      .map((id) => protocolStore.interfaces.find((m) => String(m.id) === String(id)))
+      .filter(Boolean)
+    if (!msgs.some((m) => m.fileId) && !collectTestInterfaceFields(
+      iface,
+      testDataStore.datasets,
+      protocolStore.interfaces,
+      protocolStore.protocols,
+      'receive',
+    ).length) {
+      reasons.push('接口名下报文没有可用字段')
+    }
   }
   return { ok: !reasons.length, reasons }
 }

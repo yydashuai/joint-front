@@ -39,7 +39,8 @@ import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const props = defineProps({
   modelValue: Boolean,
-  module: { type: Object, default: null } // { systemId, name }
+  module: { type: Object, default: null }, // { systemId, name }（按模块创建）
+  message: { type: Object, default: null } // 报文实体（从报文创建，预选关联）
 })
 const emit = defineEmits(['update:modelValue', 'created'])
 
@@ -68,15 +69,22 @@ const moduleInterfaces = computed(() => {
   return protoStore.interfaces.filter(i => i.moduleId === mod.id)
 })
 
-// 打开时初始化
+// 打开时初始化：优先按「从报文创建」预选关联
 watch(() => props.modelValue, (v) => {
-  if (v && props.module) {
-    form.name = ''
-    form.desc = ''
+  if (!v) return
+  form.name = ''
+  form.desc = ''
+  form.linkedProtocol = null
+  form.linkedInterface = null
+  if (props.message) {
+    const msg = props.message
+    const mod = connStore.nodes.find(n => String(n.id) === String(msg.moduleId))
+    form.systemId = msg.systemId || mod?.systemId || ''
+    form.moduleName = mod?.name || ''
+    form.linkedInterface = msg.name
+  } else if (props.module) {
     form.systemId = props.module.systemId
     form.moduleName = props.module.name
-    form.linkedProtocol = null
-    form.linkedInterface = null
   }
 })
 
@@ -91,13 +99,18 @@ const onSubmit = () => {
     ElMessage.warning('请选择关联报文')
     return
   }
+  // 报文实体 id（1 报文 : N 数据集）
+  const message = protoStore.interfaces.find(
+    (i) => i.name === form.linkedInterface || String(i.id) === String(form.linkedInterface)
+  )
   emit('created', {
     name: validName,
     desc: form.desc,
     systemId: form.systemId,
     moduleName: form.moduleName,
     linkedProtocol: form.linkedProtocol,
-    linkedInterface: form.linkedInterface
+    linkedInterface: form.linkedInterface,
+    messageId: message ? message.id : null
   })
   visible.value = false
 }

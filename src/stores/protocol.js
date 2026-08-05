@@ -790,6 +790,7 @@ export const useProtocolStore = defineStore('protocol', {
         if (!i.strategy) i.strategy = defaultIfaceStrategy()
         if (!i.sendInterval) i.sendInterval = 500
         if (i.ownerIfaceId === undefined) i.ownerIfaceId = null // 排他归属：所属接口 id
+        if (i.fileId === undefined) i.fileId = null // 文件数据源：文件直发测试
         return i
       }),
     // 接口独立于报文：接口持有报文（messageIds，排他归属），报文再引用字段。
@@ -939,9 +940,25 @@ export const useProtocolStore = defineStore('protocol', {
       return message
     },
 
-    /* ---- 报文：移动到接口（排他归属：自动从原接口摘除） ---- */
-    attachMessageToInterface(ifaceId, messageId) {
+    /* ---- 报文：文件数据源（解析文件生成报文并挂到接口，fileId 标记直发） ---- */
+    attachFileMessageToInterface(ifaceId, { name, fileId, transportType = 'OSE', desc = '' }) {
       const iface = this.testInterfaces.find((i) => String(i.id) === String(ifaceId))
+      if (!iface) return null
+      const message = this.addInterface({
+        name: name || '文件导入报文',
+        transportType,
+        ownerIfaceId: ifaceId,
+        fileId,
+        desc: desc || '文件数据源报文（内容直发，不修改不校验）',
+        systemId: iface.systemId ?? null,
+        moduleId: iface.moduleId ?? null,
+      })
+      iface.messageIds = [...(iface.messageIds || []), message.id]
+      return message
+    },
+
+    /* ---- 报文：移动到接口（排他归属：自动从原接口摘除） ---- */
+    attachMessageToInterface(ifaceId, messageId) {      const iface = this.testInterfaces.find((i) => String(i.id) === String(ifaceId))
       const message = this.interfaces.find((m) => String(m.id) === String(messageId))
       if (!iface || !message) return false
       // 从原归属接口摘除
@@ -1160,6 +1177,7 @@ export const useProtocolStore = defineStore('protocol', {
         operationType: it.operationType || '',
         datasetIds: it.datasetIds || [],
         ownerIfaceId: it.ownerIfaceId ?? null, // 排他归属：所属接口 id
+        fileId: it.fileId ?? null,             // 文件数据源：文件直发测试
         strategy: it.strategy || defaultIfaceStrategy(),
         sendInterval: it.sendInterval || 500,
       }

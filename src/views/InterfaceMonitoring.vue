@@ -538,7 +538,7 @@ const interfaceReadiness = (iface, role) => {
   const reasons = []
   if (!(iface.messageIds || []).length) {
     reasons.push('未配置报文')
-  } else if (!collectTestInterfaceFields(
+  } else if (!ifaceMessages(iface).some((m) => m.fileId) && !collectTestInterfaceFields(
     iface,
     testDataStore.datasets,
     protocolStore.interfaces,

@@ -35,16 +35,6 @@
           <el-option label="XML" value="xml" />
         </el-select>
       </el-form-item>
-      <el-form-item label="关联系统">
-        <el-select v-model="form.systemId" placeholder="选择系统" clearable style="width: 100%;">
-          <el-option v-for="sys in systemStore.systems" :key="sys.id" :label="sys.name" :value="sys.id" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="关联模块">
-        <el-select v-model="form.moduleName" placeholder="选择模块" style="width: 100%;" :disabled="!form.systemId">
-          <el-option v-for="mod in uploadModules" :key="mod.id" :label="mod.name" :value="mod.name" />
-        </el-select>
-      </el-form-item>
       <el-form-item label="描述">
         <el-input v-model="form.desc" type="textarea" :rows="2" placeholder="可选" />
       </el-form-item>
@@ -60,17 +50,13 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { UploadFilled, Document } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { useSystemStore } from '@/stores/system'
-import { useConnectionStore } from '@/stores/connection'
 import { formatFileSize, inferFileFormat, readFileAsText } from '@/services/testDataService'
 import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const props = defineProps({ modelValue: Boolean })
 const emit = defineEmits(['update:modelValue', 'submitted'])
 
-const systemStore = useSystemStore()
 const { validateName } = useEntityNameGuard()
-const connStore = useConnectionStore()
 
 const visible = computed({
   get: () => props.modelValue,
@@ -83,14 +69,7 @@ const selectedFile = ref(null)
 const form = reactive({
   name: '',
   format: 'csv',
-  systemId: '',
-  moduleName: '',
   desc: ''
-})
-
-const uploadModules = computed(() => {
-  if (!form.systemId) return []
-  return connStore.nodes.filter(n => n.systemId === form.systemId)
 })
 
 const selectedFormat = computed(() => {
@@ -136,8 +115,6 @@ const clearFile = () => {
 watch(() => props.modelValue, (v) => {
   if (v) {
     clearFile()
-    form.systemId = ''
-    form.moduleName = ''
     form.desc = ''
   }
 })
@@ -162,8 +139,6 @@ const onSubmit = async () => {
     name: validName,
     format: form.format,
     size: selectedFile.value.size,
-    systemId: form.systemId,
-    moduleName: form.moduleName,
     desc: form.desc,
     file: selectedFile.value,
     content,
