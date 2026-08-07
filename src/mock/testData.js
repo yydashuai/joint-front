@@ -250,6 +250,8 @@ export const files = [
     desc: '数据链文件（2 个报文 / 15 条数据），可点击「解析」重新导入',
     uploadedAt: '2026-07-30 09:00',
     rowCount: 15,
+    messageIds: [],
+    messageNames: ['MonitoringStatus', 'TelemetryFrames'],
     content: DATA_CHAIN_DEMO_CONTENT
   }
 ]

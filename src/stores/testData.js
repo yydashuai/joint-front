@@ -10,6 +10,37 @@ let _historyRowSeq = 5000
 let _fileSeq = 100
 
 const clone = (data) => JSON.parse(JSON.stringify(data))
+const today = () => new Date().toISOString().slice(0, 10)
+
+const normalizeHistoryRow = (row = {}, dataset = {}, index = 0) => {
+  const abnormal = !!row.abnormal
+  const customTags = Array.isArray(row.customTags)
+    ? [...new Set(row.customTags.map(String).map((v) => v.trim()).filter(Boolean))]
+    : []
+  return {
+    ...row,
+    id: row.id ?? ++_historyRowSeq,
+    label: row.label || `历史报文 ${index + 1}`,
+    messageId: row.messageId ?? dataset.messageId ?? null,
+    messageName: row.messageName || dataset.linkedInterface || dataset.name || '未命名报文',
+    interfaceId: row.interfaceId ?? null,
+    fileId: row.fileId ?? dataset.sourceFileId ?? null,
+    fileName: row.fileName || dataset.sourceFileName || '',
+    createdAt: row.createdAt || row.savedAt || dataset.createdAt || today(),
+    savedAt: row.savedAt || row.createdAt || dataset.createdAt || today(),
+    source: row.source || '手动创建',
+    remark: row.remark || '',
+    abnormal,
+    excellent: !!row.excellent,
+    customTags,
+    autoTags: abnormal ? ['异常'] : [],
+    validationResult: row.validationResult || (abnormal ? '存在字段约束异常' : '校验通过'),
+    datasetId: row.datasetId ?? dataset.id ?? null,
+    usageCount: Number(row.usageCount || 0),
+    lastUsedAt: row.lastUsedAt || '',
+    values: clone(row.values || {}),
+  }
+}
 
 /**
  * 将协议（protocol）的字段树扁平化为 { name, constraint } 列表，供异常判定使用。
@@ -50,16 +81,10 @@ const filterByDatasetKeys = (fields, dataset) => {
 }
 
 const historyRowsFromDataset = (dataset) => {
-  return (dataset.rows || []).map((row, index) => ({
-    id: ++_historyRowSeq,
-    label: row.label || `历史行 ${index + 1}`,
-    values: clone(row.values || {}),
+  return (dataset.rows || []).map((row, index) => normalizeHistoryRow({
+    ...row,
     source: '手动创建',
-    savedAt: dataset.createdAt || '2026-06-25',
-    remark: '',
-    abnormal: false,   // 是否异常（自动判定，默认正常）
-    excellent: false,  // 是否加入优秀历史数据库（可选）
-  }))
+  }, dataset, index))
 }
 
 /**
@@ -80,23 +105,84 @@ const resolveLinkedIface = (ds, protocolStore) => {
 }
 
 const normalizeDatasets = () => {
-  const list = clone(seedDatasets).map(dataset => ({
-    ...dataset,
-    historyRows: Array.isArray(dataset.historyRows) && dataset.historyRows.length
+  const list = clone(seedDatasets).map(dataset => {
+    const rawHistory = Array.isArray(dataset.historyRows) && dataset.historyRows.length
       ? dataset.historyRows
       : historyRowsFromDataset(dataset)
-  }))
+    return {
+      ...dataset,
+      historyRows: rawHistory.map((row, index) => normalizeHistoryRow(row, dataset, index)),
+    }
+  })
   // 演示标注：首条历史数据标记为「优秀历史」，便于展示优秀标签与筛选
   if (list[0]?.historyRows?.length) list[0].historyRows[0].excellent = true
   return list
 }
 
+const csvCell = (value) => {
+  const text = value == null ? '' : String(value)
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+/** 为演示数据补齐“导入文件 → 报文 → 表头 → 数据行”的可追溯关系。 */
+const createInitialData = () => {
+  const datasets = normalizeDatasets()
+  const files = clone(seedFiles)
+
+  datasets.forEach((dataset) => {
+    const importedRows = (dataset.historyRows || []).filter((row) => row.source === '文件导入')
+    if (!importedRows.length) return
+
+    let file = files.find((item) =>
+      (dataset.sourceFileId != null && String(item.id) === String(dataset.sourceFileId)) ||
+      (dataset.sourceFileName && item.name === dataset.sourceFileName)
+    )
+    if (!file) {
+      const fieldNames = Object.keys(importedRows[0]?.values || {})
+      const content = [
+        dataset.linkedInterface || dataset.name,
+        fieldNames.map(csvCell).join(','),
+        ...importedRows.map((row) => fieldNames.map((name) => csvCell(row.values?.[name])).join(',')),
+      ].join('\n')
+      file = {
+        id: ++_fileSeq,
+        name: `${dataset.name}.csv`,
+        format: 'csv',
+        size: new Blob([content]).size,
+        systemId: dataset.systemId,
+        moduleId: null,
+        moduleName: dataset.moduleName || '',
+        desc: `包含“${dataset.linkedInterface || dataset.name}”及 ${importedRows.length} 行测试数据`,
+        uploadedAt: `${dataset.createdAt || today()} 09:00`,
+        rowCount: importedRows.length,
+        messageIds: dataset.messageId != null ? [dataset.messageId] : [],
+        messageNames: [dataset.linkedInterface || dataset.name],
+        content,
+      }
+      files.push(file)
+    }
+
+    dataset.sourceFileId = file.id
+    dataset.sourceFileName = file.name
+    importedRows.forEach((row) => {
+      row.fileId = file.id
+      row.fileName = file.name
+    })
+  })
+
+  return { datasets, files }
+}
+
 export const useTestDataStore = defineStore('testData', {
-  state: () => ({
-    datasets: normalizeDatasets(),
-    files: clone(seedFiles),
-    selectedDatasetId: null
-  }),
+  state: () => {
+    const initial = createInitialData()
+    return {
+      datasets: initial.datasets,
+      files: initial.files,
+      customTagLibrary: ['边界值', '回归样本', '稳定样本', '典型异常'],
+      selectedDatasetId: null
+    }
+  },
 
   getters: {
     selectedDataset: (state) =>
@@ -131,8 +217,20 @@ export const useTestDataStore = defineStore('testData', {
       state.datasets.forEach(ds => {
         if (!ds.historyRows?.length) return
         ds.historyRows.forEach(hr => {
+          const protocolStore = useProtocolStore()
+          const message = protocolStore.interfaces.find((m) => String(m.id) === String(hr.messageId ?? ds.messageId))
+          const owner = protocolStore.testInterfaces.find((i) => String(i.id) === String(message?.ownerIfaceId))
           result.push({
             ...hr,
+            messageId: hr.messageId ?? message?.id ?? ds.messageId ?? null,
+            messageName: hr.messageName || message?.name || ds.linkedInterface || ds.name,
+            interfaceId: hr.interfaceId ?? owner?.id ?? message?.ownerIfaceId ?? null,
+            fileId: hr.fileId ?? ds.sourceFileId ?? null,
+            fileName: hr.fileName || ds.sourceFileName || '',
+            createdAt: hr.createdAt || hr.savedAt,
+            customTags: hr.customTags || [],
+            autoTags: hr.abnormal ? ['异常'] : [],
+            datasetId: hr.datasetId ?? ds.id,
             _datasetId: ds.id,
             _datasetName: ds.name,
             _systemId: ds.systemId,
@@ -206,6 +304,8 @@ export const useTestDataStore = defineStore('testData', {
         linkedProtocol: data.linkedProtocol || null,
         linkedInterface,
         messageId: data.messageId || null,
+        sourceFileId: data.sourceFileId || null,
+        sourceFileName: data.sourceFileName || '',
         desc: data.desc || '',
         createdAt: new Date().toISOString().slice(0, 10),
         rows: [],
@@ -220,13 +320,15 @@ export const useTestDataStore = defineStore('testData', {
     migrateMessageLink() {
       const protocolStore = useProtocolStore()
       this.datasets.forEach((ds) => {
-        if (ds.messageId != null && ds.messageId !== '') return
-        const iface = ds.linkedInterface
+        const message = ds.messageId != null && ds.messageId !== ''
+          ? protocolStore.interfaces.find((item) => String(item.id) === String(ds.messageId))
+          : ds.linkedInterface
           ? protocolStore.interfaces.find(
             (i) => i.name === ds.linkedInterface || String(i.id) === String(ds.linkedInterface)
           )
           : null
-        ds.messageId = iface ? iface.id : null
+        ds.messageId = message ? message.id : null
+        if (ds.sourceFileId && message) this.linkFileToMessage(ds.sourceFileId, message)
       })
     },
 
@@ -419,16 +521,16 @@ export const useTestDataStore = defineStore('testData', {
       if (!ds) return []
       if (!Array.isArray(ds.historyRows)) ds.historyRows = []
       const newRows = rowsData.map(r => ({
-        id: ++_historyRowSeq,
-        label: r.label || `智能生成行 ${ds.historyRows.length + 1}`,
-        values: clone(r.values || {}),
-        source: r.source || '智能生成',
-        savedAt: new Date().toISOString().slice(0, 10),
-        remark: r.remark || '',
-        abnormal: r.abnormal ?? false,     // 异常标签（调用方按字段定义校验后传入）
-        excellent: r.excellent ?? false,   // 优秀历史标签（可选）
+        ...normalizeHistoryRow({
+          ...r,
+          id: ++_historyRowSeq,
+          label: r.label || `智能生成行 ${ds.historyRows.length + 1}`,
+          abnormal: r.abnormal ?? this.computeAbnormal(r.values || {}, datasetId),
+          source: r.source || '智能生成',
+        }, ds, ds.historyRows.length),
       }))
       ds.historyRows.push(...newRows)
+      this.registerCustomTags(newRows.flatMap((row) => row.customTags || []))
       return newRows
     },
 
@@ -474,7 +576,42 @@ export const useTestDataStore = defineStore('testData', {
       const ds = this.datasets.find(d => d.id === datasetId)
       if (!ds?.historyRows) return
       const row = ds.historyRows.find(r => r.id === rowId)
-      if (row) Object.assign(row, patch)
+      if (row) {
+        const next = { ...patch }
+        if (next.values) {
+          next.abnormal = this.computeAbnormal(next.values, datasetId)
+          next.autoTags = next.abnormal ? ['异常'] : []
+          next.validationResult = next.abnormal ? '存在字段约束异常' : '校验通过'
+        }
+        if (next.customTags) {
+          next.customTags = [...new Set(next.customTags.map(String).map((v) => v.trim()).filter(Boolean))]
+          this.registerCustomTags(next.customTags)
+        }
+        Object.assign(row, next)
+      }
+    },
+
+    addTagsToHistory(rows, tags = []) {
+      const clean = [...new Set(tags.map(String).map((v) => v.trim()).filter(Boolean))]
+      this.registerCustomTags(clean)
+      rows.forEach(({ _datasetId, id }) => {
+        const ds = this.datasets.find((d) => d.id === _datasetId)
+        const row = ds?.historyRows?.find((item) => item.id === id)
+        if (row) row.customTags = [...new Set([...(row.customTags || []), ...clean])]
+      })
+    },
+
+    setExcellentBatch(rows, excellent = true) {
+      rows.forEach(({ _datasetId, id }) => {
+        const ds = this.datasets.find((d) => d.id === _datasetId)
+        const row = ds?.historyRows?.find((item) => item.id === id)
+        if (row) row.excellent = excellent
+      })
+    },
+
+    registerCustomTags(tags = []) {
+      const clean = tags.map(String).map((value) => value.trim()).filter((value) => value && value !== '异常')
+      this.customTagLibrary = [...new Set([...(this.customTagLibrary || []), ...clean])]
     },
 
     /** 切换「优秀历史数据库」标签 */
@@ -495,11 +632,13 @@ export const useTestDataStore = defineStore('testData', {
      *   - mixed：正常 / 异常交替（默认各半）
      * 生成的行标记 source = '智能生成'，便于在历史数据管理中按来源筛选。
      */
-    generateTestData(datasetId, count = 5, mode = 'normal') {
+    generateTestData(datasetId, count = 5, mode = 'normal', options = {}) {
       const ds = this.datasets.find(d => d.id === datasetId)
       if (!ds) return []
-      const sourceRows = [...ds.rows, ...(ds.historyRows || [])]
-      if (sourceRows.length === 0) return []
+      const selectedReferences = Array.isArray(options.referenceRows) ? options.referenceRows : []
+      const sourceRows = selectedReferences.length
+        ? [...ds.rows, ...selectedReferences]
+        : [...ds.rows, ...(ds.historyRows || [])]
 
       // 解析字段定义（含约束），用于生成合规 / 违规数据
       const protocolStore = useProtocolStore()
@@ -522,11 +661,24 @@ export const useTestDataStore = defineStore('testData', {
       const defMap = {}
       defs.forEach((f) => { defMap[f.name] = f })
 
-      // 既有值分析（无约束字段 / 兜底使用）
-      const fieldNames = Object.keys(sourceRows[0].values)
+      // 既有值分析（无样本时直接依据字段定义构造生成基线）
+      const fieldNames = sourceRows.length ? Object.keys(sourceRows[0].values) : defs.map((field) => field.name)
+      if (!fieldNames.length) return []
+      const analysisRows = sourceRows.length ? sourceRows : [{
+        values: Object.fromEntries(fieldNames.map((name) => {
+          const constraint = defMap[name]?.constraint
+          if (constraint?.mode === 'fixed') return [name, constraint.value]
+          if (constraint?.mode === 'enum') {
+            const first = (constraint.entries || [])[0]
+            return [name, first?.value ?? first ?? '']
+          }
+          if (constraint?.mode === 'range') return [name, constraint.min]
+          return [name, '']
+        }))
+      }]
       const analysis = {}
       fieldNames.forEach((field) => {
-        const rawValues = sourceRows.map(r => r.values[field]).filter(v => v !== undefined && v !== null && v !== '')
+        const rawValues = analysisRows.map(r => r.values[field]).filter(v => v !== undefined && v !== null && v !== '')
         const numericVals = rawValues.filter(v => typeof v === 'number' && !isNaN(v)).sort((a, b) => a - b)
         const stringVals = rawValues.filter(v => typeof v === 'string')
         if (numericVals.length >= 1) {
@@ -576,6 +728,16 @@ export const useTestDataStore = defineStore('testData', {
         }
         return ''
       }
+      const makeBoundary = (c, info, index) => {
+        if (c.mode === 'fixed') return c.value
+        if (c.mode === 'enum') {
+          const entries = c.entries || []
+          const entry = entries[index % Math.max(entries.length, 1)]
+          return entry?.value ?? entry ?? ''
+        }
+        if (c.mode === 'range') return index % 2 === 0 ? c.min : c.max
+        return makeNormal(c, info)
+      }
 
       const generated = []
       const existingValueSets = sourceRows.map(r => JSON.stringify(r.values))
@@ -584,11 +746,12 @@ export const useTestDataStore = defineStore('testData', {
       )
 
       for (let i = 0; i < count; i++) {
-        const wantAbnormal = mode === 'abnormal' ? true : mode === 'mixed' ? (i % 2 === 1) : false
+        const wantAbnormal = mode === 'abnormal' ? true : mode === 'mixed' ? (i % 3 === 2) : false
+        const wantBoundary = mode === 'boundary' || (mode === 'mixed' && i % 3 === 1)
         const values = {}
         const violIdx = violatable.length ? Math.floor(Math.random() * violatable.length) : -1
         let abnormalDone = false
-        const strategy = i % 4
+        const variationStrategy = i % 4
 
         fieldNames.forEach((field) => {
           const def = defMap[field]
@@ -596,6 +759,7 @@ export const useTestDataStore = defineStore('testData', {
           if (c && ['fixed', 'enum', 'range'].includes(c.mode)) {
             const isViol = wantAbnormal && !abnormalDone && violatable[violIdx] === def
             if (isViol) { values[field] = makeAbnormal(c, analysis[field]); abnormalDone = true }
+            else if (wantBoundary) values[field] = makeBoundary(c, analysis[field], i)
             else { values[field] = makeNormal(c, analysis[field]) }
             return
           }
@@ -605,14 +769,14 @@ export const useTestDataStore = defineStore('testData', {
           if (info.type === 'numeric') {
             const { min, max, range, isInteger, allValues } = info
             const jitter = range > 0 ? range * 0.05 : 1
-            if (strategy === 0) {
+            if (variationStrategy === 0) {
               const extendLow = isInteger ? Math.max(min - Math.ceil(jitter), min - 1) : min - jitter
               values[field] = i % 2 === 0 ? extendLow : (isInteger ? max + Math.ceil(jitter) : max + jitter)
-            } else if (strategy === 1) {
+            } else if (variationStrategy === 1) {
               const raw = min + Math.random() * range
               values[field] = isInteger ? Math.round(raw) : Math.round(raw * 100) / 100
-            } else if (strategy === 2) {
-              const rowA = sourceRows[Math.floor(Math.random() * sourceRows.length)]
+            } else if (variationStrategy === 2) {
+              const rowA = analysisRows[Math.floor(Math.random() * analysisRows.length)]
               values[field] = rowA.values[field] ?? 0
             } else {
               const nearBoundary = i % 2 === 0 ? min : max
@@ -621,8 +785,8 @@ export const useTestDataStore = defineStore('testData', {
                 : Math.round((nearBoundary + (Math.random() - 0.5) * jitter * 2) * 100) / 100
             }
           } else if (info.type === 'string') {
-            if (strategy === 2) {
-              const rowA = sourceRows[Math.floor(Math.random() * sourceRows.length)]
+            if (variationStrategy === 2) {
+              const rowA = analysisRows[Math.floor(Math.random() * analysisRows.length)]
               values[field] = rowA.values[field] ?? info.uniqueValues[0]
             } else {
               values[field] = info.uniqueValues[Math.floor(Math.random() * info.uniqueValues.length)]
@@ -634,7 +798,16 @@ export const useTestDataStore = defineStore('testData', {
         const valueKey = JSON.stringify(values)
         if (!existingValueSets.includes(valueKey)) {
           existingValueSets.push(valueKey)
-          generated.push({ label: `智能生成 #${i + 1}`, values, source: '智能生成' })
+          const strategy = wantAbnormal ? '异常变异' : wantBoundary ? '边界覆盖' : options.preferExcellent ? '优秀样本模板' : '历史分布拟合'
+          generated.push({
+            label: `智能生成 #${i + 1}`,
+            values,
+            source: '智能生成',
+            strategy,
+            referenceIds: options.referenceIds || [],
+            coverageTags: [wantAbnormal ? '异常路径' : wantBoundary ? '边界值' : '正常路径'],
+            expectedResult: wantAbnormal ? '预期校验不通过' : '预期校验通过',
+          })
         }
       }
 
@@ -654,11 +827,43 @@ export const useTestDataStore = defineStore('testData', {
         desc: data.desc || '',
         uploadedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
         rowCount: data.rowCount || 0,
+        messageIds: [...new Set(data.messageIds || [])],
+        messageNames: [...new Set(data.messageNames || [])],
+        interfaceIds: [...new Set(data.interfaceIds || [])],
+        interfaceNames: [...new Set(data.interfaceNames || [])],
         // 数据链等文本类文件保留原文，供「解析」再次导入
         content: data.content || ''
       }
       this.files.unshift(file)
       return file
+    },
+
+    linkFileToMessage(fileId, message = {}) {
+      const file = this.files.find((item) => String(item.id) === String(fileId))
+      if (!file) return
+      if (!Array.isArray(file.messageIds)) file.messageIds = []
+      if (!Array.isArray(file.messageNames)) file.messageNames = []
+      if (!Array.isArray(file.interfaceIds)) file.interfaceIds = []
+      if (!Array.isArray(file.interfaceNames)) file.interfaceNames = []
+      if (message.id != null && !file.messageIds.some((id) => String(id) === String(message.id))) file.messageIds.push(message.id)
+      if (message.name && !file.messageNames.includes(message.name)) file.messageNames.push(message.name)
+      const protocolStore = useProtocolStore()
+      const iface = protocolStore.testInterfaces.find((item) => String(item.id) === String(message.ownerIfaceId))
+      if (iface?.id != null && !file.interfaceIds.some((id) => String(id) === String(iface.id))) file.interfaceIds.push(iface.id)
+      if (iface?.name && !file.interfaceNames.includes(iface.name)) file.interfaceNames.push(iface.name)
+    },
+
+    setFileInterfaces(fileId, interfaceIds = []) {
+      const file = this.files.find((item) => String(item.id) === String(fileId))
+      if (!file) return
+      const protocolStore = useProtocolStore()
+      const cleanIds = [...new Set(interfaceIds)].filter((id) =>
+        protocolStore.testInterfaces.some((item) => String(item.id) === String(id))
+      )
+      file.interfaceIds = cleanIds
+      file.interfaceNames = cleanIds
+        .map((id) => protocolStore.testInterfaces.find((item) => String(item.id) === String(id))?.name)
+        .filter(Boolean)
     },
 
     removeFile(id) {

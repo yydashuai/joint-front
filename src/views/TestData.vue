@@ -11,7 +11,8 @@
         <!-- 视图切换：固定靠右 -->
         <el-button-group class="view-switch">
           <el-button :type="viewMode === 'dataset' ? 'primary' : ''" @click="viewMode = 'dataset'">数据集管理</el-button>
-          <el-button :type="viewMode === 'history' ? 'primary' : ''" @click="viewMode = 'history'">历史数据管理</el-button>
+          <el-button :type="viewMode === 'history' ? 'primary' : ''" @click="viewMode = 'history'">历史数据库</el-button>
+          <el-button :type="viewMode === 'excellent' ? 'warning' : ''" @click="viewMode = 'excellent'">优秀数据库</el-button>
           <el-button :type="viewMode === 'files' ? 'primary' : ''" @click="viewMode = 'files'">数据文件管理</el-button>
         </el-button-group>
       </div>
@@ -109,12 +110,24 @@
 
     <!-- ======== 历史数据管理视图 ======== -->
     <el-card v-else-if="viewMode === 'history'" class="main history-main" shadow="never">
-      <HistoryDataManager />
+      <HistoryDataManager mode="history" @open-file="onOpenSourceFile" />
+    </el-card>
+
+    <!-- ======== 优秀数据库视图 ======== -->
+    <el-card v-else-if="viewMode === 'excellent'" class="main history-main" shadow="never">
+      <HistoryDataManager mode="excellent" @use-for-generation="onUseExcellentForGeneration" @open-file="onOpenSourceFile" />
     </el-card>
 
     <!-- ======== 数据文件管理视图 ======== -->
     <el-card v-else class="main history-main" shadow="never">
-      <ResourceFiles @upload="showUploadDialog = true" @download="onDownloadFile" @parse="onParseFile" />
+      <ResourceFiles
+        :focus-file-id="focusedFileId"
+        :created-interface-id="fileCreatedInterfaceId"
+        @upload="showUploadDialog = true"
+        @download="onDownloadFile"
+        @parse="onParseFile"
+        @add-interface="requestInterfaceCreate('file')"
+      />
     </el-card>
 
     <!-- ======== 对话框 ======== -->
@@ -126,6 +139,8 @@
     />
     <UploadFileDialog
       v-model="showUploadDialog"
+      :created-interface-id="uploadCreatedInterfaceId"
+      @add-interface="requestInterfaceCreate('upload')"
       @submitted="onUploadFile"
     />
     <DataChainImportDialog
@@ -186,6 +201,31 @@ const router = useRouter()
 
 /* ========== 视图切换 ========== */
 const viewMode = ref('dataset') // 'dataset' | 'history' | 'files'
+const focusedFileId = ref(null)
+
+const onOpenSourceFile = ({ fileId, fileName }) => {
+  const matched = tdStore.allFiles.find((file) =>
+    (fileId != null && String(file.id) === String(fileId)) || (fileName && file.name === fileName)
+  )
+  if (!matched) {
+    ElMessage.warning('未在数据文件管理中找到对应文件')
+    return
+  }
+  focusedFileId.value = matched.id
+  viewMode.value = 'files'
+}
+
+const onUseExcellentForGeneration = (rows) => {
+  const first = rows?.[0]
+  if (!first) return
+  const target = tdStore.datasets.find((d) => d.id === first._datasetId)
+  if (target) {
+    tdStore.select(target.id)
+    selectedKey.value = `ds-${target.id}`
+    viewMode.value = 'dataset'
+    router.replace({ path: '/test-data', query: { generate: '1', datasetId: String(target.id) } })
+  }
+}
 
 /* ========== 树选择 + 搜索 ========== */
 const selectedKey = ref('')
@@ -384,12 +424,34 @@ const goEditMessage = (message) => {
 
 const ifaceConfigVisible = ref(false)
 const ifaceConfigId = ref(null)
+const interfaceCreateTarget = ref('')
+const uploadCreatedInterfaceId = ref(null)
+const fileCreatedInterfaceId = ref(null)
 const openIfaceConfig = (id = null) => {
   ifaceConfigId.value = id
   ifaceConfigVisible.value = true
 }
+const requestInterfaceCreate = (target) => {
+  interfaceCreateTarget.value = target
+  if (target === 'upload') uploadCreatedInterfaceId.value = null
+  if (target === 'file') fileCreatedInterfaceId.value = null
+  openIfaceConfig(null)
+}
+watch(ifaceConfigVisible, (visible) => {
+  if (!visible) interfaceCreateTarget.value = ''
+})
 const onIfaceSaved = (id) => {
   if (!id) return
+  if (interfaceCreateTarget.value === 'upload') {
+    uploadCreatedInterfaceId.value = id
+    interfaceCreateTarget.value = ''
+    return
+  }
+  if (interfaceCreateTarget.value === 'file') {
+    fileCreatedInterfaceId.value = id
+    interfaceCreateTarget.value = ''
+    return
+  }
   selectedSchemeId.value = null
   tdStore.select(null)
   selectedKey.value = `iface-${id}`
@@ -408,9 +470,9 @@ const onDownloadFile = (file) => {
 const showUploadDialog = ref(false)
 
 const onUploadFile = (data) => {
-  // 上传仅登记到文件列表（不关联系统/模块），需要时在文件管理中手动「解析」
+  // 上传先登记到文件列表；接口关联可在上传时选择，也可稍后修改。
   const file = tdStore.addFile(data)
-  ElMessage.success(`文件「${file.name}」已导入文件列表`)
+  ElMessage.success(`文件「${file.name}」已导入${file.interfaceNames?.length ? `，关联 ${file.interfaceNames.length} 个接口` : ''}`)
 }
 
 /* ========== 数据链文件导入 ========== */
@@ -422,6 +484,11 @@ const currentSystemId = computed(() => connStore.selected?.systemId ?? systemSto
 const currentModuleName = computed(() => connStore.selected?.name ?? '')
 
 const openDataChainDialog = (preset = null) => {
+  if (!preset) {
+    viewMode.value = 'files'
+    showUploadDialog.value = true
+    return
+  }
   dataChainPreset.value = preset
   showDataChainDialog.value = true
 }
@@ -432,12 +499,7 @@ const onParseFile = (file) => {
     ElMessage.warning('该文件未保留文本内容，无法解析（仅通过数据链导入登记的文件支持解析）')
     return
   }
-  openDataChainDialog({
-    name: file.name,
-    content: file.content,
-    systemId: file.systemId || '',
-    moduleName: file.moduleName || ''
-  })
+  openDataChainDialog({ ...file })
 }
 
 const onDataChainImported = (datasetIds) => {

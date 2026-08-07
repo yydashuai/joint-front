@@ -18,7 +18,7 @@
       >
         <el-icon :size="40" color="var(--el-text-color-placeholder)"><UploadFilled /></el-icon>
         <div class="el-upload__text">点击或拖拽数据链文件到此处</div>
-        <div class="dci-hint">支持 .txt / .csv / .dat / .bin，段落以「一、名称 / 二、名称」分隔，首行为字段名，其后为数据行</div>
+        <div class="dci-hint">支持 .txt / .csv / .dat / .bin；可使用“报文名、字段表头、数据行”结构，也兼容带序号的多报文段落</div>
       </el-upload>
       <div v-if="parseError" class="dci-parse-error">{{ parseError }}</div>
     </div>
@@ -100,33 +100,28 @@
         </div>
       </div>
 
-      <!-- 保存目标（不关联系统/模块） -->
       <div class="dci-targets">
-        <span class="dci-targets__label">保存到：</span>
-        <el-checkbox v-model="attachIface">生成报文并挂到接口</el-checkbox>
-        <template v-if="attachIface">
-          <span class="dci-targets__sub">目标接口：</span>
-          <el-select v-model="targetIfaceId" size="small" style="width: 190px">
-            <el-option v-for="i in protoStore.testInterfaces" :key="i.id" :label="i.name" :value="i.id" />
-            <el-option label="＋ 新建接口" value="__new__" />
-          </el-select>
-          <el-input
-            v-if="targetIfaceId === '__new__'"
-            v-model="newIfaceName"
-            size="small"
-            placeholder="新接口名称"
-            style="width: 160px"
-          />
-        </template>
-        <el-checkbox v-model="saveDatasets">生成数据集</el-checkbox>
+        <div class="dci-target-item">
+          <span>来源文件</span>
+          <strong>{{ fileName }}</strong>
+        </div>
+        <i />
+        <div class="dci-target-item">
+          <span>归属接口</span>
+          <el-tag size="small" type="success" effect="plain">{{ targetInterface?.name || '未配置' }}</el-tag>
+        </div>
+        <i />
+        <div class="dci-target-item">
+          <span>自动生成</span>
+          <strong>{{ parsed.length }} 个报文 · {{ parsed.length }} 个数据集</strong>
+        </div>
       </div>
       <div class="dci-targets__tip">
-        报文将记录文件数据源（fileId），发送测试时文件内容原样直发，不修改不校验。
+        数据集按“报文名 + 数据集”自动命名，重名时自动编号；生成后可在数据集管理中改名。
       </div>
     </div>
 
     <template #footer>
-      <el-button v-if="parsed.length" text type="info" @click="resetAll">重新选择文件</el-button>
       <el-button @click="visible = false">取消</el-button>
       <el-button v-if="parsed.length" type="primary" :disabled="!canImport" @click="performImport">
         {{ confirmLabel }}
@@ -169,11 +164,6 @@ const fileName = ref('')
 const rawText = ref('')
 const fromPreset = ref(false)
 
-// 保存目标（不关联系统/模块）
-const attachIface = ref(true)
-const saveDatasets = ref(false)
-const targetIfaceId = ref('')
-const newIfaceName = ref('')
 // 文件数据源 id（文件列表中的文件）
 const currentFileId = ref(null)
 
@@ -194,15 +184,18 @@ const typeGroups = computed(() => {
 
 const totalRows = computed(() => parsed.value.reduce((s, p) => s + p.rows.length, 0))
 
-const canImport = computed(() => parsed.value.length > 0)
-
-const confirmLabel = computed(() => {
-  const parts = []
-  if (attachIface.value) parts.push('挂到接口')
-  if (saveDatasets.value) parts.push('生成数据集')
-  if (!parts.length) return '仅保存报文定义'
-  return `确认解析并${parts.join('+')}（${parsed.value.length} 个报文）`
+const registeredFile = computed(() => tdStore.allFiles.find((file) =>
+  String(file.id) === String(currentFileId.value ?? props.presetFile?.id)
+) || props.presetFile || null)
+const targetInterface = computed(() => {
+  const file = registeredFile.value
+  const explicitId = file?.interfaceIds?.[0]
+  if (explicitId != null) return protoStore.testInterfaces.find((item) => String(item.id) === String(explicitId)) || null
+  const explicitName = file?.interfaceNames?.[0]
+  return explicitName ? protoStore.testInterfaces.find((item) => item.name === explicitName) || null : null
 })
+const canImport = computed(() => parsed.value.length > 0 && !!targetInterface.value)
+const confirmLabel = computed(() => `生成报文与数据集（${parsed.value.length} 个报文）`)
 
 const togglePara = (pi) => {
   const next = new Set(expandedSet.value)
@@ -215,9 +208,10 @@ const applyText = (name, text) => {
   parseError.value = ''
   fileName.value = name
   rawText.value = text
-  const result = parseDataChain(text)
+  const defaultName = String(name || 'CSV报文').replace(/\.[^.]+$/, '')
+  const result = parseDataChain(text, { defaultName })
   if (!result.length) {
-    parseError.value = '未能解析出任何报文定义，请检查文件格式（段落标题需以「序号、名称」开头，如「一、MonitoringStatus」）。'
+    parseError.value = '未能解析出报文数据。支持两种格式：首行报文名、第二行字段名、后续数据行；或直接以 CSV 字段表头开始。'
     parsed.value = []
     return false
   }
@@ -250,8 +244,6 @@ const buildConstraint = (f) => {
 watch(() => props.modelValue, (v) => {
   if (v) {
     resetAll()
-    attachIface.value = true
-    saveDatasets.value = false
     viewMode.value = 'fields'
     // 从数据文件管理「解析」进入：预载文件内容
     if (props.presetFile?.content) {
@@ -260,7 +252,7 @@ watch(() => props.modelValue, (v) => {
         ElMessage.warning('该文件内容无法解析为数据链格式')
       } else {
         // 定位文件列表中的 fileId（文件数据源）
-        const f = tdStore.allFiles.find((x) => x.name === (props.presetFile.name || ''))
+        const f = tdStore.allFiles.find((x) => String(x.id) === String(props.presetFile.id) || x.name === (props.presetFile.name || ''))
         currentFileId.value = f?.id ?? null
       }
     }
@@ -299,8 +291,6 @@ const resetAll = () => {
   fromPreset.value = false
   viewMode.value = 'fields'
   expandedSet.value = new Set()
-  targetIfaceId.value = ''
-  newIfaceName.value = ''
   currentFileId.value = null
 }
 
@@ -309,100 +299,88 @@ const onClose = () => {
 }
 
 /* ============ 构建并写入 stores ============ */
-const resolveTargetIface = () => {
-  if (targetIfaceId.value === '__new__') {
-    const name = (newIfaceName.value || '').trim()
-    if (!name) {
-      ElMessage.warning('请输入新接口名称')
-      return null
-    }
-    return protoStore.addTestInterface({ name }).id
-  }
-  if (targetIfaceId.value) return targetIfaceId.value
-  ElMessage.warning('请选择目标接口')
-  return null
-}
-
 const performImport = () => {
   const createdIds = []
+  const registeredFile = tdStore.allFiles.find((file) => String(file.id) === String(currentFileId.value))
+  const registeredFileName = registeredFile?.name || fileName.value || ''
+  const targetId = targetInterface.value?.id
+  if (!targetId) {
+    ElMessage.warning('文件尚未配置关联接口，请返回数据文件管理进行配置')
+    return
+  }
 
   parsed.value.forEach((para) => {
     let iface = null
 
-    // 1) 生成报文并挂到接口（文件数据源，内容直发）
-    if (attachIface.value) {
-      const targetId = resolveTargetIface()
-      if (!targetId) return
-      iface = protoStore.attachFileMessageToInterface(targetId, {
-        name: `${para.name}报文`,
-        fileId: currentFileId.value || null,
-        transportType: 'OSE',
-      })
-      // 生成字段定义（供结构查看 / 数据集列）
-      const byteFields = para.fields.map((f) => {
-        const dataType = f.type
-        return {
-          id: uid(),
-          kind: 'byte',
-          name: f.name,
-          byteOffset: 0,
-          byteLength: SCALAR_ENCODINGS.find((e) => e.value === dataType)?.bytes ?? 0,
-          bitMode: false,
-          dataType,
-          constraint: buildConstraint(f),
-          desc: '',
-          remark: '',
-          children: []
-        }
-      })
-      const proto = protoStore.addProtocol({
-        name: `${para.name}字段`,
-        systemId: iface.systemId,
-        moduleId: iface.moduleId,
-        desc: `文件解析自动生成（${para.fieldNames.length} 字段）`,
-        fields: byteFields
-      })
-      proto.config = { fields: byteFields }
-      iface.protocolRefs = [{ protocolId: proto.id, role: 'send' }]
-    }
+    // 1) 读取文件已配置的接口，生成报文并挂载。
+    iface = protoStore.attachFileMessageToInterface(targetId, {
+      name: `${para.name}报文`,
+      fileId: currentFileId.value || null,
+      transportType: 'OSE',
+    })
+    // 生成字段定义（供结构查看 / 数据集列）
+    const byteFields = para.fields.map((f) => {
+      const dataType = f.type
+      return {
+        id: uid(),
+        kind: 'byte',
+        name: f.name,
+        byteOffset: 0,
+        byteLength: SCALAR_ENCODINGS.find((e) => e.value === dataType)?.bytes ?? 0,
+        bitMode: false,
+        dataType,
+        constraint: buildConstraint(f),
+        desc: '',
+        remark: '',
+        children: []
+      }
+    })
+    const proto = protoStore.addProtocol({
+      name: `${para.name}字段`,
+      systemId: iface.systemId,
+      moduleId: iface.moduleId,
+      desc: `文件解析自动生成（${para.fieldNames.length} 字段）`,
+      fields: byteFields
+    })
+    proto.config = { fields: byteFields }
+    iface.protocolRefs = [{ protocolId: proto.id, role: 'send' }]
+    tdStore.linkFileToMessage(currentFileId.value, iface)
 
-    // 2) 可选：生成数据集（挂到该报文下）
-    if (saveDatasets.value) {
-      const ds = tdStore.addDataset({
-        name: `${para.name}数据集`,
-        systemId: iface?.systemId || null,
-        moduleName: iface?.moduleId
-          ? connStore.nodes.find((n) => String(n.id) === String(iface.moduleId))?.name || ''
-          : '',
-        linkedInterface: iface?.name || '',
-        messageId: iface?.id || null,
-        desc: `文件「${fileName.value}」解析生成（${para.rows.length} 行）`
-      })
+    // 2) 默认生成数据集（名称按报文名自动生成，可在数据集管理中修改）。
+    const ds = tdStore.addDataset({
+      name: `${para.name}数据集`,
+      systemId: iface?.systemId || null,
+      moduleName: iface?.moduleId
+        ? connStore.nodes.find((n) => String(n.id) === String(iface.moduleId))?.name || ''
+        : '',
+      linkedInterface: iface?.name || '',
+      messageId: iface?.id || null,
+      sourceFileId: currentFileId.value || null,
+      sourceFileName: registeredFileName,
+      desc: `文件「${fileName.value}」解析生成（${para.rows.length} 行）`
+    })
 
-      let rowSeq = 90000
-      ds.rows = para.rows.map((r, i) => ({
-        id: ++rowSeq,
-        label: `行 ${i + 1}`,
-        values: { ...r }
-      }))
+    let rowSeq = 90000
+    ds.rows = para.rows.map((r, i) => ({
+      id: ++rowSeq,
+      label: `行 ${i + 1}`,
+      values: { ...r }
+    }))
 
-      tdStore.addHistoryRows(ds.id, para.rows.map((r, i) => ({
-        label: `行 ${i + 1}`,
-        values: { ...r },
-        source: '文件导入',
-        abnormal: false,
-        excellent: false
-      })))
+    tdStore.addHistoryRows(ds.id, para.rows.map((r, i) => ({
+      label: `行 ${i + 1}`,
+      values: { ...r },
+      source: '文件导入',
+      fileId: currentFileId.value || null,
+      fileName: registeredFileName,
+      abnormal: false,
+      excellent: false
+    })))
 
-      createdIds.push(ds.id)
-    }
+    createdIds.push(ds.id)
   })
 
-  const doneParts = []
-  if (attachIface.value) doneParts.push(`${parsed.value.length} 个报文已挂到接口`)
-  if (saveDatasets.value) doneParts.push(`${createdIds.length} 个数据集`)
-  if (!doneParts.length) doneParts.push('已保存报文定义')
-  ElMessage.success(`解析完成：${doneParts.join('，')}（文件内容直发测试，不修改）`)
+  ElMessage.success(`解析完成：${parsed.value.length} 个报文已挂到“${targetInterface.value.name}”，生成 ${createdIds.length} 个数据集`)
   emit('imported', createdIds)
   visible.value = false
 }
@@ -423,8 +401,11 @@ const performImport = () => {
   gap: 8px;
   max-height: 46vh;
   overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
 }
 .dci-para-card {
+  flex: 0 0 auto;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   overflow: hidden;
@@ -441,7 +422,7 @@ const performImport = () => {
   &__name { font-weight: 600; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   &__meta { font-size: 12px; color: var(--el-text-color-secondary); flex-shrink: 0; }
   &__arrow { margin-left: auto; font-size: 12px; color: var(--el-text-color-secondary); flex-shrink: 0; }
-  &__body { padding: 6px 10px 10px; border-top: 1px solid var(--el-border-color-lighter); }
+  &__body { min-height: 0; overflow: hidden; padding: 6px 10px 10px; border-top: 1px solid var(--el-border-color-lighter); }
 }
 .dci-field-table, .dci-matrix-table { margin-bottom: 2px; }
 
@@ -456,20 +437,21 @@ const performImport = () => {
 .dci-targets {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 8px 12px;
+  gap: 14px;
+  padding: 10px 12px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
   background: var(--el-fill-color-lighter);
-  &__label { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
-  &__sub { font-size: 12px; color: var(--el-text-color-secondary); }
+  > i { width: 24px; height: 1px; flex: 0 0 auto; background: var(--el-border-color); }
   &__tip {
     font-size: 12px;
     color: var(--el-color-warning);
     padding: 0 2px;
   }
 }
+.dci-target-item { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.dci-target-item > span { flex: 0 0 auto; color: var(--el-text-color-secondary); font-size: 12px; }
+.dci-target-item > strong { overflow: hidden; color: var(--el-text-color-primary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 
 .dci-constraint { display: flex; align-items: center; gap: 4px; }
 .dci-cnum { width: 92px; }

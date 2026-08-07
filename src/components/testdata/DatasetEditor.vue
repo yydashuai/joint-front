@@ -88,6 +88,7 @@
               <el-button size="small" type="danger" text :icon="Delete">批量删除</el-button>
             </template>
           </el-popconfirm>
+          <el-button size="small" text @click="clearCurrentSelection">取消勾选</el-button>
         </template>
         <el-popconfirm v-if="ds.rows.length > 0" title="确认清空所有行？" @confirm="onClearRows">
           <template #reference>
@@ -117,15 +118,23 @@
     <!-- ======== 数据矩阵表格 (核心) ======== -->
     <div v-else class="ds-matrix">
       <div class="matrix-table-shell">
+        <TableRangeSelection
+          ref="matrixRangeRef"
+          :rows="displayRows"
+          row-key="id"
+          @selection-change="onSelectionChange"
+        >
+          <template #default="{ setTableRef, handleSelectionChange, handleScroll }">
         <el-table
-          ref="tableRef"
+          :ref="(instance) => bindMatrixTable(instance, setTableRef)"
           class="matrix-table"
           :data="displayRows"
           size="small"
           border
           row-key="id"
           :row-class-name="rowClassName"
-          @selection-change="onSelectionChange"
+          @selection-change="handleSelectionChange"
+          @scroll="handleScroll"
           @row-contextmenu="onRowContextMenu"
           style="width: 100%;"
           height="100%"
@@ -229,6 +238,8 @@
           </template>
         </el-table-column>
         </el-table>
+          </template>
+        </TableRangeSelection>
       </div>
 
       <el-tooltip content="添加一行新的测试数据"><el-button class="add-row-btn" text type="primary" :icon="Plus" @click="onAddRow">
@@ -250,22 +261,31 @@
                 <el-button size="small" text type="danger" :icon="Delete">删除选中</el-button>
               </template>
             </el-popconfirm>
+            <el-button size="small" text @click="clearHistorySelection">取消勾选</el-button>
           </template>
         </div>
       </div>
 
       <div class="history-table-shell">
+        <TableRangeSelection
+          ref="historyRangeRef"
+          :rows="historyRows"
+          row-key="_rowKey"
+          @selection-change="onHistorySelectionChange"
+        >
+          <template #default="{ setTableRef, handleSelectionChange, handleScroll }">
         <el-table
-          ref="historyTableRef"
+          :ref="(instance) => bindHistoryTable(instance, setTableRef)"
           class="matrix-table history-table"
           :data="historyRows"
           size="small"
           border
-          row-key="id"
+          row-key="_rowKey"
           empty-text="暂无历史数据"
           style="width: 100%;"
           height="100%"
-          @selection-change="onHistorySelectionChange"
+          @selection-change="handleSelectionChange"
+          @scroll="handleScroll"
         >
           <el-table-column type="selection" width="40" fixed="left" align="center" />
           <el-table-column type="index" width="48" align="center" label="#" fixed="left" />
@@ -309,6 +329,8 @@
             </template>
           </el-table-column>
         </el-table>
+          </template>
+        </TableRangeSelection>
       </div>
     </div>
 
@@ -327,59 +349,7 @@
       </el-collapse-item>
     </el-collapse>
 
-    <!-- ======== 智能生成对话框 ======== -->
-    <el-dialog
-      v-model="showGenDialog"
-      title="智能生成测试数据"
-      width="640px"
-      :close-on-click-modal="false"
-      destroy-on-close
-    >
-      <div class="gen-dialog">
-        <div class="gen-form__row">
-          <label class="gen-label">目标数据集</label>
-          <el-tag type="success" effect="plain">{{ ds.name }}</el-tag>
-        </div>
-        <div class="gen-form__row">
-          <label class="gen-label">生成数量</label>
-          <el-input-number v-model="genCount" :min="1" :max="20" :step="1" style="width: 140px;" />
-        </div>
-        <div class="gen-form__row">
-          <label class="gen-label">生成类型</label>
-          <el-radio-group v-model="genMode">
-            <el-radio value="normal">正常数据</el-radio>
-            <el-radio value="abnormal">异常数据</el-radio>
-            <el-radio value="mixed">混合数据</el-radio>
-          </el-radio-group>
-        </div>
-
-        <div v-if="genPreview.length > 0" class="gen-preview">
-          <div class="gen-preview__header">
-            <span>生成预览</span>
-            <el-tag size="small" type="success" effect="plain">{{ genPreview.length }} 条</el-tag>
-          </div>
-          <el-table :data="genPreview" size="small" border max-height="220" style="width: 100%;" :row-class-name="genPreviewRowClass">
-            <el-table-column prop="label" label="标签" width="120" fixed="left" />
-            <el-table-column
-              v-for="field in genPreviewFields"
-              :key="`gen-${field.name}`"
-              :label="field.name"
-              :min-width="fieldColWidth(field)"
-              show-overflow-tooltip
-            >
-              <template #default="{ row }">
-                <span class="mono gen-value">{{ formatGenValue(row.values?.[field.name]) }}</span>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="showGenDialog = false">取消</el-button>
-        <el-button type="primary" @click="onGenerate">生成并预览</el-button>
-        <el-button type="success" :disabled="genPreview.length === 0" @click="onConfirmGenerate">确认添加到本次数据</el-button>
-      </template>
-    </el-dialog>
+    <SmartGenerateWorkbench v-model="showGenDialog" :dataset="ds" @confirmed="onSmartGenerated" />
 
     <!-- 行右键菜单 -->
     <teleport to="body">
@@ -394,7 +364,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   Download, Delete, Plus, Lock, Search, MagicStick, Link, Promotion, VideoPlay
 } from '@element-plus/icons-vue'
@@ -405,6 +375,8 @@ import { useProtocolStore, collectInterfaceDatasetFields } from '@/stores/protoc
 import { useConnectionStore } from '@/stores/connection'
 import { exportCsvFile, exportJsonFile } from '@/services/testDataService'
 import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
+import SmartGenerateWorkbench from '@/components/testdata/SmartGenerateWorkbench.vue'
+import TableRangeSelection from '@/components/common/TableRangeSelection.vue'
 
 const props = defineProps({
   dataset: { type: Object, required: true }
@@ -417,6 +389,7 @@ const protoStore = useProtocolStore()
 const connStore = useConnectionStore()
 const { nextUniqueName, validateName } = useEntityNameGuard()
 const router = useRouter()
+const route = useRoute()
 
 const ds = computed(() => props.dataset)
 const nameBeforeEdit = ref('')
@@ -644,103 +617,77 @@ const displayRows = computed(() => {
 
 /* ========== 批量选择 (优化点 2) ========== */
 const selectedRows = ref([])
+const matrixRangeRef = ref(null)
 const onSelectionChange = (rows) => { selectedRows.value = rows }
+const clearCurrentSelection = () => matrixRangeRef.value?.clearSelection?.()
 const onBatchDelete = () => {
   tdStore.removeRowsBatch(ds.value.id, selectedRows.value.map(r => r.id))
-  selectedRows.value = []
+  clearCurrentSelection()
   ElMessage.success('已删除选中行')
 }
 
 const historyTableRef = ref(null)
+const historyRangeRef = ref(null)
 const selectedHistoryRows = ref([])
-const historyRows = computed(() => ds.value.historyRows || [])
+const historyRows = computed(() => {
+  const messageId = ds.value.messageId
+  if (messageId != null && messageId !== '') {
+    return tdStore.allHistoryData
+      .filter((row) => String(row.messageId) === String(messageId))
+      .map((row) => ({ ...row, _rowKey: `${row._datasetId}-${row.id}` }))
+  }
+  if (ds.value.linkedInterface) {
+    return tdStore.allHistoryData
+      .filter((row) => row.messageName === ds.value.linkedInterface)
+      .map((row) => ({ ...row, _rowKey: `${row._datasetId}-${row.id}` }))
+  }
+  return tdStore.allHistoryData
+    .filter((row) => row._datasetId === ds.value.id)
+    .map((row) => ({ ...row, _rowKey: `${row._datasetId}-${row.id}` }))
+})
 const onHistorySelectionChange = (rows) => { selectedHistoryRows.value = rows }
+const clearHistorySelection = () => historyRangeRef.value?.clearSelection?.()
+const bindHistoryTable = (instance, setRangeTable) => {
+  historyTableRef.value = instance
+  setRangeTable(instance)
+}
 
 const onUseHistoryRows = () => {
   if (selectedHistoryRows.value.length === 0) return
   const count = selectedHistoryRows.value.length
   const lastSelected = selectedRows.value[selectedRows.value.length - 1]
   tdStore.insertRowsAfter(ds.value.id, lastSelected?.id ?? null, selectedHistoryRows.value)
-  selectedHistoryRows.value = []
-  historyTableRef.value?.clearSelection?.()
+  clearHistorySelection()
   nextTick(() => takeSnapshot())
   ElMessage.success(`已带入 ${count} 行历史数据`)
 }
 
 const onDeleteHistoryRow = (row) => {
-  tdStore.removeHistoryRow(ds.value.id, row.id)
-  selectedHistoryRows.value = selectedHistoryRows.value.filter(item => item.id !== row.id)
+  tdStore.removeHistoryRow(row._datasetId ?? ds.value.id, row.id)
+  selectedHistoryRows.value = selectedHistoryRows.value.filter(item => item._rowKey !== row._rowKey)
   ElMessage.success('历史数据已删除')
 }
 
 const onDeleteSelectedHistoryRows = () => {
   const count = selectedHistoryRows.value.length
   if (!count) return
-  tdStore.removeHistoryRowsBatch(ds.value.id, selectedHistoryRows.value.map(r => r.id))
-  selectedHistoryRows.value = []
-  historyTableRef.value?.clearSelection?.()
+  const rowsByDataset = new Map()
+  selectedHistoryRows.value.forEach((row) => {
+    const datasetId = row._datasetId ?? ds.value.id
+    if (!rowsByDataset.has(datasetId)) rowsByDataset.set(datasetId, [])
+    rowsByDataset.get(datasetId).push(row.id)
+  })
+  rowsByDataset.forEach((rowIds, datasetId) => tdStore.removeHistoryRowsBatch(datasetId, rowIds))
+  clearHistorySelection()
   ElMessage.success(`已删除 ${count} 条历史数据`)
 }
 
-/* ========== 智能生成 ========== */
+/* ========== 智能生成工作台 ========== */
 const showGenDialog = ref(false)
-const genCount = ref(5)
-const genMode = ref('normal') // normal | abnormal | mixed
-const genPreview = ref([])
-const genPreviewFields = computed(() => {
-  const keys = Object.keys(genPreview.value[0]?.values || {})
-  const keySet = new Set(keys)
-  const ordered = dynamicFields.value.filter(field => keySet.has(field.name))
-  const known = new Set(ordered.map(field => field.name))
-  return [
-    ...ordered,
-    ...keys.filter(name => !known.has(name)).map(name => ({ name, constraint: null })),
-  ]
-})
-
-const onGenerate = () => {
-  const result = tdStore.generateTestData(ds.value.id, genCount.value, genMode.value)
-  genPreview.value = result
-  if (result.length === 0) {
-    ElMessage.warning('未能生成新数据，请检查数据集是否包含有效数据行')
-  } else {
-    const labelMap = { normal: '正常', abnormal: '异常', mixed: '混合' }
-    ElMessage.success(`已生成 ${result.length} 条${labelMap[genMode.value]}测试数据，请预览确认`)
-  }
-}
-
-const onConfirmGenerate = () => {
-  if (genPreview.value.length === 0) return
-  // 添加到本次数据矩阵（rows），供编辑 / 发送
-  const newRows = genPreview.value.map(r => ({
-    id: Date.now() + Math.random() * 1000,
-    label: r.label,
-    values: { ...r.values },
-    source: r.source || '智能生成'
-  }))
-  tdStore.insertRowsAfter(ds.value.id, null, newRows)
-  // 同步写入历史数据：来源标记为「智能生成」，异常状态按字段定义实时判定，
-  // 以便后续在历史数据管理中按来源筛选、并按正常 / 异常分类查看
-  const historyPayload = newRows.map(r => ({
-    label: r.label,
-    values: r.values,
-    source: '智能生成',
-    abnormal: tdStore.computeAbnormal(r.values, ds.value.id)
-  }))
-  tdStore.addHistoryRows(ds.value.id, historyPayload)
-  nextTick(() => takeSnapshot())
-  ElMessage.success(`已将 ${genPreview.value.length} 条智能生成数据添加到本次数据矩阵，并同步至历史数据（来源：智能生成）`)
-  genPreview.value = []
-  showGenDialog.value = false
-}
-
-const formatGenValue = (value) => {
-  if (value === undefined || value === null || value === '') return '—'
-  return typeof value === 'object' ? JSON.stringify(value) : value
-}
-
-// 生成预览中异常行标红（按字段定义实时判定）
-const genPreviewRowClass = ({ row }) => tdStore.computeAbnormal(row.values, ds.value.id) ? 'gen-abnormal-row' : ''
+const onSmartGenerated = () => nextTick(() => takeSnapshot())
+watch(() => [route.query.generate, route.query.datasetId, ds.value.id], ([generate, datasetId, id]) => {
+  if (generate === '1' && String(datasetId) === String(id)) showGenDialog.value = true
+}, { immediate: true })
 
 /* ========== 行右键菜单 ========== */
 const rowCtx = reactive({ visible: false, x: 0, y: 0, row: null })
@@ -783,13 +730,16 @@ watch(() => ds.value.id, () => {
   tdStore.ensureHistoryRows(ds.value.id)
   nextTick(() => takeSnapshot())
   rowSearch.value = ''
-  selectedRows.value = []
-  selectedHistoryRows.value = []
-  historyTableRef.value?.clearSelection?.()
+  clearCurrentSelection()
+  clearHistorySelection()
 }, { immediate: true })
 
 /* ========== 拖拽排序 (优化点 3) ========== */
 const tableRef = ref(null)
+const bindMatrixTable = (instance, setRangeTable) => {
+  tableRef.value = instance
+  setRangeTable(instance)
+}
 let sortableInstance = null
 
 const initSortable = () => {

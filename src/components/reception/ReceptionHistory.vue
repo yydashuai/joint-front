@@ -26,7 +26,7 @@
           <el-option v-for="i in interfaces" :key="i" :label="i" :value="i" />
         </el-select>
         <el-button size="small" text :icon="Refresh" @click="selectAll">全选</el-button>
-        <el-button size="small" text @click="selectedIds = []">清空</el-button>
+        <el-button size="small" text @click="clearSelection">清空</el-button>
       </div>
       <div class="recv-toolbar__right">
         <el-button size="small" :icon="Coin" :disabled="!selectedIds.length" @click="saveToDataset">保存勾选到数据集</el-button>
@@ -34,7 +34,15 @@
     </div>
 
     <!-- 数据表 -->
-    <el-table :data="filteredData" size="small" border height="100%" style="width: 100%;" @selection-change="onSelectionChange">
+    <TableRangeSelection
+      ref="rangeSelectionRef"
+      class="recv-table-shell"
+      :rows="filteredData"
+      row-key="id"
+      @selection-change="onSelectionChange"
+    >
+      <template #default="{ setTableRef, handleSelectionChange, handleScroll }">
+    <el-table :ref="setTableRef" :data="filteredData" size="small" border row-key="id" height="100%" style="width: 100%;" @selection-change="handleSelectionChange" @scroll="handleScroll">
       <el-table-column type="selection" width="42" align="center" />
       <el-table-column type="index" width="50" align="center" label="#" />
       <el-table-column prop="time" label="时间" width="80" align="center" />
@@ -60,6 +68,8 @@
         </template>
       </el-table-column>
     </el-table>
+      </template>
+    </TableRangeSelection>
 
     <!-- 保存到数据集弹窗 -->
     <el-dialog v-model="saveDialogVisible" title="保存接收报文到数据集" width="540px" destroy-on-close>
@@ -94,6 +104,7 @@ import { ElMessage } from 'element-plus'
 import { Coin, Refresh } from '@element-plus/icons-vue'
 import { useReceptionStore } from '@/stores/reception'
 import { useTestDataStore } from '@/stores/testData'
+import TableRangeSelection from '@/components/common/TableRangeSelection.vue'
 
 const store = useReceptionStore()
 const tdStore = useTestDataStore()
@@ -101,6 +112,7 @@ const tdStore = useTestDataStore()
 const filterStatus = ref('')
 const filterInterface = ref('')
 const selectedIds = ref([])
+const rangeSelectionRef = ref(null)
 
 const interfaces = computed(() => [...new Set(store.recvQueue.filter(e => e.kind === 'recv').map(e => e.iface))])
 
@@ -116,8 +128,9 @@ const onSelectionChange = (rows) => {
 }
 
 const selectAll = () => {
-  selectedIds.value = filteredData.value.map(r => r.id)
+  rangeSelectionRef.value?.selectAll?.()
 }
+const clearSelection = () => rangeSelectionRef.value?.clearSelection?.()
 
 /* ---- 保存到数据集 ---- */
 const saveDialogVisible = ref(false)
@@ -144,9 +157,9 @@ const confirmSave = () => {
     : { newName: newDatasetName.value.trim() }
   const result = store.saveToDataset(selectedIds.value, target)
   if (!result) { ElMessage.warning('保存失败，请重试'); return }
-  ElMessage.success(`已保存 ${result.saved} 条��文到数据集「${result.dataset.name}」`)
+  ElMessage.success(`已保存 ${result.saved} 条报文到数据集「${result.dataset.name}」`)
   saveDialogVisible.value = false
-  selectedIds.value = []
+  clearSelection()
 }
 </script>
 
@@ -158,6 +171,7 @@ const confirmSave = () => {
   height: 100%;
   min-height: 0;
 }
+.recv-table-shell { flex: 1; min-height: 0; }
 .recv-card { flex-shrink: 0; }
 .history-metrics {
   display: grid;

@@ -45,6 +45,7 @@
           >
             保存选中为数据集（{{ selectedIds.length }}）
           </el-button>
+          <el-button v-if="selectedIds.length" size="small" text @click="clearSelection">取消勾选</el-button>
           <el-switch v-model="autoScroll" size="small" active-text="自动滚动" />
         </div>
       </div>
@@ -69,7 +70,7 @@
         <span class="stream-head__op">详情</span>
       </div>
       <div class="stream-wrap">
-        <div ref="streamRef" class="stream">
+        <div ref="streamRef" class="stream" @scroll="onStreamScroll">
           <div
             v-for="entry in filteredEntries"
             :key="entry.id"
@@ -103,6 +104,15 @@
             {{ store.recvQueue.length ? '当前过滤条件下没有报文' : '开始监听后，接收数据流将在此实时滚动。' }}
           </div>
         </div>
+        <button
+          v-if="selectionAnchorId && selectionRangeVisible"
+          class="select-to-here"
+          :class="`select-to-here--${selectionDirection}`"
+          type="button"
+          @click="selectToViewportEdge"
+        >
+          {{ selectionDirection === 'up' ? '↓' : '↑' }} 选择到这里
+        </button>
       </div>
     </el-card>
 
@@ -246,14 +256,100 @@ const toggleSelectAll = () => {
   } else {
     selectedIds.value = [...new Set([...selectedIds.value, ...allRecvFilteredIds.value])]
   }
+  resetRangeSelection()
 }
 
 /* ===== 勾选与保存 ===== */
 const selectedIds = ref([])
+const selectionAnchorId = ref('')
+const selectionRangeVisible = ref(false)
+const selectionViewportTarget = ref(-1)
+const viewportStart = ref(0)
+const viewportEnd = ref(-1)
+const selectionAnchorIndex = computed(() => filteredEntries.value.findIndex((entry) => entry.id === selectionAnchorId.value))
+const selectionDirection = computed(() => selectionAnchorIndex.value > viewportEnd.value && viewportEnd.value >= 0 ? 'up' : 'down')
+const currentViewportTarget = computed(() => selectionDirection.value === 'up' ? viewportStart.value : viewportEnd.value)
+
+const resetRangeSelection = () => {
+  selectionAnchorId.value = ''
+  selectionRangeVisible.value = false
+  selectionViewportTarget.value = -1
+}
+
+const updateViewportRange = () => {
+  const viewport = streamRef.value?.getBoundingClientRect?.()
+  const lines = [...(streamRef.value?.querySelectorAll?.('.stream-line') || [])]
+  if (!viewport || !lines.length) {
+    viewportStart.value = 0
+    viewportEnd.value = filteredEntries.value.length - 1
+    return
+  }
+  let firstVisible = -1
+  let lastVisible = -1
+  lines.forEach((line, index) => {
+    const rect = line.getBoundingClientRect()
+    if (rect.top < viewport.bottom && rect.bottom > viewport.top) {
+      if (firstVisible < 0) firstVisible = index
+      lastVisible = index
+    }
+  })
+  viewportStart.value = firstVisible >= 0 ? firstVisible : 0
+  viewportEnd.value = lastVisible >= 0 ? lastVisible : filteredEntries.value.length - 1
+}
+
+const onStreamScroll = () => {
+  updateViewportRange()
+  if (selectionAnchorId.value && currentViewportTarget.value !== selectionViewportTarget.value) {
+    selectionRangeVisible.value = true
+  }
+}
+
 const toggleSelect = (id) => {
   const i = selectedIds.value.indexOf(id)
-  if (i >= 0) selectedIds.value.splice(i, 1)
-  else selectedIds.value.push(id)
+  if (i >= 0) {
+    selectedIds.value.splice(i, 1)
+    if (!selectedIds.value.length) resetRangeSelection()
+    else if (selectionAnchorId.value === id) {
+      selectionAnchorId.value = selectedIds.value[0]
+      nextTick(() => {
+        updateViewportRange()
+        selectionRangeVisible.value = true
+        selectionViewportTarget.value = currentViewportTarget.value
+      })
+    }
+    return
+  }
+
+  selectedIds.value.push(id)
+  if (!selectionAnchorId.value || !selectedIds.value.includes(selectionAnchorId.value)) {
+    selectionAnchorId.value = id
+    nextTick(() => {
+      updateViewportRange()
+      selectionRangeVisible.value = true
+      selectionViewportTarget.value = currentViewportTarget.value
+    })
+  }
+}
+
+const selectToViewportEdge = () => {
+  updateViewportRange()
+  const anchorIndex = selectionAnchorIndex.value
+  const targetIndex = currentViewportTarget.value
+  if (anchorIndex < 0 || targetIndex < 0) return
+  const from = Math.min(anchorIndex, targetIndex)
+  const to = Math.max(anchorIndex, targetIndex)
+  const rangeIds = filteredEntries.value
+    .slice(from, to + 1)
+    .filter((entry) => entry.kind === 'recv')
+    .map((entry) => entry.id)
+  selectedIds.value = [...new Set([...selectedIds.value, ...rangeIds])]
+  selectionViewportTarget.value = targetIndex
+  selectionRangeVisible.value = false
+}
+
+const clearSelection = () => {
+  selectedIds.value = []
+  resetRangeSelection()
 }
 
 const saveVisible = ref(false)
@@ -288,6 +384,7 @@ const confirmSave = () => {
   if (result) {
     ElMessage.success(`已保存 ${result.saved} 条到数据集「${result.dataset.name}」（来源：接收报文）`)
     selectedIds.value = selectedIds.value.filter((id) => !saveIds.value.includes(id))
+    if (!selectedIds.value.includes(selectionAnchorId.value)) resetRangeSelection()
     saveVisible.value = false
   } else {
     ElMessage.error('保存失败：目标数据集不存在')
@@ -377,7 +474,7 @@ $stream-cols: 30px 150px 130px 70px 90px 96px minmax(140px, 1fr) 52px;
 }
 .stream-head__op { text-align: center; }
 .stream-head__chk { display: flex; align-items: center; cursor: pointer; }
-.stream-wrap { flex: 1; min-height: 0; display: flex; }
+.stream-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
 .stream {
   flex: 1;
   min-height: 0;
@@ -429,6 +526,28 @@ $stream-cols: 30px 150px 130px 70px 90px 96px minmax(140px, 1fr) 52px;
   margin-left: 4px;
 }
 .stream-empty { padding: 80px 0; text-align: center; color: rgba(215, 225, 234, .55); }
+
+.select-to-here {
+  position: absolute;
+  z-index: 12;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(126, 200, 255, .42);
+  border-radius: 16px;
+  background: rgba(16, 25, 35, .92);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .24);
+  color: #a9c8df;
+  cursor: pointer;
+  font-size: 13px;
+  backdrop-filter: blur(6px);
+}
+.select-to-here:hover { border-color: #7ec8ff; color: #d8efff; }
+.select-to-here:focus-visible { outline: 2px solid #7ec8ff; outline-offset: 2px; }
+.select-to-here--down { bottom: 10px; }
+.select-to-here--up { top: 10px; }
 
 .save-tip { margin-bottom: 14px; }
 

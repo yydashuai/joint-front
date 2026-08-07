@@ -31,6 +31,14 @@
           </div>
         </el-card>
 
+        <el-card shadow="never" class="knowledge-select">
+          <template #header><div class="card-title">报告知识检索范围 <el-tag size="small" type="success" effect="plain">仅用于 RAG</el-tag></div></template>
+          <el-checkbox-group v-model="store.selectedKnowledgeCollectionIds">
+            <el-checkbox-button v-for="item in store.knowledgeCollections" :key="item.id" :value="item.id">{{ item.name }}</el-checkbox-button>
+          </el-checkbox-group>
+          <p>报告生成会从所选集合检索规范、方法、历史报告与优秀案例，并保留命中片段来源。</p>
+        </el-card>
+
         <div class="gen-zone">
           <el-button type="success" size="large" :icon="MagicStick" :loading="store.generating" :disabled="!run" @click="onGenerate">
             {{ store.generating ? stageText : generateLabel }}
@@ -97,6 +105,7 @@ const onGenerate = async () => {
     materials: props.materials,
     sysName: sysName.value,
     generatorName: generatorName.value,
+    knowledgeCollectionIds: store.selectedKnowledgeCollectionIds,
     regenerateFromId: props.regenerateFromId
   })
   if (rep) { ElMessage.success('报告已生成'); emit('done') }
@@ -123,6 +132,11 @@ watch(() => props.autoGenerateTick, (tick, oldTick) => {
 .prev__k { color: var(--el-text-color-secondary); width: 76px; flex-shrink: 0; }
 .prev__mats { display: flex; flex-wrap: wrap; gap: 6px; }
 .muted { color: var(--el-text-color-placeholder); }
+.knowledge-select { margin-top: 12px; }
+.knowledge-select :deep(.el-card__header) { padding: 11px 14px; }
+.knowledge-select :deep(.el-card__body) { padding: 12px 14px; }
+.knowledge-select .card-title { display: flex; align-items: center; justify-content: space-between; }
+.knowledge-select p { margin: 9px 0 0; color: var(--el-text-color-secondary); font-size: 11px; }
 
 .gen-zone {
   margin-top: 18px; text-align: center; padding: 28px;

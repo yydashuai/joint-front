@@ -163,11 +163,18 @@ export const useReportStore = defineStore('report', {
       { id: uid('tpl'), name: '交付归档报告模板', fileName: '交付归档报告模板.docx', size: '56 KB', uploadedAt: '2026-06-22 16:20' }
     ],
 
-    /* —— 知识库（供「知识库管理」页使用，本向导不引用） —— */
+    /* —— 知识库：集合 → 文档 → 分块 —— */
+    knowledgeCollections: [
+      { id: 'kc-standard', name: '实验规范', color: '#0f8b8d', desc: '实验流程、判定口径与交付规范' },
+      { id: 'kc-method', name: '测试方法', color: '#2f6feb', desc: '接口测试方法、异常定位和复现步骤' },
+      { id: 'kc-report', name: '历史报告', color: '#6d5ce7', desc: '既往联试报告与问题处置记录' },
+      { id: 'kc-case', name: '优秀案例', color: '#c98212', desc: '可复用的优秀联试案例与结论表达' },
+    ],
+    selectedKnowledgeCollectionIds: ['kc-standard', 'kc-method', 'kc-report', 'kc-case'],
     knowledgeDocs: [
       {
         id: uid('kb'), title: '接口超时处置规范.md', moduleId: null, source: '本地导入', type: 'md',
-        importedAt: '2026-06-20 10:12', vectorized: 'done',
+        collectionId: 'kc-method', version: 2, active: true, parseStatus: 'done', importedAt: '2026-06-20 10:12', vectorized: 'done',
         chunks: [
           { idx: 1, text: '接口接收超过约定阈值（默认 2000ms）即判定为超时，应记录发送上下文、下游服务与连接池状态。' },
           { idx: 2, text: '连接池耗尽时优先排查 max_connections 配置与慢查询；网关层超时常由下游瓶颈引起。' },
@@ -176,7 +183,7 @@ export const useReportStore = defineStore('report', {
       },
       {
         id: uid('kb'), title: '历史联试优秀案例汇编.md', moduleId: null, source: '本地导入', type: 'md',
-        importedAt: '2026-06-21 09:30', vectorized: 'done',
+        collectionId: 'kc-case', version: 1, active: true, parseStatus: 'done', importedAt: '2026-06-21 09:30', vectorized: 'done',
         chunks: [
           { idx: 1, text: '某型武器管理系统联试：将接收侧字段越界样本保存为数据集，后续在独立发送批次中完成复现。' },
           { idx: 2, text: '批量状态接口联试中，将无法解析报文与接口配置快照共同归档，便于后续追溯。' }
@@ -184,7 +191,7 @@ export const useReportStore = defineStore('report', {
       },
       {
         id: uid('kb'), title: '联试报告撰写规范.txt', moduleId: null, source: '本地导入', type: 'txt',
-        importedAt: '2026-06-22 14:05', vectorized: 'pending',
+        collectionId: 'kc-standard', version: 1, active: true, parseStatus: 'done', importedAt: '2026-06-22 14:05', vectorized: 'pending',
         chunks: [
           { idx: 1, text: '报告应包含概述、关键指标、服务结果、异常分析与结论建议五部分，结论需可追溯到数据。' }
         ]
@@ -225,6 +232,7 @@ export const useReportStore = defineStore('report', {
     runsOfSystem: () => (sysId) => useRunBatchStore().reportable.filter((batch) => sysId == null || batch.systemId === sysId),
     // 知识库统一管理，不按系统/模块过滤（保留 getter 名兼容旧调用）
     docsOfModule: (s) => () => s.knowledgeDocs,
+    docsOfCollection: (s) => (collectionId) => s.knowledgeDocs.filter((doc) => !collectionId || doc.collectionId === collectionId),
     reportsOfSystem: (s) => (sysId) => (sysId == null ? s.reports : s.reports.filter((r) => r.systemId === sysId)),
     versionsOfReport: (s) => (report) => {
       if (!report) return []
@@ -240,8 +248,9 @@ export const useReportStore = defineStore('report', {
     addKnowledgeDoc(doc) {
       const d = {
         id: uid('kb'), title: doc.title || '未命名文档', moduleId: null, source: '本地导入',
-        type: doc.type || 'md', kind: doc.kind === 'image' ? 'image' : 'file',
-        importedAt: now(), vectorized: 'pending',
+        collectionId: doc.collectionId || this.knowledgeCollections[0]?.id || null,
+        type: doc.type || 'md', kind: doc.kind === 'image' ? 'image' : 'file', version: 1, active: true,
+        importedAt: now(), parseStatus: doc.kind === 'image' ? 'ocr' : 'done', vectorized: 'pending',
         chunks: doc.chunks || [{ idx: 1, text: '（导入文档内容，将自动分块）' }]
       }
       this.knowledgeDocs.unshift(d)
@@ -263,15 +272,37 @@ export const useReportStore = defineStore('report', {
         }, 900)
       })
     },
-    searchKnowledge(query, moduleId = null, topK = 5) {
+    retryKnowledgeProcessing(id) {
+      const doc = this.knowledgeDocs.find((item) => item.id === id)
+      if (!doc) return Promise.resolve(false)
+      doc.parseStatus = doc.kind === 'image' ? 'ocr' : 'processing'
+      return new Promise((resolve) => setTimeout(() => { doc.parseStatus = 'done'; resolve(true) }, 700))
+    },
+    toggleKnowledgeDoc(id) {
+      const doc = this.knowledgeDocs.find((item) => item.id === id)
+      if (doc) doc.active = !doc.active
+    },
+    replaceKnowledgeDoc(id) {
+      const doc = this.knowledgeDocs.find((item) => item.id === id)
+      if (!doc) return
+      doc.version = Number(doc.version || 1) + 1
+      doc.importedAt = now()
+      doc.vectorized = 'pending'
+      doc.parseStatus = 'done'
+    },
+    searchKnowledge(query, collectionIds = null, topK = 5, weights = {}) {
       const terms = (query || '').trim().toLowerCase().split(/\s+/).filter(Boolean)
       const hits = []
       this.knowledgeDocs.forEach((d) => {
+        if (!d.active) return
+        if (Array.isArray(collectionIds) && collectionIds.length && !collectionIds.includes(d.collectionId)) return
         d.chunks.forEach((c) => {
           const lower = c.text.toLowerCase()
           const kw = terms.reduce((n, t) => n + (lower.includes(t) ? 1 : 0), 0) / (terms.length || 1)
           const vec = d.vectorized === 'done' ? 0.55 + Math.random() * 0.4 : 0.2 + Math.random() * 0.3
-          const score = +(0.5 * kw + 0.5 * vec).toFixed(3)
+          const keywordWeight = Number(weights.keyword ?? 0.5)
+          const vectorWeight = Number(weights.vector ?? (1 - keywordWeight))
+          const score = +(keywordWeight * kw + vectorWeight * vec).toFixed(3)
           hits.push({ docId: d.id, docTitle: d.title, idx: c.idx, text: c.text, kw: +kw.toFixed(2), vec: +vec.toFixed(2), score })
         })
       })
@@ -304,7 +335,7 @@ export const useReportStore = defineStore('report', {
     },
 
     /* —— 生成报告（静态：进度模拟 + 按批次确定性组织 + 描述段变体） —— */
-    async generateReport({ systemId, batchId, runId, title, templateId, materials, sysName, generatorName, regenerateFromId } = {}) {
+    async generateReport({ systemId, batchId, runId, title, templateId, materials, sysName, generatorName, knowledgeCollectionIds, regenerateFromId } = {}) {
       if (this.generating) return null
       const run = useRunBatchStore().byId(batchId || runId)
       if (!run) return null
@@ -337,6 +368,8 @@ export const useReportStore = defineStore('report', {
         generatorName: generatorName || '—',
         templateId: templateId || null,
         materials: (materials || []).map((m) => ({ ...m })),
+        knowledgeCollectionIds: [...(knowledgeCollectionIds || this.selectedKnowledgeCollectionIds || [])],
+        knowledgeCitations: this.searchKnowledge(scopeNameOf(run), knowledgeCollectionIds || this.selectedKnowledgeCollectionIds, 3),
         createdAt: now(),
         status: 'done',
         sections: buildSections(run, sysName || '', seedIndex),

@@ -78,6 +78,12 @@
             <strong v-else>{{ cur.generatorName || '—' }}</strong>
           </div>
         </div>
+        <div v-if="cur.knowledgeCitations?.length" class="citation-strip">
+          <span>知识引用</span>
+          <el-tooltip v-for="item in cur.knowledgeCitations" :key="`${item.docId}-${item.idx}`" :content="item.text" placement="top">
+            <el-tag size="small" type="success" effect="plain">{{ item.docTitle }} #{{ item.idx }}</el-tag>
+          </el-tooltip>
+        </div>
         <section v-for="sec in cur.sections" :key="sec.key" class="sec">
           <div class="sec__head">
             <el-input v-if="editMode" v-model="sec.title" size="small" class="sec__title-input" />
@@ -534,6 +540,8 @@ const handleExportPdf = (mode) => {
   strong { color: #111827; font-size: 13px; }
   .el-input { max-width: 180px; }
 }
+.citation-strip { margin: -10px 0 20px; padding: 9px 11px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; border-left: 3px solid #0f8b8d; background: #f0f9f8; }
+.citation-strip > span { margin-right: 4px; color: #0f8b8d; font-size: 12px; font-weight: 700; }
 .sec { margin-bottom: 22px; }
 .sec__head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding-left: 10px; border-left: 3px solid var(--el-color-primary); }
 .sec__title { font-size: 17px; font-weight: 600; color: #1e3a8a; }

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { useTestTaskStore } from '@/stores/testTask'
-import { useProtocolStore, collectTestInterfaceFields } from '@/stores/protocol'
+import { useProtocolStore, collectInterfaceDatasetFields, collectTestInterfaceFields } from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
 import { useConnectionStore } from '@/stores/connection'
 import { useSystemStore } from '@/stores/system'
@@ -13,6 +13,17 @@ let runTimer = null
 const nowText = () => new Date().toLocaleString('zh-CN', { hour12: false })
 const timeText = () => new Date().toLocaleTimeString('zh-CN', { hour12: false })
 const uid = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`
+const clone = (value) => JSON.parse(JSON.stringify(value))
+const DIRECT_DRAFT_PREFIX = 'joint-test-direct-send:'
+const hashSnapshot = (value) => {
+  const text = JSON.stringify(value ?? {})
+  let hash = 2166136261
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n))
 const rnd = (min, max) => Math.round(min + Math.random() * (max - min))
 
@@ -157,6 +168,8 @@ export const useExecutionStore = defineStore('execution', {
     finishedAt: null,
     savedRunToTasks: false,
     sourceScheme: null,
+    // 历史库“直接发送”使用的一次性快照；不进入正式数据集列表。
+    directSendDraft: null,
     _stepStats: {},
     _requestCursor: 0,
     // 发送队列：本轮全部数据（待发送/已发送），实时监控窗口从上往下逐条发送
@@ -196,10 +209,16 @@ export const useExecutionStore = defineStore('execution', {
         const module = task ? connStore.nodes.find((item) => item.id === task.moduleId) : null
         const system = task ? systemStore.systems.find((item) => item.id === task.systemId) : null
         const iface = taskInterface(task, protocolStore)
-        const datasets = taskDatasets(task, dataStore)
-        const rowCount = datasets.reduce((sum, item) => sum + (item.rows?.length || item.rowCount || 0), 0)
+        const directGroup = planItem.directGroupKey
+          ? state.directSendDraft?.groups?.find((group) => group.key === planItem.directGroupKey)
+          : null
+        const datasets = directGroup ? [] : taskDatasets(task, dataStore)
+        const rowCount = directGroup
+          ? directGroup.rows.length
+          : datasets.reduce((sum, item) => sum + (item.rows?.length || item.rowCount || 0), 0)
         const baseRequests = rowCount || DEFAULT_REQUESTS
-        const estimatedRequests = estimateRequests(baseRequests, state.config)
+        // 直接发送必须严格等于用户选中的条数，不受压测/耐久策略放大。
+        const estimatedRequests = directGroup ? rowCount : estimateRequests(baseRequests, state.config)
 
         return {
           ...planItem,
@@ -209,6 +228,8 @@ export const useExecutionStore = defineStore('execution', {
           system,
           iface,
           datasets,
+          directRows: directGroup?.rows || [],
+          isDirect: !!directGroup,
           rowCount,
           baseRequests,
           estimatedRequests,
@@ -256,6 +277,131 @@ export const useExecutionStore = defineStore('execution', {
       this.loadConfigFromTasks()
       this._syncActiveBatchScope()
       return true
+    },
+
+    _persistDirectSendDraft(draft) {
+      if (typeof window === 'undefined' || !draft?.id) return
+      window.sessionStorage.setItem(`${DIRECT_DRAFT_PREFIX}${draft.id}`, JSON.stringify(draft))
+    },
+
+    _applyDirectSendDraft(draft) {
+      if (!draft?.groups?.length || ['running', 'paused'].includes(this.status)) return false
+      this.reset()
+      this.plan = []
+      this.sourceScheme = null
+      this.directSendDraft = clone(draft)
+
+      const taskStore = useTestTaskStore()
+      const protocolStore = useProtocolStore()
+      for (const group of this.directSendDraft.groups) {
+        const iface = protocolStore.testInterfaces.find((item) => normalizeId(item.id) === normalizeId(group.interfaceId))
+        if (!iface) continue
+        let task = taskStore.tasks.find((item) => normalizeId(item.bindings?.interfaceId) === normalizeId(iface.id))
+        if (!task) {
+          task = taskStore.addTask({
+            name: `${iface.name} 临时发送`,
+            systemId: iface.systemId,
+            moduleId: iface.moduleId,
+          })
+          taskStore.updateBindings(task.id, { interfaceId: iface.id })
+        }
+        taskStore.updateStrategy(task.id, { ...(iface.strategy || {}) })
+        this.plan.push({
+          id: uid('plan'),
+          taskId: task.id,
+          directGroupKey: group.key,
+          interval: iface.sendInterval || 500,
+        })
+      }
+      if (!this.plan.length) return false
+      this.config.sendInterval = this.plan[0]?.interval || 500
+      // 进入发送页即可预览精确数据，实际发送仍由“开始发送”触发。
+      this.sendQueue = this._buildSendQueue()
+      this.targetTotal = this.sendQueue.length
+      return true
+    },
+
+    /** 将历史记录转换为一次性发送清单；任何无归属记录都会阻止整批发送。 */
+    prepareHistoryDirectSend(rows = []) {
+      if (['running', 'paused'].includes(this.status)) {
+        return { ok: false, reason: '当前存在运行中的发送批次，请先暂停并终止当前批次' }
+      }
+      const protocolStore = useProtocolStore()
+      const dataStore = useTestDataStore()
+      const groups = new Map()
+      const rejected = []
+
+      rows.forEach((row, index) => {
+        const dataset = dataStore.datasets.find((item) => normalizeId(item.id) === normalizeId(row._datasetId ?? row.datasetId))
+        const messageId = row.messageId ?? dataset?.messageId
+        const message = protocolStore.interfaces.find((item) => normalizeId(item.id) === normalizeId(messageId))
+          || protocolStore.interfaces.find((item) => item.name === row.messageName || item.name === dataset?.linkedInterface)
+        const interfaceId = row.interfaceId ?? message?.ownerIfaceId
+        const iface = protocolStore.testInterfaces.find((item) => normalizeId(item.id) === normalizeId(interfaceId))
+        if (!message || !iface) {
+          rejected.push({
+            label: row.label || row.messageName || `第 ${index + 1} 条`,
+            reason: !message ? '未找到关联报文' : '报文未关联接口',
+          })
+          return
+        }
+
+        const key = `iface-${iface.id}`
+        if (!groups.has(key)) groups.set(key, { key, interfaceId: iface.id, interfaceName: iface.name, rows: [] })
+        let fields = collectInterfaceDatasetFields(message, protocolStore.protocols)
+        if (!fields.length) {
+          fields = Object.keys(row.values || {}).map((name) => ({ id: name, name, constraint: null, desc: '' }))
+        }
+        groups.get(key).rows.push({
+          key: row._rowKey || `${row._datasetId ?? row.datasetId}-${row.id}`,
+          historyRowId: row.id,
+          sourceDatasetId: row._datasetId ?? row.datasetId ?? null,
+          sourceDatasetName: row._datasetName || dataset?.name || '',
+          messageId: message.id,
+          messageName: message.name,
+          label: row.label || row.messageName || `历史报文 ${index + 1}`,
+          values: clone(row.values || {}),
+          fields: clone(fields),
+          sourceHash: hashSnapshot(row.values || {}),
+          abnormal: !!row.abnormal,
+        })
+      })
+
+      if (rejected.length) {
+        return { ok: false, reason: '部分历史数据缺少报文或接口关联', rejected }
+      }
+      if (!groups.size) return { ok: false, reason: '没有可发送的历史数据' }
+
+      const draft = {
+        id: uid('direct'),
+        createdAt: nowText(),
+        source: 'history',
+        status: 'prepared',
+        groups: [...groups.values()],
+        total: rows.length,
+      }
+      if (!this._applyDirectSendDraft(draft)) return { ok: false, reason: '临时发送清单创建失败' }
+      this._persistDirectSendDraft(this.directSendDraft)
+      return { ok: true, draft: this.directSendDraft }
+    },
+
+    restoreDirectSendDraft(draftId) {
+      if (!draftId) return false
+      if (this.directSendDraft?.id === draftId && this.planItems.length) return true
+      if (typeof window === 'undefined') return false
+      const raw = window.sessionStorage.getItem(`${DIRECT_DRAFT_PREFIX}${draftId}`)
+      if (!raw) return false
+      try {
+        const draft = JSON.parse(raw)
+        const createdAt = new Date(String(draft.createdAt || '').replace(/\//g, '-')).getTime()
+        if (createdAt && Date.now() - createdAt > 24 * 60 * 60 * 1000) {
+          window.sessionStorage.removeItem(`${DIRECT_DRAFT_PREFIX}${draftId}`)
+          return false
+        }
+        return this._applyDirectSendDraft(draft)
+      } catch {
+        return false
+      }
     },
 
     /** 自定义接口直连加入发送计划（无 task，报文体透传） */
@@ -308,10 +454,23 @@ export const useExecutionStore = defineStore('execution', {
     removeFromPlan(id) {
       if (['running', 'paused'].includes(this.status)) return false
       const idx = this.plan.findIndex((item) => item.id === id)
+      const removed = idx >= 0 ? this.plan[idx] : null
       if (idx >= 0) this.plan.splice(idx, 1)
+      if (removed?.directGroupKey && this.directSendDraft) {
+        this.directSendDraft.groups = this.directSendDraft.groups.filter((group) => group.key !== removed.directGroupKey)
+        this.directSendDraft.total = this.directSendDraft.groups.reduce((sum, group) => sum + group.rows.length, 0)
+        this._persistDirectSendDraft(this.directSendDraft)
+        if (this.status === 'idle') {
+          this.sendQueue = this._buildSendQueue()
+          this.targetTotal = this.sendQueue.length
+        }
+      }
       this.sourceScheme = null
       this._syncActiveBatchScope()
-      if (!this.plan.length) this.reset()
+      if (!this.plan.length) {
+        this.reset()
+        this.directSendDraft = null
+      }
       return idx >= 0
     },
 
@@ -368,6 +527,39 @@ export const useExecutionStore = defineStore('execution', {
               time: '',
               hex: iface.bodyHex || '',
               interval: item.interval ?? 500,
+            })
+          }
+          continue
+        }
+        // 历史选择直发：逐条使用快照中的报文、字段和值，不读取或生成正式数据集。
+        if (item.isDirect) {
+          for (const row of item.directRows) {
+            const values = clone(row.values || {})
+            const fields = clone(row.fields || [])
+            const judge = judgeValues(fields, values)
+            queue.push({
+              id: uid('sq'),
+              taskId: item.taskId,
+              planIndex: item.index,
+              iface: item.iface?.name || '未命名接口',
+              proto: item.iface?.path?.startsWith('/') ? 'HTTP' : 'TCP',
+              label: row.label,
+              datasetName: row.sourceDatasetName || '',
+              datasetId: row.sourceDatasetId ?? null,
+              messageId: row.messageId,
+              messageName: row.messageName,
+              fields,
+              values,
+              variant: judge.abnormal ? 'abnormal' : 'normal',
+              issues: judge.issues,
+              status: 'pending',
+              time: '',
+              hex: '',
+              interval: item.interval ?? 500,
+              directDraftId: this.directSendDraft?.id || '',
+              sourceHistoryKey: row.key,
+              sourceHistoryRowId: row.historyRowId,
+              sourceHash: row.sourceHash,
             })
           }
           continue
@@ -477,6 +669,13 @@ export const useExecutionStore = defineStore('execution', {
         const judge = judgeValues(entry.fields, entry.values)
         entry.variant = judge.abnormal ? 'abnormal' : 'normal'
         entry.issues = judge.issues
+        if (entry.directDraftId && this.directSendDraft?.id === entry.directDraftId) {
+          const draftRow = this.directSendDraft.groups
+            .flatMap((group) => group.rows)
+            .find((row) => row.key === entry.sourceHistoryKey)
+          if (draftRow) draftRow.values = clone(newValues)
+          this._persistDirectSendDraft(this.directSendDraft)
+        }
         return 'updated'
       }
 
@@ -516,6 +715,7 @@ export const useExecutionStore = defineStore('execution', {
       this.activePlanIndex = 0
       this.activeTaskId = this.planItems[0]?.taskId || null
       this.sendQueue = this._buildSendQueue()
+      if (this.directSendDraft) this.directSendDraft.status = 'running'
       this.targetTotal = Math.max(1, this.sendQueue.length)
       this._stepStats = Object.fromEntries(this.planItems.map((item) => [item.taskId, {
         total: 0, success: 0, failed: 0, error: 0, abnormalTypes: {}, durations: [], traces: [],
@@ -627,6 +827,7 @@ export const useExecutionStore = defineStore('execution', {
       this._stepStats = {}
       this._requestCursor = 0
       this.sendQueue = []
+      this.directSendDraft = null
       return true
     },
 
@@ -763,6 +964,11 @@ export const useExecutionStore = defineStore('execution', {
           label: entry.label,
           status: entry.status,
           time: entry.time,
+          sourceHistoryRowId: entry.sourceHistoryRowId || null,
+          sourceHistoryKey: entry.sourceHistoryKey || '',
+          sourceHash: entry.sourceHash || '',
+          messageId: entry.messageId || null,
+          messageName: entry.messageName || '',
         })),
         tasks: this.planItems.map((item) => ({
           taskId: item.taskId,
@@ -786,6 +992,10 @@ export const useExecutionStore = defineStore('execution', {
         result: '已完成',
         ...this.summary,
       })
+      if (this.directSendDraft) {
+        this.directSendDraft.status = finalStatus === 'done' ? 'sent' : 'stopped'
+        this._persistDirectSendDraft(this.directSendDraft)
+      }
       bus.emit(EVENTS.TASK_RUN_FINISHED, {
         runId: this.currentRunId,
         result: '已完成',

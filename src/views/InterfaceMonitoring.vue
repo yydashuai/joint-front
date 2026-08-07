@@ -776,6 +776,9 @@ const receivePrimaryDisabled = computed(() =>
 )
 const activeFooterText = computed(() => {
   if (activeMode.value === 'send') {
+    if (execution.directSendDraft) {
+      return `历史选择 ${execution.directSendDraft.total} 条，${execution.directSendDraft.groups.length} 个接口`
+    }
     return execution.planItems.length
       ? `${execution.planItems.length} 个接口，${totalEstimatedRequests.value} 次发送`
       : '从左侧拖入接口后开始发送'
@@ -839,6 +842,20 @@ const openBatchReport = (batchId) => {
 
 const firstQueryValue = (value) => Array.isArray(value) ? value[0] : value
 onMounted(() => {
+  const draftId = firstQueryValue(route.query.draftId)
+  if (draftId) {
+    activeMode.value = 'send'
+    if (execution.restoreDirectSendDraft(String(draftId))) {
+      const firstInterfaceId = execution.directSendDraft?.groups?.[0]?.interfaceId
+      if (firstInterfaceId != null) selectedKey.value = `iface-${firstInterfaceId}`
+      ElMessage.success(`已装入 ${execution.directSendDraft.total} 条历史数据，请确认后开始发送`)
+    } else {
+      ElMessage.warning('临时发送清单已失效，请返回历史数据库重新选择')
+    }
+    router.replace({ path: '/execution' })
+    return
+  }
+
   const interfaceId = firstQueryValue(route.query.interfaceId)
   if (interfaceId) {
     if (activeMode.value === 'receive') {

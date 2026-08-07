@@ -1,6 +1,16 @@
 <template>
   <div class="monitor">
-    <el-card shadow="never" class="exec-card strategy-card">
+    <div v-if="store.directSendDraft" class="direct-source">
+      <div class="direct-source__mark">历史选择</div>
+      <div class="direct-source__copy">
+        <strong>临时发送清单</strong>
+        <span>{{ store.directSendDraft.total }} 条报文 · {{ store.directSendDraft.groups.length }} 个接口，不会生成正式数据集</span>
+      </div>
+      <el-tag size="small" :type="directDraftStatus.type" effect="plain">
+        {{ directDraftStatus.text }}
+      </el-tag>
+    </div>
+    <el-card v-else shadow="never" class="exec-card strategy-card">
       <div class="strategy-card__inner">
         <Strategy-bar :disabled="store.status === 'running'" />
       </div>
@@ -53,6 +63,7 @@
           <span class="col-iface">
             {{ entry.iface }}
             <em v-if="entry.customId" class="custom-mark">自定义</em>
+            <em v-if="entry.directDraftId" class="direct-mark">历史</em>
           </span>
           <span class="hex mono">{{ shortHex(entry) }}</span>
           <span class="col-op">
@@ -75,6 +86,7 @@
           <el-tag size="small" type="info" effect="plain">{{ detailEntry.iface }}</el-tag>
           <el-tag v-if="detailEntry.datasetName" size="small" type="success" effect="plain">数据集：{{ detailEntry.datasetName }}</el-tag>
           <el-tag v-if="detailEntry.customId" size="small" type="primary" effect="plain">自定义接口</el-tag>
+          <el-tag v-if="detailEntry.directDraftId" size="small" type="warning" effect="plain">来自历史选择</el-tag>
           <el-tag size="small" :type="detailEntry.variant === 'abnormal' ? 'danger' : 'success'" effect="dark">
             {{ detailEntry.variant === 'abnormal' ? '异常' : '正常' }}
           </el-tag>
@@ -123,6 +135,7 @@
         <div class="edit-meta">
           <el-tag size="small" type="info" effect="plain">{{ editEntry.iface }}</el-tag>
           <el-tag v-if="editEntry.datasetName" size="small" type="success" effect="plain">数据集：{{ editEntry.datasetName }}</el-tag>
+          <el-tag v-if="editEntry.directDraftId" size="small" type="warning" effect="plain">来自历史选择</el-tag>
           <span class="edit-meta__judge">
             <el-tag size="small" :type="liveJudge.abnormal ? 'danger' : 'success'" effect="dark">
               {{ liveJudge.abnormal ? '异常' : '正常' }}
@@ -238,6 +251,12 @@ const autoScroll = ref(true)
 const consoleRef = ref()
 
 const firstPendingIndex = computed(() => store.sendQueue.findIndex((e) => e.status === 'pending'))
+const directDraftStatus = computed(() => ({
+  prepared: { text: '待确认发送', type: 'warning' },
+  running: { text: '发送中', type: 'primary' },
+  sent: { text: '已发送', type: 'success' },
+  stopped: { text: '已终止', type: 'info' },
+}[store.directSendDraft?.status] || { text: '待确认发送', type: 'warning' }))
 
 const streamMetrics = computed(() => [
   { label: '进度', value: `${store.progress}%` },
@@ -410,6 +429,27 @@ watch(() => store.sentCount, () => {
 
 <style scoped lang="scss">
 .monitor { display: flex; flex-direction: column; gap: 14px; }
+.direct-source {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--el-color-warning-light-5);
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--el-color-warning-light-9), var(--el-bg-color));
+}
+.direct-source__mark {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--el-color-warning);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 650;
+}
+.direct-source__copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.direct-source__copy strong { color: var(--el-text-color-primary); font-size: 13px; }
+.direct-source__copy span { overflow: hidden; color: var(--el-text-color-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .exec-card {
   border-radius: 8px;
   :deep(.el-card__header) { padding: 12px 14px; }
@@ -491,6 +531,15 @@ $stream-cols: 92px 150px minmax(160px, 1fr) 60px;
   border-radius: 3px;
   padding: 0 4px;
   margin-left: 4px;
+}
+.direct-mark {
+  margin-left: 4px;
+  padding: 0 4px;
+  border: 1px solid rgba(230, 162, 60, .55);
+  border-radius: 3px;
+  color: #e6a23c;
+  font-size: 11px;
+  font-style: normal;
 }
 .col-time, .col-iface, .hex { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .col-op { text-align: center; }

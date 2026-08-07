@@ -52,7 +52,7 @@
 
     <!-- 右键菜单 -->
     <teleport to="body">
-      <div v-if="ctx.visible" class="ctx-mask" @click="closeCtx" @contextmenu.prevent="closeCtx">
+      <div v-if="!readonly && ctx.visible" class="ctx-mask" @click="closeCtx" @contextmenu.prevent="closeCtx">
         <ul class="ctx-menu" :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }" @click.stop>
           <li v-for="act in ctxActions" :key="act.action" :class="{ danger: act.danger }" @click="emitAction(act.action)">
             {{ act.label }}
@@ -88,6 +88,8 @@ const props = defineProps({
   customBadge: { type: Function, default: () => '' },
   messageBadge: { type: Function, default: null }, // 缺省按「传输类型·N字段」计算
   editorMode: { type: Boolean, default: false },    // 编辑器模式（报文字段管理页）：精简右键菜单、仅系统接口分组显示添加按钮
+  readonly: { type: Boolean, default: false },      // 资产筛选模式：禁用拖拽、右键菜单和新增入口
+  visibleGroups: { type: Array, default: () => ['system', 'scheme', 'custom'] },
   extraContextActions: { type: Function, default: () => [] }, // 节点额外右键项，如 [{label, action}]
   bodyStyle: {
     type: Object,
@@ -176,7 +178,8 @@ const treeData = computed(() => {
       icon: 'FolderOpened',
       label: '系统接口',
       count: sysIfaces.length,
-      addActions: [{ groupKind: 'iface', label: '+接口', type: 'success' }],
+      groupName: 'system',
+      addActions: props.readonly ? [] : [{ groupKind: 'iface', label: '+接口', type: 'success' }],
       children: sysIfaces.map((i) => ({
         key: `iface-${i.id}`,
         kind: 'iface',
@@ -193,7 +196,8 @@ const treeData = computed(() => {
       icon: 'FolderOpened',
       label: '方案',
       count: schemes.length,
-      addActions: props.editorMode ? [] : [{ groupKind: 'scheme', label: '+方案', type: 'warning' }],
+      groupName: 'scheme',
+      addActions: props.editorMode || props.readonly ? [] : [{ groupKind: 'scheme', label: '+方案', type: 'warning' }],
       children: schemes,
     },
     {
@@ -202,10 +206,12 @@ const treeData = computed(() => {
       icon: 'FolderOpened',
       label: '自定义接口',
       count: customs.length,
-      addActions: props.editorMode ? [] : [{ groupKind: 'custom', label: '+自定义', type: 'primary' }],
+      groupName: 'custom',
+      addActions: props.editorMode || props.readonly ? [] : [{ groupKind: 'custom', label: '+自定义', type: 'primary' }],
       children: customs,
     },
-  ].filter((g) => g.children.length || !props.search)
+  ].filter((g) => props.visibleGroups.includes(g.groupName))
+    .filter((g) => g.children.length || !props.search)
 })
 
 /* ---- 展开/收起状态 ---- */
@@ -263,7 +269,7 @@ const toggleAll = () => (treeFullyExpanded.value ? collapseAll() : expandAll())
 
 /* ---- 选中与拖拽 ---- */
 const isSelectableLeaf = (d) => ['iface', 'custom', 'scheme', 'message'].includes(d.kind) && !!d.ref
-const isDraggableLeaf = (d) => ['iface', 'custom', 'scheme', 'message'].includes(d.kind) && !!d.ref
+const isDraggableLeaf = (d) => !props.readonly && ['iface', 'custom', 'scheme', 'message'].includes(d.kind) && !!d.ref
 
 const visibleCurrentNodeKey = computed(() => props.modelValue || null)
 
@@ -290,6 +296,7 @@ const emitAdd = (groupKind) => emit('add-leaf', { groupKind })
 /* ---- 右键菜单 ---- */
 const ctx = ref({ visible: false, x: 0, y: 0, data: null })
 const onContextMenu = (event, data) => {
+  if (props.readonly) return
   if (!data?.ref || !['iface', 'custom', 'scheme', 'message'].includes(data.kind)) return
   event.preventDefault()
   ctx.value = { visible: true, x: event.clientX, y: event.clientY, data }

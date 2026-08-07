@@ -35,13 +35,22 @@
         <el-tag size="small" effect="plain">{{ group.items.length }}</el-tag>
       </div>
       <div class="table-scroll">
+        <TableRangeSelection
+          :key="`${groupBy}-${group.key}`"
+          :rows="group.items"
+          row-key="id"
+          @selection-change="(items) => onGroupSelectionChange(group.key, items)"
+        >
+          <template #default="{ setTableRef, handleSelectionChange, handleScroll }">
         <el-table
+          :ref="setTableRef"
           :data="group.items"
           size="small"
           row-key="id"
           empty-text="暂无接收异常数据"
           class="ledger-table"
-          @selection-change="onSelectionChange"
+          @selection-change="handleSelectionChange"
+          @scroll="handleScroll"
           @sort-change="onSortChange"
           @row-click="$emit('view', $event)"
         >
@@ -97,6 +106,8 @@
             </template>
           </el-table-column>
         </el-table>
+          </template>
+        </TableRangeSelection>
       </div>
     </div>
   </div>
@@ -108,6 +119,7 @@ import { Download, Search } from '@element-plus/icons-vue'
 import { useExceptionStore } from '@/stores/exception'
 import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
+import TableRangeSelection from '@/components/common/TableRangeSelection.vue'
 
 const props = defineProps({
   rows: { type: Array, default: () => [] },
@@ -119,6 +131,7 @@ const store = useExceptionStore()
 const systemStore = useSystemStore()
 const connStore = useConnectionStore()
 const selected = ref([])
+const groupSelections = new Map()
 const groupBy = ref('none')
 const sortState = ref({ prop: '', order: null })
 const local = reactive({ keyword: '', type: '', savedStatus: '', tag: '' })
@@ -188,9 +201,20 @@ const groupLabel = (key) => {
   if (groupBy.value === 'savedStatus') return key === 'saved' ? '已存入数据集' : '尚未入库'
   return key
 }
-const onSelectionChange = (items) => {
-  selected.value = items
+const onGroupSelectionChange = (groupKey, items) => {
+  groupSelections.set(groupKey, items)
+  const unique = new Map()
+  groupSelections.forEach((rows) => rows.forEach((row) => unique.set(row.id, row)))
+  selected.value = [...unique.values()]
 }
+watch(groupBy, () => {
+  groupSelections.clear()
+  selected.value = []
+})
+watch(() => props.rows, () => {
+  groupSelections.clear()
+  selected.value = []
+}, { deep: false })
 const onSortChange = ({ prop, order }) => {
   sortState.value = { prop: prop || '', order }
 }

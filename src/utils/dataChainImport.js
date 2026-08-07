@@ -13,12 +13,35 @@
  *   - 归属：由导入对话框选择系统/模块，默认取当前系统/模块。
  */
 
-/* ============ 分隔符拆分（兼容中英文逗号 + 空白） ============ */
-const splitFields = (line) =>
-  String(line ?? '')
-    .split(/[，,\t]/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0)
+/* ============ 分隔符拆分（兼容 CSV 引号、中英文逗号、Tab 和空单元格） ============ */
+const splitFields = (line, keepEmpty = false) => {
+  const text = String(line ?? '')
+  const cells = []
+  let cell = ''
+  let quoted = false
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i]
+    if (char === '"') {
+      if (quoted && text[i + 1] === '"') {
+        cell += '"'
+        i += 1
+      } else {
+        quoted = !quoted
+      }
+      continue
+    }
+    if (!quoted && (char === ',' || char === '，' || char === '\t')) {
+      cells.push(cell.trim())
+      cell = ''
+      continue
+    }
+    cell += char
+  }
+  cells.push(cell.trim())
+  return keepEmpty ? cells : cells.filter((item) => item.length > 0)
+}
+
+const hasDelimiter = (line) => /[，,\t]/.test(String(line ?? ''))
 
 /* ============ 值解析：纯数值 → Number，其余 → String ============ */
 const NUMERIC_RE = /^[+-]?(\d+(\.\d+)?|\.\d+)$/
@@ -96,26 +119,49 @@ export const inferFieldType = (samples) => {
  * @returns {Array<{ name:string, fieldNames:string[], rows:Object[], fields:Array }>}
  *   fields: [{ name, kind, inferredType, min, max, maxLen }]
  */
-export const parseDataChain = (text) => {
+export const parseDataChain = (text, options = {}) => {
   if (!text) return []
   const lines = String(text)
     .split(/\r?\n/)
-    .map((l) => l.trim())
+    .map((l, index) => (index === 0 ? l.replace(/^\uFEFF/, '') : l).trim())
     .filter((l) => l.length > 0)
 
   const paragraphs = []
   let current = null
   let expectingFieldLine = false
 
-  for (const line of lines) {
+  const createParagraph = (name) => {
+    const paragraph = { name: name || `报文${paragraphs.length + 1}`, fieldNames: [], rows: [], fields: [] }
+    paragraphs.push(paragraph)
+    return paragraph
+  }
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]
+    const nextLine = lines[lineIndex + 1] || ''
     if (isHeaderLine(line)) {
-      current = { name: extractHeaderName(line) || `报文${paragraphs.length + 1}`, fieldNames: [], rows: [], fields: [] }
-      paragraphs.push(current)
+      current = createParagraph(extractHeaderName(line))
+      expectingFieldLine = true
+      continue
+    }
+    const bundleTitle = line.match(/^#\s*数据集[：:]\s*(.+?)(?:（|\(|$)/)
+    if (bundleTitle) {
+      current = createParagraph(bundleTitle[1].trim())
+      expectingFieldLine = true
+      continue
+    }
+    // 无序号格式：首行报文名，第二行表头，后续为数据；也支持同一文件内重复该结构。
+    if (!hasDelimiter(line) && hasDelimiter(nextLine) && (!current || current.rows.length > 0)) {
+      current = createParagraph(line.replace(/^#\s*/, '').trim())
       expectingFieldLine = true
       continue
     }
     if (!current) {
-      // 标题之前的散落内容直接忽略
+      // 标准 CSV：文件直接从字段表头开始，报文名使用调用方提供的文件名。
+      if (hasDelimiter(line)) {
+        current = createParagraph(options.defaultName || 'CSV报文')
+        current.fieldNames = splitFields(line)
+      }
       continue
     }
     if (expectingFieldLine) {
@@ -124,7 +170,7 @@ export const parseDataChain = (text) => {
       continue
     }
     // 数据行
-    const cells = splitFields(line)
+    const cells = splitFields(line, true)
     const row = {}
     current.fieldNames.forEach((fn, i) => {
       row[fn] = parseValue(cells[i])

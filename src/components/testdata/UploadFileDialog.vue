@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="visible" title="导入数据文件" width="520px" destroy-on-close @close="onClose">
+  <el-dialog v-model="visible" title="导入数据文件" width="560px" destroy-on-close @close="onClose">
     <el-form :model="form" label-width="100px">
       <!-- 真实文件选择器 (优化点 13) -->
       <el-form-item label="选择文件" required>
@@ -35,6 +35,23 @@
           <el-option label="XML" value="xml" />
         </el-select>
       </el-form-item>
+      <el-form-item label="关联接口">
+        <div class="interface-picker">
+          <el-select
+            v-model="form.interfaceId"
+            filterable
+            clearable
+            placeholder="可选：选择文件归属接口"
+            style="width: 100%;"
+          >
+            <el-option v-for="item in interfaceOptions" :key="item.id" :label="item.name" :value="item.id" />
+            <template #footer>
+              <button class="interface-add" type="button" @click="emit('add-interface')">＋ 添加接口</button>
+            </template>
+          </el-select>
+          <span class="form-hint">可以暂不选择，上传后仍可在数据文件管理中配置。</span>
+        </div>
+      </el-form-item>
       <el-form-item label="描述">
         <el-input v-model="form.desc" type="textarea" :rows="2" placeholder="可选" />
       </el-form-item>
@@ -52,11 +69,16 @@ import { UploadFilled, Document } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { formatFileSize, inferFileFormat, readFileAsText } from '@/services/testDataService'
 import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
+import { useProtocolStore } from '@/stores/protocol'
 
-const props = defineProps({ modelValue: Boolean })
-const emit = defineEmits(['update:modelValue', 'submitted'])
+const props = defineProps({
+  modelValue: Boolean,
+  createdInterfaceId: { type: [String, Number], default: null }
+})
+const emit = defineEmits(['update:modelValue', 'submitted', 'add-interface'])
 
 const { validateName } = useEntityNameGuard()
+const protocolStore = useProtocolStore()
 
 const visible = computed({
   get: () => props.modelValue,
@@ -69,8 +91,11 @@ const selectedFile = ref(null)
 const form = reactive({
   name: '',
   format: 'csv',
-  desc: ''
+  desc: '',
+  interfaceId: ''
 })
+
+const interfaceOptions = computed(() => [...protocolStore.testInterfaces].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')))
 
 const selectedFormat = computed(() => {
   if (!selectedFile.value) return 'csv'
@@ -116,7 +141,12 @@ watch(() => props.modelValue, (v) => {
   if (v) {
     clearFile()
     form.desc = ''
+    form.interfaceId = ''
   }
+})
+
+watch(() => props.createdInterfaceId, (id) => {
+  if (id != null && props.modelValue) form.interfaceId = id
 })
 
 const onClose = () => {
@@ -142,6 +172,10 @@ const onSubmit = async () => {
     desc: form.desc,
     file: selectedFile.value,
     content,
+    interfaceIds: form.interfaceId ? [form.interfaceId] : [],
+    interfaceNames: form.interfaceId
+      ? [protocolStore.testInterfaces.find((item) => String(item.id) === String(form.interfaceId))?.name].filter(Boolean)
+      : [],
     rowCount: form.format === 'bin' ? 0 : Math.floor(Math.random() * 200) + 10
   })
   visible.value = false
@@ -208,4 +242,9 @@ const onSubmit = async () => {
   color: var(--el-text-color-secondary);
   font-family: 'Consolas', 'Monaco', monospace;
 }
+
+.interface-picker { width: 100%; display: flex; flex-direction: column; gap: 6px; }
+.form-hint { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
+.interface-add { width: 100%; border: 0; padding: 7px 10px; background: transparent; color: var(--el-color-primary); cursor: pointer; font: inherit; text-align: left; }
+.interface-add:hover { background: var(--el-fill-color-light); }
 </style>

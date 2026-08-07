@@ -59,6 +59,9 @@
             <div class="strong">
               {{ row.iface?.name || row.task?.name }}
               <el-tag v-if="row.isCustom" size="small" type="primary" effect="plain" class="src-tag">自定义</el-tag>
+              <el-tag v-if="row.isDirect" size="small" type="warning" effect="plain" class="src-tag">
+                历史选择·{{ row.rowCount }} 条
+              </el-tag>
             </div>
           </template>
         </el-table-column>
@@ -94,7 +97,8 @@
         </el-table-column>
         <el-table-column label="备注" min-width="240" show-overflow-tooltip>
           <template #default="{ row }">
-            {{ row.iface?.remark || row.iface?.desc || row.task?.remark || '—' }}
+            <span v-if="row.isDirect">临时发送清单，不生成正式数据集</span>
+            <span v-else>{{ row.iface?.remark || row.iface?.desc || row.task?.remark || '—' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="100" align="center">
