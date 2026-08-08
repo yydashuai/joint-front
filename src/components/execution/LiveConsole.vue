@@ -10,28 +10,26 @@
         {{ directDraftStatus.text }}
       </el-tag>
     </div>
-    <el-card v-else shadow="never" class="exec-card strategy-card">
-      <div class="strategy-card__inner">
-        <Strategy-bar :disabled="store.status === 'running'" />
-      </div>
-    </el-card>
-
     <el-card shadow="never" class="exec-card console-card">
       <template #header>
         <div class="console-tools">
-          <span class="card-title">发送数据流</span>
+          <div class="console-tools__left">
+            <span class="card-title">发送数据流</span>
+            <StrategyBar
+              v-if="!store.directSendDraft"
+              class="header-strategy"
+              :disabled="store.status === 'running'"
+            />
+          </div>
           <div class="console-tools__right">
             <el-tag :type="statusType" effect="dark">{{ statusText }}</el-tag>
             <span
-              v-for="metric in streamMetrics"
-              :key="metric.label"
-              class="stream-stat"
-              :class="metric.cls"
+              class="progress-compact"
+              :title="`已发送 ${store.sentCount}，待发送 ${store.pendingCount}`"
             >
-              <b>{{ metric.value }}</b>{{ metric.label }}
+              <b>{{ store.sentCount }}</b>
+              <span>/ {{ store.sentCount + store.pendingCount }}</span>
             </span>
-            <el-tag size="small" type="success" effect="plain">已发送 {{ store.sentCount }}</el-tag>
-            <el-tag size="small" type="info" effect="plain">待发送 {{ store.pendingCount }}</el-tag>
             <el-tooltip v-if="store.status === 'running'" content="运行中不可修改，暂停后点击详情可修改报文" placement="top">
               <span class="lock-hint">运行中锁定</span>
             </el-tooltip>
@@ -258,10 +256,6 @@ const directDraftStatus = computed(() => ({
   stopped: { text: '已终止', type: 'info' },
 }[store.directSendDraft?.status] || { text: '待确认发送', type: 'warning' }))
 
-const streamMetrics = computed(() => [
-  { label: '进度', value: `${store.progress}%` },
-])
-
 const statusText = computed(() => ({
   idle: '待执行',
   running: '执行中',
@@ -428,7 +422,7 @@ watch(() => store.sentCount, () => {
 </script>
 
 <style scoped lang="scss">
-.monitor { display: flex; flex-direction: column; gap: 14px; }
+.monitor { display: flex; flex: 1 0 360px; min-height: 360px; overflow: hidden; flex-direction: column; gap: 14px; }
 .direct-source {
   display: flex;
   align-items: center;
@@ -456,28 +450,33 @@ watch(() => store.sentCount, () => {
   :deep(.el-card__body) { padding: 14px; }
 }
 .card-head, .console-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.console-tools__left { display: flex; align-items: center; gap: 18px; min-width: 0; }
 .console-tools__right { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .card-title { font-weight: 650; font-size: 14px; margin-right: 8px; }
-.strategy-card :deep(.el-card__body) { padding: 10px 14px; }
-.strategy-card__inner { display: flex; align-items: center; }
+.header-strategy { min-width: 0; }
+.console-card { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
+.console-card :deep(.el-card__body) {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
 .card-sub, .muted { color: var(--el-text-color-secondary); font-size: 12px; }
 .lock-hint { font-size: 12px; color: var(--el-color-warning); cursor: help; }
 .edit-hint { font-size: 12px; color: var(--el-color-primary); }
-.stream-stat {
+.progress-compact {
   display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-  padding: 3px 7px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-left: 1px solid var(--el-border-color);
   color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-extra-light);
   font-size: 11px;
   white-space: nowrap;
 }
-.stream-stat b { color: var(--el-text-color-primary); font: 700 12px Consolas, Monaco, monospace; }
-.stream-stat.metric--ok b { color: var(--el-color-success); }
-.stream-stat.metric--bad b { color: var(--el-color-danger); }
+.progress-compact b { color: var(--el-color-success); font: 700 13px Consolas, Monaco, monospace; }
+.progress-compact span { color: var(--el-text-color-regular); font: 700 13px Consolas, Monaco, monospace; }
 
 /* ---- 发送数据流：时间 / 接口名 / 报文 / 详情 ---- */
 $stream-cols: 92px 150px minmax(160px, 1fr) 60px;
@@ -492,7 +491,8 @@ $stream-cols: 92px 150px minmax(160px, 1fr) 60px;
 }
 .stream-head__op { text-align: center; }
 .stream {
-  height: 370px;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 8px;
   border-radius: 0 0 8px 8px;

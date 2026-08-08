@@ -12,6 +12,7 @@
         <div class="card-head">
           <div class="card-head__left">
             <span class="card-title">发送接口列表</span>
+            <span v-if="items.length" class="plan-count">{{ items.length }} 个接口 · {{ totalEstimatedRequests }} 条报文</span>
             <el-tooltip content="配置计划内各接口的传输参数与报文头">
               <el-button
                 size="small"
@@ -22,6 +23,9 @@
             </el-tooltip>
           </div>
           <div class="plan-actions">
+            <el-button v-if="items.length" link size="small" :disabled="running" @click="userCollapsed = !userCollapsed">
+              {{ collapsed ? '展开计划' : '收起计划' }}
+            </el-button>
             <el-tooltip content="将选中的接口添加到编排计划">
               <el-button
                 type="primary"
@@ -40,11 +44,20 @@
         </div>
       </template>
 
+      <div v-if="items.length && collapsed" class="plan-summary">
+        <div class="plan-summary__names">
+          <el-tag v-for="item in items.slice(0, 3)" :key="item.id" size="small" effect="plain">
+            {{ item.iface?.name || item.task?.name }}
+          </el-tag>
+          <span v-if="items.length > 3">等 {{ items.length }} 个接口</span>
+        </div>
+        <span>{{ totalEstimatedRequests }} 条报文将在开始后按计划发送</span>
+      </div>
+
       <el-table
-        v-if="items.length"
+        v-else-if="items.length"
         ref="tableRef"
         :data="items"
-        :height="152"
         row-key="id"
         size="small"
         empty-text="暂无编排计划"
@@ -110,7 +123,7 @@
         </el-table-column>
       </el-table>
 
-      <el-empty v-else class="plan-empty" :image-size="72" description="从左侧系统树拖入接口/方案，或新建自定义接口后添加" />
+      <el-empty v-else class="plan-empty" :image-size="72" description="从左侧接口树拖入接口/方案，或新建自定义接口后添加" />
     </el-card>
   </div>
 </template>
@@ -134,6 +147,9 @@ const tableRef = ref()
 const items = computed(() => store.planItems)
 const dragOver = ref(false)
 const batchInterval = ref(null)
+const userCollapsed = ref(false)
+const running = computed(() => ['running', 'paused'].includes(store.status))
+const collapsed = computed(() => running.value || userCollapsed.value)
 let sortable = null
 
 const onDragOver = (event) => {
@@ -194,12 +210,16 @@ const setupSortable = () => {
   })
 }
 
-watch(() => items.value.length, setupSortable, { immediate: true })
+watch(() => items.value.length, (length, oldLength) => {
+  if (!length) userCollapsed.value = false
+  else if (!oldLength || length > oldLength) userCollapsed.value = true
+}, { immediate: true })
+watch([() => items.value.length, collapsed], setupSortable, { immediate: true })
 onBeforeUnmount(() => sortable?.destroy())
 </script>
 
 <style scoped lang="scss">
-.plan-stack { display: flex; flex-direction: column; gap: 14px; }
+.plan-stack { display: flex; flex: 0 0 auto; flex-direction: column; gap: 14px; }
 .exec-card {
   border-radius: 8px;
   :deep(.el-card__header) { padding: 12px 14px; }
@@ -208,6 +228,7 @@ onBeforeUnmount(() => sortable?.destroy())
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .card-head__left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .card-title { font-weight: 650; font-size: 14px; margin-right: 8px; }
+.plan-count { color: var(--el-text-color-secondary); font-size: 12px; white-space: nowrap; }
 .card-sub { color: var(--el-text-color-secondary); font-size: 12px; }
 .plan-actions {
   display: flex;
@@ -220,8 +241,6 @@ onBeforeUnmount(() => sortable?.destroy())
   border: 1px solid var(--el-border-color-lighter);
   transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
   :deep(.el-card__body) {
-    height: 180px;
-    overflow: hidden;
     box-sizing: border-box;
   }
   :deep(.el-table__header-wrapper th.el-table__cell),
@@ -232,6 +251,16 @@ onBeforeUnmount(() => sortable?.destroy())
     white-space: nowrap;
   }
 }
+.plan-summary {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.plan-summary__names { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
 .plan-table-card--dragover {
   border-color: var(--el-color-primary);
   box-shadow: 0 0 0 3px var(--el-color-primary-light-9);

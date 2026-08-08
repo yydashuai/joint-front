@@ -26,7 +26,7 @@
                 </el-tag>
               </div>
               <div class="batch-option__sub">
-                {{ batchTime(r) }} · {{ systemName(r) }} · {{ batchMetrics(r) }}
+                {{ batchTime(r) }} · {{ batchMetrics(r) }}
               </div>
             </div>
           </el-option>
@@ -42,7 +42,7 @@
           <div class="source-band" :class="`source-band--${run.batchType || 'send'}`">
             <div class="source-band__label">数据来源</div>
             <div class="source-band__main">{{ batchSourceTitle }}</div>
-            <div class="source-band__sub">{{ batchTime(run) }} · {{ run.startedAt }} — {{ run.finishedAt }} · {{ finishReasonLabel }}</div>
+            <div class="source-band__sub">{{ run.startedAt }} — {{ run.finishedAt }}</div>
           </div>
           <div v-if="run.batchType !== 'receive'" class="stat-grid">
             <div class="stat-card">
@@ -63,7 +63,7 @@
             <div class="stat-card">
               <span class="stat-card__label">批次时长</span>
               <strong>{{ sendSummary.durationSeconds }}s</strong>
-              <span>{{ finishReasonLabel }}</span>
+              <span>{{ batchTime(run) }} 开始</span>
             </div>
           </div>
           <div v-else class="stat-grid">
@@ -88,11 +88,6 @@
               <span>已转发 {{ receiveSummary.forwardedCount }} 条</span>
             </div>
           </div>
-          <div class="ov">
-            <div class="ov__row"><span class="ov__k">所属系统</span><span class="ov__v">{{ sysName }}</span></div>
-            <div class="ov__row"><span class="ov__k">接口范围</span><span class="ov__v">{{ interfaceText }}</span></div>
-            <div class="ov__row"><span class="ov__k">归档方式</span><span class="ov__v">{{ finishReasonLabel }}</span></div>
-          </div>
         </el-card>
       </div>
     </el-scrollbar>
@@ -103,23 +98,18 @@
 import { computed, watch, onMounted } from 'vue'
 import { ArrowRight } from '@element-plus/icons-vue'
 import { useRunBatchStore } from '@/stores/runBatch'
-import { useSystemStore } from '@/stores/system'
 
 const props = defineProps({ form: { type: Object, required: true } })
 defineEmits(['next'])
 
 const batchStore = useRunBatchStore()
-const systemStore = useSystemStore()
 
 const run = computed(() => batchStore.byId(props.form.batchId))
 const runs = computed(() => {
-  const list = batchStore.reportable.filter((item) =>
-    systemStore.currentId == null || item.systemId === systemStore.currentId
-  )
+  const list = batchStore.reportable
   if (run.value && !list.some((item) => item.id === run.value.id)) return [run.value, ...list]
   return list
 })
-const sysName = computed(() => systemStore.systems.find((s) => s.id === run.value?.systemId)?.name || '—')
 const interfaceNames = computed(() => run.value?.scope?.interfaceNames?.length
   ? run.value.scope.interfaceNames
   : [...new Set((run.value?.tasks || run.value?.stepResults || []).map((item) => item.iface).filter(Boolean))])
@@ -130,7 +120,6 @@ const reportTitle = computed(() => run.value
 const batchSourceTitle = computed(() => run.value
   ? `${run.value.scope?.displayName || '未命名接口范围'} · ${batchTypeLabel(run.value)}`
   : '')
-const finishReasonLabel = computed(() => run.value?.finishReason === 'terminated' ? '手动终止归档' : '自然完成归档')
 const sendSummary = computed(() => {
   const summary = run.value?.summary || {}
   const sentCount = summary.sentCount ?? summary.totalRequests ?? 0
@@ -164,7 +153,6 @@ const formatDateTime = (text = '') => {
   return `${y}-${pad(m)}-${pad(d)} ${pad(hh || '00')}:${pad(mm || '00')}`
 }
 const batchTime = (batch) => formatDateTime(batch?.startedAt || batch?.time)
-const systemName = (batch) => systemStore.systems.find((s) => s.id === batch?.systemId)?.name || '未知系统'
 const batchTypeLabel = (batch) => batch?.batchType === 'receive' ? '接收批次' : '发送批次'
 const batchMetrics = (batch) => batch?.batchType === 'receive'
   ? `${batch?.summary?.totalReceived || 0}条接收 / ${batch?.summary?.unparsedCount || 0}条无法解析`
@@ -185,14 +173,13 @@ onMounted(() => {
   ensureRun()
   onRunChange()
 })
-watch(() => systemStore.currentId, ensureRun)
 watch(() => props.form.batchId, onRunChange)
 </script>
 
 <style scoped lang="scss">
 .step { position: relative; height: 100%; display: flex; flex-direction: column; min-height: 0; }
 .step__scroll { flex: 1; min-height: 0; }
-.step__inner { max-width: 820px; margin: 0 auto; padding: 4px 4px 48px; }
+.step__inner { width: 100%; box-sizing: border-box; padding: 4px 4px 24px; }
 .w-full { width: 100%; }
 :global(.report-batch-select-popper .el-select-dropdown__item) {
   height: auto;
@@ -267,14 +254,6 @@ watch(() => props.form.batchId, onRunChange)
   span:last-child { font-size: 12px; color: #64748b; }
 }
 .stat-card__label { font-size: 12px; font-weight: 700; color: var(--el-text-color-secondary); }
-.ov { display: flex; flex-direction: column; }
-.ov__row {
-  display: flex; align-items: center; gap: 12px; font-size: 13px; padding: 7px 0;
-  & + & { border-top: 1px solid var(--el-border-color-lighter); }
-}
-.ov__k { color: var(--el-text-color-secondary); width: 72px; flex-shrink: 0; }
-.ov__v { color: var(--el-text-color-primary); }
-
 @media (max-width: 980px) {
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

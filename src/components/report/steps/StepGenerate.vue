@@ -8,9 +8,6 @@
           </div>
           <div class="step-actions">
             <el-button :icon="ArrowLeft" @click="$emit('back')">上一步</el-button>
-            <el-button type="primary" :icon="MagicStick" :loading="store.generating" :disabled="!run" @click="onGenerate">
-              {{ store.generating ? stageText : generateLabel }}
-            </el-button>
           </div>
         </div>
         <el-card shadow="never" class="prev">
@@ -18,8 +15,6 @@
           <div class="prev__row"><span class="prev__k">数据批次</span><span>{{ run ? batchLabel : '未选择批次' }}</span></div>
           <div class="prev__row"><span class="prev__k">报告标题</span><span>{{ form.title || reportTitle || '—' }}</span></div>
           <div class="prev__row"><span class="prev__k">报告模板</span><span>{{ templateName }}</span></div>
-          <div class="prev__row"><span class="prev__k">批次类型</span><span>{{ run?.batchType === 'receive' ? '接收批次' : '发送批次' }}</span></div>
-          <div class="prev__row"><span class="prev__k">报告生成者</span><span>{{ generatorName }}</span></div>
           <div class="prev__row">
             <span class="prev__k">素材</span>
             <span class="prev__mats">
@@ -56,7 +51,6 @@ import { ElMessage } from 'element-plus'
 import { FolderOpened, MagicStick, ArrowLeft } from '@element-plus/icons-vue'
 import { useReportStore, REPORT_STAGES } from '@/stores/report'
 import { useRunBatchStore } from '@/stores/runBatch'
-import { useSystemStore } from '@/stores/system'
 import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
@@ -69,11 +63,9 @@ const emit = defineEmits(['back', 'done'])
 
 const store = useReportStore()
 const batchStore = useRunBatchStore()
-const systemStore = useSystemStore()
 const authStore = useAuthStore()
 
 const run = computed(() => batchStore.byId(props.form.batchId))
-const sysName = computed(() => systemStore.systems.find((s) => s.id === run.value?.systemId)?.name || '')
 const templateName = computed(() => store.templates.find((t) => t.id === props.form.templateId)?.name || '默认结构')
 const generatorName = computed(() => authStore.currentUser?.realName || authStore.currentUser?.username || '当前用户')
 const stageText = computed(() => (store.genStage >= 0 ? REPORT_STAGES[store.genStage] : '生成中…'))
@@ -98,12 +90,10 @@ const reportTitle = computed(() => run.value
 const onGenerate = async () => {
   if (!run.value) return
   const rep = await store.generateReport({
-    systemId: run.value.systemId,
     batchId: props.form.batchId,
     title: props.form.title.trim() || reportTitle.value,
     templateId: props.form.templateId,
     materials: props.materials,
-    sysName: sysName.value,
     generatorName: generatorName.value,
     knowledgeCollectionIds: store.selectedKnowledgeCollectionIds,
     regenerateFromId: props.regenerateFromId
@@ -120,7 +110,7 @@ watch(() => props.autoGenerateTick, (tick, oldTick) => {
 <style scoped lang="scss">
 .step { position: relative; height: 100%; display: flex; flex-direction: column; min-height: 0; }
 .step__scroll { flex: 1; min-height: 0; }
-.step__inner { max-width: 820px; margin: 0 auto; padding: 4px 4px 48px; }
+.step__inner { width: 100%; box-sizing: border-box; padding: 4px 4px 24px; }
 
 .blk__title { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; .el-icon { color: var(--el-color-primary); } }
 .step-head {

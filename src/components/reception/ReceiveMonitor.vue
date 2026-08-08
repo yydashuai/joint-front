@@ -3,52 +3,50 @@
     <!-- 接收数据流 -->
     <el-card shadow="never" class="exec-card stream-card">
       <template #header>
-        <div class="card-head">
-          <span class="card-title">接收数据流</span>
-          <div class="stream-summary">
+        <div class="console-tools">
+          <div class="console-tools__left">
+            <span class="card-title">接收数据流</span>
+            <el-select v-model="statusFilter" size="small" class="status-filter" aria-label="按状态过滤">
+              <el-option
+                v-for="item in statusFilters"
+                :key="item.value"
+                :label="`${item.label}（${item.count}）`"
+                :value="item.value"
+              />
+            </el-select>
+            <el-select v-model="ifaceFilter" placeholder="全部接口" size="small" clearable class="iface-filter">
+              <el-option
+                v-for="item in store.planItems"
+                :key="item.iface.id"
+                :label="item.iface.name"
+                :value="item.iface.id"
+              />
+            </el-select>
+          </div>
+          <div class="console-tools__right">
             <el-tag :type="statusType" effect="dark">{{ statusText }}</el-tag>
-            <span v-for="metric in streamMetrics" :key="metric.label" class="stream-stat" :class="metric.cls">
-              <b>{{ metric.value }}</b>{{ metric.label }}
+            <span
+              class="progress-compact"
+              :title="`共接收 ${store.totalCount} 条，正常 ${store.okCount} 条，异常 ${store.errorCount} 条，未解析 ${store.unparsedCount} 条`"
+            >
+              <b>{{ store.totalCount }}</b><span>条</span>
+              <em v-if="store.errorCount">{{ store.errorCount }} 异常</em>
             </span>
+            <el-button
+              v-if="selectedIds.length"
+              type="success"
+              plain
+              size="small"
+              :icon="FolderAdd"
+              @click="openSaveDialog(selectedIds)"
+            >
+              保存选中（{{ selectedIds.length }}）
+            </el-button>
+            <el-button v-if="selectedIds.length" size="small" text @click="clearSelection">取消勾选</el-button>
+            <el-switch v-model="autoScroll" size="small" active-text="自动滚动" />
           </div>
         </div>
       </template>
-      <div class="stream-tools">
-        <div class="stream-tools__filters">
-          <el-check-tag
-            v-for="f in statusFilters"
-            :key="f.value"
-            :checked="statusFilter === f.value"
-            class="filter-tag"
-            :class="`filter-tag--${f.value}`"
-            @change="() => setStatusFilter(f.value)"
-          >
-            {{ f.label }}（{{ f.count }}）
-          </el-check-tag>
-          <el-select v-model="ifaceFilter" placeholder="按接口过滤" size="small" clearable style="width: 180px;">
-            <el-option
-              v-for="item in store.planItems"
-              :key="item.iface.id"
-              :label="item.iface.name"
-              :value="item.iface.id"
-            />
-          </el-select>
-        </div>
-        <div class="stream-tools__right">
-          <el-button
-            type="success"
-            plain
-            size="small"
-            :icon="FolderAdd"
-            :disabled="!selectedIds.length"
-            @click="openSaveDialog(selectedIds)"
-          >
-            保存选中为数据集（{{ selectedIds.length }}）
-          </el-button>
-          <el-button v-if="selectedIds.length" size="small" text @click="clearSelection">取消勾选</el-button>
-          <el-switch v-model="autoScroll" size="small" active-text="自动滚动" />
-        </div>
-      </div>
 
       <div class="stream-head">
         <span class="stream-head__chk">
@@ -185,18 +183,8 @@ const statusType = computed(() => ({
   done: 'success',
   idle: 'info',
 }[store.status]))
-const streamMetrics = computed(() => [
-  { label: '已接收', value: store.totalCount },
-  { label: '正常', value: store.okCount, cls: 'metric--ok' },
-  { label: '异常', value: store.errorCount, cls: 'metric--bad' },
-  { label: '未解析', value: store.unparsedCount, cls: 'metric--warn' },
-  { label: '条/秒', value: store.recvRate },
-  { label: '已监听', value: `${store.elapsedSeconds}s` },
-])
-
 /* ===== 过滤 ===== */
 const statusFilter = ref('all')
-const tagFilter = ref('')
 const ifaceFilter = ref(null)
 
 const statusFilters = computed(() => [
@@ -207,17 +195,11 @@ const statusFilters = computed(() => [
   { value: 'forward', label: '已转发', count: store.forwardCount },
 ])
 
-const setStatusFilter = (v) => {
-  statusFilter.value = v
-  if (v !== 'error') tagFilter.value = ''
-}
-
 const filteredEntries = computed(() => store.recvQueue.filter((e) => {
   if (statusFilter.value === 'forward') { if (e.kind !== 'forward') return false }
   else if (statusFilter.value !== 'all') {
     if (e.kind !== 'recv' || e.verdict.status !== statusFilter.value) return false
   }
-  if (tagFilter.value && e.verdict.tag !== tagFilter.value) return false
   if (ifaceFilter.value && String(e.interfaceId) !== String(ifaceFilter.value)) return false
   return true
 }))
@@ -410,36 +392,43 @@ watch(() => store.recvQueue.length, () => {
 </script>
 
 <style scoped lang="scss">
-.rmonitor { display: flex; flex-direction: column; gap: 14px; }
+.rmonitor { display: flex; flex: 1 0 360px; min-height: 360px; overflow: hidden; flex-direction: column; gap: 14px; }
 .exec-card {
   border-radius: 8px;
   :deep(.el-card__header) { padding: 12px 14px; }
   :deep(.el-card__body) { padding: 14px; }
 }
-.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.console-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.console-tools__left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.console-tools__right { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .card-title { font-weight: 650; font-size: 14px; margin-right: 8px; }
 .card-sub { color: var(--el-text-color-secondary); font-size: 12px; }
 .mono { font-family: Consolas, Monaco, monospace; }
+.status-filter { width: 118px; }
+.iface-filter { width: 160px; }
 
-.stream-summary { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
-.stream-stat {
+.progress-compact {
   display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-  padding: 3px 7px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-left: 1px solid var(--el-border-color);
   color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-extra-light);
   font-size: 11px;
   white-space: nowrap;
 }
-.stream-stat b { color: var(--el-text-color-primary); font: 700 12px Consolas, Monaco, monospace; }
-.stream-stat.metric--ok b { color: var(--el-color-success); }
-.stream-stat.metric--bad b { color: var(--el-color-danger); }
-.stream-stat.metric--warn b { color: var(--el-color-warning); }
+.progress-compact b { color: var(--el-color-primary); font: 700 13px Consolas, Monaco, monospace; }
+.progress-compact span { font: 600 12px Consolas, Monaco, monospace; }
+.progress-compact em {
+  padding-left: 5px;
+  border-left: 1px solid var(--el-border-color-lighter);
+  color: var(--el-color-danger);
+  font-style: normal;
+  font-weight: 650;
+}
 
-.stream-card { display: flex; flex-direction: column; height: 520px; }
+.stream-card { display: flex; flex: 1; min-height: 0; overflow: hidden; flex-direction: column; }
 .stream-card :deep(.el-card__body) {
   flex: 1;
   min-height: 0;
@@ -447,19 +436,6 @@ watch(() => store.recvQueue.length, () => {
   flex-direction: column;
   padding: 14px;
 }
-
-/* ===== 数据流工具条 ===== */
-.stream-tools {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-.stream-tools__filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.stream-tools__right { display: flex; align-items: center; gap: 12px; }
-.filter-tag { font-size: 12px; }
 
 /* ===== 数据流列表：接口名 / IP / 协议 / 消息号 / 时间 / 报文内容 / 详情 ===== */
 $stream-cols: 30px 150px 130px 70px 90px 96px minmax(140px, 1fr) 52px;
@@ -551,7 +527,4 @@ $stream-cols: 30px 150px 130px 70px 90px 96px minmax(140px, 1fr) 52px;
 
 .save-tip { margin-bottom: 14px; }
 
-@media (max-width: 1180px) {
-  .stream-card { height: 460px; }
-}
 </style>

@@ -3,7 +3,7 @@
     <div class="result-toolbar">
       <div class="result-title"><el-icon><Document /></el-icon> {{ cur ? cur.title : '联试报告' }}</div>
       <div class="result-actions">
-        <el-button size="small" :icon="ArrowLeft" @click="$emit('restart')">回到数据源</el-button>
+        <el-button size="small" :icon="ArrowLeft" @click="$emit('restart')">新建报告</el-button>
         <el-button v-if="cur" size="small" :type="editMode ? 'primary' : ''" :icon="EditPen" @click="editMode = !editMode">
           {{ editMode ? '完成编辑' : '编辑' }}
         </el-button>
@@ -64,11 +64,11 @@
         <el-input v-if="editMode" v-model="cur.title" class="paper__title-input" />
         <h1 v-else class="paper__title">{{ cur.title }}</h1>
         <div class="paper__meta">
-          <span>{{ currentVersionLabel }}</span><span>·</span><span>{{ sysName }}</span><span>·</span><span>{{ cur.runName }}</span><span>·</span><span>{{ cur.createdAt }}</span>
+          <span>{{ currentVersionLabel }}</span><span>·</span><span>{{ cur.runName }}</span><span>·</span><span>{{ cur.createdAt }}</span>
         </div>
         <div class="paper-info">
           <div>
-            <span>批次来源</span>
+            <span>批次创建者</span>
             <el-input v-if="editMode" v-model="cur.taskCreator" size="small" />
             <strong v-else>{{ cur.taskCreator || '—' }}</strong>
           </div>
@@ -121,13 +121,11 @@ import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Document, EditPen, Download, RefreshLeft, Refresh, ArrowLeft, Printer, ArrowDown } from '@element-plus/icons-vue'
 import { useReportStore } from '@/stores/report'
-import { useSystemStore } from '@/stores/system'
 import { mdToHtml, downloadFile } from '@/utils/markdown'
 
 defineEmits(['restart', 'regenerate'])
 
 const store = useReportStore()
-const systemStore = useSystemStore()
 
 const cur = computed(() => store.currentReport)
 const editMode = ref(false)
@@ -135,7 +133,6 @@ const exportOpen = ref(false)
 const exportMenuRef = ref(null)
 const activeSectionKey = ref('')
 const sectionDrafts = ref({})
-const sysName = computed(() => systemStore.systems.find((s) => s.id === cur.value?.systemId)?.name || '—')
 const render = (md) => mdToHtml(md)
 const versions = computed(() => store.versionsOfReport(cur.value))
 const versionLabel = (report) => `v${report?.version || 1}`
@@ -189,12 +186,11 @@ const reportBodyHtml = () => {
   if (!cur.value) return ''
   const meta = `
     <div class="export-meta">
-      <span>${escapeHtml(sysName.value)}</span>
       <span>${escapeHtml(cur.value.runName)}</span>
       <span>${escapeHtml(cur.value.createdAt)}</span>
     </div>
     <table class="export-info">
-      <tr><th>批次来源</th><td>${escapeHtml(cur.value.taskCreator || '—')}</td><th>报告生成者</th><td>${escapeHtml(cur.value.generatorName || '—')}</td></tr>
+      <tr><th>批次创建者</th><td>${escapeHtml(cur.value.taskCreator || '—')}</td><th>报告生成者</th><td>${escapeHtml(cur.value.generatorName || '—')}</td></tr>
     </table>`
   return `<h1>${escapeHtml(cur.value.title)}</h1>${meta}${mdToHtml(store.reportMarkdown(cur.value, { includeTitle: false, includeMeta: false }))}`
 }
@@ -511,7 +507,7 @@ const handleExportPdf = (mode) => {
 }
 .paper-scroll { flex: 1; min-height: 0; }
 .paper {
-  max-width: 820px; margin: 0 auto 48px; padding: 36px 44px; background: #fff;
+  width: 100%; min-height: 100%; box-sizing: border-box; margin: 0 0 24px; padding: 36px 44px; background: #fff;
   border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .08); color: #1f2937;
 }
 .paper__title { text-align: center; font-size: 24px; margin: 0 0 8px; padding-bottom: 12px; border-bottom: 3px solid var(--el-color-primary); }

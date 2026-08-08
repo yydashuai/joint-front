@@ -237,14 +237,18 @@
             </el-popconfirm>
           </template>
         </el-table-column>
+
+        <template #append>
+          <button class="matrix-add-row" type="button" @click="onAddRow">
+            <el-icon><Plus /></el-icon>
+            <span>添加测试行</span>
+          </button>
+        </template>
         </el-table>
           </template>
         </TableRangeSelection>
       </div>
 
-      <el-tooltip content="添加一行新的测试数据"><el-button class="add-row-btn" text type="primary" :icon="Plus" @click="onAddRow">
-        添加测试行
-      </el-button></el-tooltip>
     </div>
 
     <div v-if="dynamicFields.length" class="history-section">
@@ -1161,11 +1165,25 @@ const onKeydown = (e) => {
   }
 }
 
-/* 添加行按钮 */
-.add-row-btn {
-  margin-top: 8px;
-  align-self: flex-start;
+/* 表格末尾添加行 */
+.matrix-add-row {
+  width: 100%;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border: 0;
+  border-top: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color);
+  color: var(--el-color-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background .16s ease, color .16s ease;
 }
+.matrix-add-row:hover { background: var(--el-color-primary-light-9); color: var(--el-color-primary-dark-2); }
+.matrix-add-row:focus-visible { outline: 2px solid var(--el-color-primary-light-3); outline-offset: -2px; }
 
 .shortcut-hint {
   font-size: 11px;

@@ -38,23 +38,56 @@
       </div>
 
       <div class="main-panel">
-        <!-- 接口详情：选中系统接口/报文时显示，含报文列表（1:N） -->
-        <el-card v-if="detailIface" shadow="never" class="iface-detail">
-          <div class="iface-detail__head">
-            <div class="iface-detail__title">
-              <el-icon class="iface-detail__icon"><Link /></el-icon>
-              <span class="iface-detail__name">{{ detailIface.name }}</span>
-              <el-tag size="small" type="info" effect="plain">{{ ifaceTransportType(detailIface) }}</el-tag>
-              <el-tag size="small" effect="plain">{{ (detailIface.messageIds || []).length }} 报文</el-tag>
+        <el-card shadow="never" class="workspace-context">
+          <div class="workspace-context__row">
+            <div class="iface-context">
+              <template v-if="detailIface">
+                <div class="iface-context__identity">
+                  <span class="iface-context__icon"><el-icon><Link /></el-icon></span>
+                  <div class="iface-context__copy">
+                    <span class="iface-context__eyebrow">当前接口 · {{ (detailIface.messageIds || []).length }} 个报文</span>
+                    <strong>{{ detailIface.name }}</strong>
+                  </div>
+                </div>
+                <div class="iface-context__actions">
+                  <el-button link type="primary" size="small" @click="openIfaceConfig(detailIface.id)">编辑接口</el-button>
+                  <el-button link type="primary" size="small" @click="ifaceDetailExpanded = !ifaceDetailExpanded">
+                    {{ ifaceDetailExpanded ? '收起报文' : '查看报文' }}
+                  </el-button>
+                </div>
+              </template>
+              <template v-else-if="selectedCustom">
+                <div class="iface-context__identity">
+                  <span class="iface-context__icon"><el-icon><Link /></el-icon></span>
+                  <div class="iface-context__copy">
+                    <span class="iface-context__eyebrow">当前接口 · 自定义接口</span>
+                    <strong>{{ selectedCustom.name }}</strong>
+                  </div>
+                </div>
+              </template>
+              <template v-else>
+                <div class="iface-context__identity iface-context__identity--empty">
+                  <span class="iface-context__icon"><el-icon><Link /></el-icon></span>
+                  <div class="iface-context__copy">
+                    <span class="iface-context__eyebrow">接口收发监控</span>
+                    <strong>从左侧选择接口</strong>
+                  </div>
+                </div>
+              </template>
             </div>
-            <el-button link type="primary" size="small" @click="openIfaceConfig(detailIface.id)">编辑接口</el-button>
+
+            <el-segmented
+              v-model="activeMode"
+              class="mode-switch mode-segmented"
+              :options="monitorModeOptions"
+              block
+              aria-label="选择发送或接收监控"
+              @change="selectMode"
+            />
           </div>
-          <div class="iface-detail__meta">
-            {{ ifaceSystemName(detailIface) }} / {{ ifaceModuleName(detailIface) }}
-            <span v-if="detailIface.desc">· {{ detailIface.desc }}</span>
-          </div>
-          <div class="iface-detail__list">
-            <table class="iface-detail__table">
+
+          <div v-if="detailIface" v-show="ifaceDetailExpanded" class="workspace-context__messages">
+            <table class="workspace-context__table">
               <thead>
                 <tr>
                   <th>报文名称</th><th>传输类型</th><th>字段数</th><th>关联数据</th><th class="ta-r">操作</th>
@@ -82,20 +115,6 @@
 
         <el-card shadow="never" class="monitoring-wizard">
           <div class="wizard-shell">
-            <div class="wizard-steps" aria-label="接口收发监控">
-              <button
-                v-for="(step, index) in monitorSteps"
-                :key="step.name"
-                type="button"
-                class="wizard-step"
-                :class="{ 'wizard-step--active': activeMode === step.name }"
-                @click="selectMode(step.name)"
-              >
-                <span class="wizard-step__index">{{ index + 1 }}</span>
-                <span class="wizard-step__copy"><strong>{{ step.title }}</strong></span>
-              </button>
-            </div>
-
             <div class="wizard-body">
               <div v-show="activeMode === 'send'" class="monitor-panel">
                 <PlanTable
@@ -288,7 +307,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Link, Plus, RefreshRight, Search, SwitchButton, Tickets, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import { Download, Link, Plus, Promotion, RefreshRight, Search, SwitchButton, Tickets, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import MonitorTree from '@/components/execution/MonitorTree.vue'
 import CustomIfaceDialog from '@/components/execution/CustomIfaceDialog.vue'
 import ListenConfigDialog from '@/components/execution/ListenConfigDialog.vue'
@@ -307,7 +326,6 @@ import { useTestTaskStore } from '@/stores/testTask'
 import { usePlanSchemeStore } from '@/stores/planScheme'
 import { useRunBatchStore } from '@/stores/runBatch'
 import { useSystemStore } from '@/stores/system'
-import { useConnectionStore } from '@/stores/connection'
 import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const route = useRoute()
@@ -321,19 +339,19 @@ const taskStore = useTestTaskStore()
 const schemeStore = usePlanSchemeStore()
 const batchStore = useRunBatchStore()
 const systemStore = useSystemStore()
-const connStore = useConnectionStore()
 const { nextUniqueName, validateName } = useEntityNameGuard()
 
 protocolStore.migrateAllFromV1()
 schemeStore.removeLegacyDefaults()
 
-const monitorSteps = [
-  { name: 'send', title: '发送监控' },
-  { name: 'receive', title: '接收监控' },
+const monitorModeOptions = [
+  { label: '发送监控', value: 'send', icon: Promotion },
+  { label: '接收监控', value: 'receive', icon: Download },
 ]
 const activeMode = ref(route.query.mode === 'receive' ? 'receive' : 'send')
 const selectedKey = ref('')
 const ifaceSearch = ref('')
+const ifaceDetailExpanded = ref(false)
 
 const selectMode = (mode) => {
   activeMode.value = mode
@@ -370,15 +388,22 @@ const ownerIfaceOf = (message) => {
 }
 /** 右侧详情卡片的接口：选中接口本体，或选中其名下报文时取所属接口 */
 const detailIface = computed(() => selectedIface.value || ownerIfaceOf(selectedMessage.value))
+watch(() => detailIface.value?.id, () => {
+  ifaceDetailExpanded.value = false
+})
+watch(
+  () => [execution.status, recvStore.status],
+  ([sendStatus, receiveStatus]) => {
+    if (['running', 'paused'].includes(sendStatus) || ['listening', 'paused'].includes(receiveStatus)) {
+      ifaceDetailExpanded.value = false
+    }
+  }
+)
 /** 接口名下报文（1:N） */
 const ifaceMessages = (iface) => (iface?.messageIds || [])
   .map((id) => protocolStore.interfaces.find((m) => String(m.id) === String(id)))
   .filter(Boolean)
-/** 接口聚合传输类型（取首个报文） */
-const ifaceTransportType = (iface) => ifaceMessages(iface)[0]?.transportType || '—'
 const messageFieldCount = (message) => (message?.protocolRefs || []).length
-const ifaceSystemName = (iface) => systemStore.systems.find((s) => s.id === iface?.systemId)?.name || '—'
-const ifaceModuleName = (iface) => connStore.nodes.find((n) => n.id === iface?.moduleId)?.name || '—'
 
 const transportConfigVisible = ref(false)
 const sendPlanInterfaces = computed(() => execution.planItems.map((item) => item.iface).filter(Boolean))
@@ -962,49 +987,34 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding-right: 4px;
 }
-.iface-detail {
+.workspace-context {
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   :deep(.el-card__body) { padding: 12px 16px; }
-  &__head {
-    display: flex;
+  &__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(420px, 1fr);
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    gap: 20px;
   }
-  &__title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-  &__icon { color: var(--el-color-success); font-size: 15px; }
-  &__name { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__meta {
-    margin-top: 6px;
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
-    min-width: 0;
+  &__messages {
+    margin-top: 12px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 7px;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
-  &__list { margin-top: 10px; max-height: 220px; overflow: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
   &__table {
     width: 100%;
     table-layout: fixed;
     border-collapse: collapse;
     font-size: 12px;
-    th, td { padding: 6px 10px; text-align: left; }
-    thead th {
-      color: var(--el-text-color-secondary);
-      background: var(--el-fill-color-light);
-      font-weight: 500;
-      position: sticky;
-      top: 0;
-    }
+    th, td { padding: 7px 10px; text-align: left; }
+    thead th { color: var(--el-text-color-secondary); background: var(--el-fill-color-light); font-weight: 500; }
     tbody tr { border-top: 1px solid var(--el-border-color-lighter); }
     tbody tr:hover { background: var(--el-fill-color-extra-light); }
     .m-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1012,94 +1022,103 @@ onBeforeUnmount(() => {
     .m-ops { white-space: nowrap; }
   }
 }
+.iface-context {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding-right: 4px;
+  &__identity {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  &__identity--empty { color: var(--el-text-color-secondary); }
+  &__icon {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 9px;
+    color: #2f6feb;
+    background: #eef4ff;
+    font-size: 17px;
+  }
+  &__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  &__eyebrow { color: var(--el-text-color-secondary); font-size: 11px; line-height: 1; }
+  &__copy strong {
+    max-width: 280px;
+    overflow: hidden;
+    color: var(--el-text-color-primary);
+    font-size: 14px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  &__actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 1px;
+    flex-shrink: 0;
+    margin-left: 24px;
+    padding-left: 8px;
+    border-left: 1px solid var(--el-border-color-lighter);
+    .el-button + .el-button { margin-left: 0; }
+  }
+}
+.mode-switch {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dce4f1;
+  border-radius: 10px;
+  background: #f3f6fa;
+}
+.mode-segmented {
+  width: 100%;
+  padding: 0;
+  border-radius: 10px;
+  background: transparent;
+  --el-segmented-item-selected-bg-color: #2f6feb;
+  --el-segmented-item-selected-color: #fff;
+  :deep(.el-segmented__group) { gap: 0; }
+  :deep(.el-segmented__item) { min-height: 40px; border-radius: 0; font-size: 13px; font-weight: 600; }
+  :deep(.el-segmented__item-selected) { box-shadow: 0 4px 12px rgba(47, 111, 235, .2); }
+}
 .ta-r { text-align: right !important; }
 .monitoring-wizard {
-  flex: 1;
-  min-height: 0;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   border-radius: 8px;
   :deep(.el-card__body) {
-    flex: 1;
-    min-height: 0;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
     padding: 0;
   }
 }
 .wizard-shell {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-/* Tab 切换按钮：紧凑高度（原 70px 过高，占内容过多） */
-.wizard-steps {
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: linear-gradient(180deg, #fbfdff, #f6f8fb);
-}
-.wizard-step {
-  min-width: 0;
-  min-height: 38px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
-  text-align: left;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  background: #fff;
-  color: var(--el-text-color-regular);
-  cursor: pointer;
-  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
-}
-.wizard-step:hover {
-  border-color: var(--el-color-primary-light-5);
-  box-shadow: 0 6px 18px rgba(31, 49, 80, .07);
-}
-.wizard-step--active {
-  border-color: var(--el-color-primary);
-  background: linear-gradient(180deg, #fff, #f0f6ff);
-  box-shadow: inset 0 -2px 0 var(--el-color-primary);
-}
-.wizard-step__index {
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 50%;
-  border: 1px solid var(--el-border-color);
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-extra-light);
-  font: 700 12px Consolas, Monaco, monospace;
-}
-.wizard-step--active .wizard-step__index {
-  color: #fff;
-  background: var(--el-color-primary);
-  border-color: var(--el-color-primary);
-}
-.wizard-step__copy strong {
-  font-size: 13px;
-  font-weight: 650;
 }
 .wizard-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
+  overflow: visible;
   padding: 14px 18px;
 }
 .monitor-panel {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  min-height: 0;
+  overflow: visible;
 }
 .wizard-footer {
   flex-shrink: 0;
@@ -1135,6 +1154,7 @@ onBeforeUnmount(() => {
   .interface-monitoring { overflow: auto; }
   .split { flex-direction: column; }
   .tree-panel { width: 100%; min-height: 320px; }
+  .workspace-context__row { grid-template-columns: 1fr; }
   .wizard-footer { align-items: flex-start; flex-direction: column; }
   .wizard-actions { width: 100%; }
 }

@@ -44,7 +44,7 @@
                 required
                 :class="{ 'is-note-missing': !m.note?.trim() }"
               >
-                <el-input v-model="m.note" placeholder="必填，例如：插入到「联试概述」章节，说明系统连接关系" />
+                <el-input v-model="m.note" placeholder="必填，例如：插入到「联试概述」章节，说明接口连接关系" />
                 <div v-if="!m.note?.trim()" class="field-tip">请说明该素材插入哪个章节，以及用于支撑哪类结论。</div>
               </el-form-item>
             </div>
@@ -53,14 +53,14 @@
             </el-popconfirm>
           </div>
         </el-form>
-        <el-empty v-else description="暂无素材，可上传拓扑图 / 截图 / 统计表等需人工提供的内容" :image-size="90" />
+        <el-empty v-else description="暂无素材，可按需上传接口关系图、截图或统计表" :image-size="90" />
       </div>
     </el-scrollbar>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { PictureFilled, Upload, Delete, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 
@@ -85,30 +85,12 @@ const goNext = () => {
   emit('next')
 }
 
-// 默认数据填充：两条图片示例 + 一条表格示例（含示例数据，便于查看预览）
-onMounted(() => {
-  if (!props.materials.length) {
-    props.materials.push(
-      { name: '系统拓扑图.png', type: 'image', note: '插入到「联试概述」章节', url: '' },
-      { name: '接口数据分布图.png', type: 'image', note: '插入到「接口明细」章节', url: '' },
-      {
-        name: '接口批次统计表.xlsx', type: 'table', note: '插入到「批次规模」章节', url: '',
-        rows: [
-          ['接口', '发送数量', '接收数量'],
-          ['任务分配接口', '120', '—'],
-          ['武器载荷接口', '80', '—'],
-          ['情报融合接口', '64', '—']
-        ]
-      }
-    )
-  }
-})
 </script>
 
 <style scoped lang="scss">
 .step { position: relative; height: 100%; display: flex; flex-direction: column; min-height: 0; }
 .step__scroll { flex: 1; min-height: 0; }
-.step__inner { max-width: 820px; margin: 0 auto; padding: 4px 4px 48px; }
+.step__inner { width: 100%; box-sizing: border-box; padding: 4px 4px 24px; }
 
 .step-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px;

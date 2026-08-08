@@ -18,7 +18,6 @@ const now = () => new Date().toISOString().slice(0, 16).replace('T', ' ')
 const makeSection = (o = {}) => ({ key: uid('sec'), title: '', kind: 'gen', content: '', variants: [], vi: 0, comments: [], ...o })
 
 const scopeNameOf = (batch) => batch.scope?.displayName || '未命名接口范围'
-const finishTextOf = (batch) => batch.finishReason === 'terminated' ? '手动终止归档' : '自然完成归档'
 const interfaceCountOf = (batch) => batch.scope?.interfaceIds?.length
   || new Set((batch.tasks || batch.stepResults || []).map((item) => item.interfaceId || item.iface).filter(Boolean)).size
 
@@ -31,8 +30,7 @@ const sendMetricsTable = (batch) => {
 | --- | --- | --- | --- |
 | 计划发送 | ${planned} 条 | 实际发送 | ${sent} 条 |
 | 未发送 | ${unsent} 条 | 覆盖接口 | ${summary.interfaceCount ?? interfaceCountOf(batch)} 个 |
-| 使用数据集 | ${summary.datasetCount || 0} 个 | 批次时长 | ${summary.durationSeconds ?? summary.executionTime ?? 0} 秒 |
-| 完成方式 | ${finishTextOf(batch)} | 批次状态 | 已完成 |`
+| 使用数据集 | ${summary.datasetCount || 0} 个 | 批次时长 | ${summary.durationSeconds ?? summary.executionTime ?? 0} 秒 |`
 }
 
 const sendResultsTable = (batch) => {
@@ -91,21 +89,21 @@ const exceptionVariants = (batch) => {
   ]
 }
 
-const buildSendSections = (batch, sysName, seedIndex) => {
+const buildSendSections = (batch, seedIndex) => {
   const summary = batch.summary || {}
   const sent = summary.sentCount ?? summary.totalRequests ?? 0
   const planned = summary.plannedCount ?? sent
   const unsent = summary.unsentCount ?? Math.max(0, planned - sent)
   const overview = [
     `本报告记录**${scopeNameOf(batch)}**发送批次。计划发送 ${planned} 条，实际发送 ${sent} 条，覆盖 ${interfaceCountOf(batch)} 个接口。`,
-    `本次发送批次归属**${sysName || '未归属系统'}**，执行范围为**${scopeNameOf(batch)}**，批次以${finishTextOf(batch)}方式完成。`,
+    `本次发送批次执行范围为**${scopeNameOf(batch)}**，共发送 ${sent} 条数据，未发送 ${unsent} 条。`,
     `本报告仅呈现发送侧客观记录，不将接收数据与本批次建立请求—响应关系。实际发送 ${sent} 条，未发送 ${unsent} 条。`,
-    `**${scopeNameOf(batch)}**发送批次已完成归档，接口发送数量和数据来源详见后续表格。`
+    `**${scopeNameOf(batch)}**发送批次已完成，接口发送数量和数据来源详见后续表格。`
   ]
   const conclusion = [
-    `本批次已完成发送归档。${unsent ? `仍有 ${unsent} 条计划数据未发送，后续可新建批次继续验证。` : '计划数据已全部发送。'}`,
+    `本批次发送已完成。${unsent ? `仍有 ${unsent} 条计划数据未发送，后续可新建批次继续验证。` : '计划数据已全部发送。'}`,
     `发送记录已冻结，可作为后续接收观测或重复发送测试的数据依据。`,
-    `本报告不对被测系统业务结果作正确性判定，仅确认本批次的发送范围和实际发送记录。`,
+    `本报告仅确认本批次的发送范围和实际发送记录，不扩展判断接口内部业务结果。`,
     `建议保留当前批次作为发送侧追溯依据；如需调整数据，应新建发送批次。`
   ]
   const index = Math.abs(seedIndex) % overview.length
@@ -113,21 +111,21 @@ const buildSendSections = (batch, sysName, seedIndex) => {
     makeSection({ key: 'overview', title: '发送批次概述', kind: 'gen', content: overview[index], variants: overview, vi: index }),
     makeSection({ key: 'metrics', title: '发送规模', kind: 'data', content: sendMetricsTable(batch) }),
     makeSection({ key: 'results', title: '接口发送明细', kind: 'data', content: sendResultsTable(batch) }),
-    makeSection({ key: 'conclusion', title: '归档说明', kind: 'gen', content: conclusion[index], variants: conclusion, vi: index })
+    makeSection({ key: 'conclusion', title: '结论与建议', kind: 'gen', content: conclusion[index], variants: conclusion, vi: index })
   ]
 }
 
-const buildReceiveSections = (batch, sysName, seedIndex) => {
+const buildReceiveSections = (batch, seedIndex) => {
   const summary = batch.summary || {}
   const overview = [
     `本报告记录**${scopeNameOf(batch)}**接收批次，共接收 ${summary.totalReceived || 0} 条数据，覆盖 ${summary.interfaceCount ?? interfaceCountOf(batch)} 个接口。`,
-    `本次接收批次归属**${sysName || '未归属系统'}**，监听范围为**${scopeNameOf(batch)}**，批次以${finishTextOf(batch)}方式完成。`,
+    `本次接收批次监听范围为**${scopeNameOf(batch)}**，共接收 ${summary.totalReceived || 0} 条数据。`,
     `本报告依据独立接收批次生成，仅呈现接收、解析、校验和样本留存情况。`,
-    `**${scopeNameOf(batch)}**接收批次已完成归档，异常数据与数据集保存情况可在后续章节追溯。`
+    `**${scopeNameOf(batch)}**接收批次已完成，异常数据与数据集保存情况可在后续章节查看。`
   ]
   const anomaly = exceptionVariants(batch)
   const conclusion = [
-    `本批次接收数据已完成归档，其中校验异常 ${summary.validationAbnormalCount || 0} 条、无法解析 ${summary.unparsedCount || 0} 条。`,
+    `本批次共发现校验异常 ${summary.validationAbnormalCount || 0} 条、无法解析 ${summary.unparsedCount || 0} 条。`,
     `建议将有代表性的异常数据保存为测试数据集，并在后续独立发送批次中复现。`,
     `接收批次不需要处置闭环；用户可按需修改、保存或复用其中的数据样本。`,
     `本报告不推断发送来源，仅记录当前监听范围内实际收到的数据。`
@@ -138,14 +136,14 @@ const buildReceiveSections = (batch, sysName, seedIndex) => {
     makeSection({ key: 'metrics', title: '接收规模', kind: 'data', content: receiveMetricsTable(batch) }),
     makeSection({ key: 'results', title: '接口接收分布', kind: 'data', content: receiveResultsTable(batch) }),
     makeSection({ key: 'anomaly', title: '异常数据样本', kind: 'gen', content: anomaly[index], variants: anomaly, vi: index }),
-    makeSection({ key: 'conclusion', title: '归档与复用建议', kind: 'gen', content: conclusion[index], variants: conclusion, vi: index })
+    makeSection({ key: 'conclusion', title: '结论与建议', kind: 'gen', content: conclusion[index], variants: conclusion, vi: index })
   ]
 }
 
-const buildSections = (batch, sysName, seedIndex = 0) =>
+const buildSections = (batch, seedIndex = 0) =>
   batch.batchType === 'receive'
-    ? buildReceiveSections(batch, sysName, seedIndex)
-    : buildSendSections(batch, sysName, seedIndex)
+    ? buildReceiveSections(batch, seedIndex)
+    : buildSendSections(batch, seedIndex)
 
 export const REPORT_STAGES = [
   '解析所选联试批次数据…',
@@ -160,7 +158,7 @@ export const useReportStore = defineStore('report', {
     templates: [
       { id: uid('tpl'), name: '标准联试报告模板', fileName: '标准联试报告模板.docx', size: '48 KB', uploadedAt: '2026-06-20 09:00' },
       { id: uid('tpl'), name: '异常专项报告模板', fileName: '异常专项报告模板.docx', size: '32 KB', uploadedAt: '2026-06-21 14:30' },
-      { id: uid('tpl'), name: '交付归档报告模板', fileName: '交付归档报告模板.docx', size: '56 KB', uploadedAt: '2026-06-22 16:20' }
+      { id: uid('tpl'), name: '交付报告模板', fileName: '交付报告模板.docx', size: '56 KB', uploadedAt: '2026-06-22 16:20' }
     ],
 
     /* —— 知识库：集合 → 文档 → 分块 —— */
@@ -185,8 +183,8 @@ export const useReportStore = defineStore('report', {
         id: uid('kb'), title: '历史联试优秀案例汇编.md', moduleId: null, source: '本地导入', type: 'md',
         collectionId: 'kc-case', version: 1, active: true, parseStatus: 'done', importedAt: '2026-06-21 09:30', vectorized: 'done',
         chunks: [
-          { idx: 1, text: '某型武器管理系统联试：将接收侧字段越界样本保存为数据集，后续在独立发送批次中完成复现。' },
-          { idx: 2, text: '批量状态接口联试中，将无法解析报文与接口配置快照共同归档，便于后续追溯。' }
+          { idx: 1, text: '某次接口联试中，将接收侧字段越界样本保存为数据集，后续在独立发送批次中完成复现。' },
+          { idx: 2, text: '批量状态接口联试中，将无法解析报文与接口配置快照共同保存，便于后续追溯。' }
         ]
       },
       {
@@ -218,7 +216,7 @@ export const useReportStore = defineStore('report', {
       connection: null
     },
 
-    /* —— 已生成报告（归属 系统 + 批次） —— */
+    /* —— 已生成报告 —— */
     reports: [],
 
     currentReportId: null,
@@ -228,12 +226,9 @@ export const useReportStore = defineStore('report', {
 
   getters: {
     currentReport: (s) => s.reports.find((r) => r.id === s.currentReportId) || null,
-    // 已归档联试批次按系统过滤（null = 全部系统）
-    runsOfSystem: () => (sysId) => useRunBatchStore().reportable.filter((batch) => sysId == null || batch.systemId === sysId),
     // 知识库统一管理，不按系统/模块过滤（保留 getter 名兼容旧调用）
     docsOfModule: (s) => () => s.knowledgeDocs,
     docsOfCollection: (s) => (collectionId) => s.knowledgeDocs.filter((doc) => !collectionId || doc.collectionId === collectionId),
-    reportsOfSystem: (s) => (sysId) => (sysId == null ? s.reports : s.reports.filter((r) => r.systemId === sysId)),
     versionsOfReport: (s) => (report) => {
       if (!report) return []
       const lineageId = report.lineageId || report.id
@@ -335,7 +330,7 @@ export const useReportStore = defineStore('report', {
     },
 
     /* —— 生成报告（静态：进度模拟 + 按批次确定性组织 + 描述段变体） —— */
-    async generateReport({ systemId, batchId, runId, title, templateId, materials, sysName, generatorName, knowledgeCollectionIds, regenerateFromId } = {}) {
+    async generateReport({ batchId, runId, title, templateId, materials, generatorName, knowledgeCollectionIds, regenerateFromId } = {}) {
       if (this.generating) return null
       const run = useRunBatchStore().byId(batchId || runId)
       if (!run) return null
@@ -359,7 +354,6 @@ export const useReportStore = defineStore('report', {
         lineageId,
         version,
         title: title || sourceReport?.title || fallbackTitle,
-        systemId: systemId ?? run.systemId,
         batchId: run.id,
         batchType: run.batchType || 'send',
         runId: run.id,
@@ -372,7 +366,7 @@ export const useReportStore = defineStore('report', {
         knowledgeCitations: this.searchKnowledge(scopeNameOf(run), knowledgeCollectionIds || this.selectedKnowledgeCollectionIds, 3),
         createdAt: now(),
         status: 'done',
-        sections: buildSections(run, sysName || '', seedIndex),
+        sections: buildSections(run, seedIndex),
         sourceReportId: sourceReport?.id || null,
         seedIndex
       }
@@ -410,7 +404,7 @@ export const useReportStore = defineStore('report', {
       if (includeTitle) parts.push(`# ${report.title}`)
       if (includeMeta) {
         parts.push([
-          `- 批次来源：${report.taskCreator || '—'}`,
+          `- 批次创建者：${report.taskCreator || '—'}`,
           `- 报告生成者：${report.generatorName || '—'}`,
           `- 联试批次：${report.runName || '—'}`,
           `- 生成时间：${report.createdAt || '—'}`

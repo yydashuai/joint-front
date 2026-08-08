@@ -81,8 +81,7 @@ watch(() => route.query.batchId || route.query.runId, (value) => {
 
 .rw-steps {
   flex-shrink: 0;
-  max-width: 860px;
-  margin: 4px auto 18px;
+  margin: 4px 0 18px;
   width: 100%;
 }
 
