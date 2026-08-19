@@ -24,6 +24,15 @@
               <span v-else class="muted">无</span>
             </span>
           </div>
+          <div class="prev__row"><span class="prev__k">章节方案</span><span>{{ presetName }}</span></div>
+        </el-card>
+
+        <el-card shadow="never" class="knowledge-select">
+          <template #header><div class="card-title">章节方案（C-1 章节模板库）</div></template>
+          <el-radio-group v-model="chapterPresetId">
+            <el-radio-button v-for="p in store.chapterPresets" :key="p.id" :value="p.id">{{ p.name }}</el-radio-button>
+          </el-radio-group>
+          <p>{{ presetDesc }}</p>
         </el-card>
 
         <el-card shadow="never" class="knowledge-select">
@@ -46,7 +55,7 @@
 </template>
 
 <script setup>
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { FolderOpened, MagicStick, ArrowLeft } from '@element-plus/icons-vue'
 import { useReportStore, REPORT_STAGES } from '@/stores/report'
@@ -64,6 +73,10 @@ const emit = defineEmits(['back', 'done'])
 const store = useReportStore()
 const batchStore = useRunBatchStore()
 const authStore = useAuthStore()
+
+const chapterPresetId = ref('cp-standard')
+const presetName = computed(() => store.chapterPresets.find((p) => p.id === chapterPresetId.value)?.name || '—')
+const presetDesc = computed(() => store.chapterPresets.find((p) => p.id === chapterPresetId.value)?.desc || '')
 
 const run = computed(() => batchStore.byId(props.form.batchId))
 const templateName = computed(() => store.templates.find((t) => t.id === props.form.templateId)?.name || '默认结构')
@@ -96,6 +109,7 @@ const onGenerate = async () => {
     materials: props.materials,
     generatorName: generatorName.value,
     knowledgeCollectionIds: store.selectedKnowledgeCollectionIds,
+    chapterPresetId: chapterPresetId.value,
     regenerateFromId: props.regenerateFromId
   })
   if (rep) { ElMessage.success('报告已生成'); emit('done') }

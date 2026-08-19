@@ -26,7 +26,6 @@
           <el-icon><Link /></el-icon>
           <span>报文：{{ ds.linkedInterface }}</span>
         </el-button>
-        <el-tooltip content="基于现有数据模式智能生成新的测试行"><el-button size="small" :icon="MagicStick" @click="showGenDialog = true">智能生成</el-button></el-tooltip>
         <el-tooltip content="跳转到编排计划，快速配置与发送"><el-button v-if="ds.linkedInterface" size="small" type="primary" plain :icon="Promotion" @click="jumpToPlan">跳转到计划</el-button></el-tooltip>
         <el-tooltip content="进入发送测试（实时监控）"><el-button v-if="ds.linkedInterface" size="small" type="success" plain :icon="VideoPlay" @click="sendTest">发送测试</el-button></el-tooltip>
         <el-popconfirm title="确认删除此数据集？" @confirm="onDelete">
@@ -115,7 +114,7 @@
       </el-empty>
     </div>
 
-    <!-- ======== 数据矩阵表格 (核心) ======== -->
+    <!-- ======== 数据列表（精简：一行一条，点击进入行编辑抽屉） ======== -->
     <div v-else class="ds-matrix">
       <div class="matrix-table-shell">
         <TableRangeSelection
@@ -136,21 +135,22 @@
           @selection-change="handleSelectionChange"
           @scroll="handleScroll"
           @row-contextmenu="onRowContextMenu"
+          @row-click="onRowClick"
           style="width: 100%;"
           height="100%"
         >
-        <!-- 选择列 (优化点 2) -->
+        <!-- 选择列 -->
         <el-table-column type="selection" width="40" fixed="left" align="center" />
-        <!-- 拖拽手柄列 (优化点 3) -->
+        <!-- 拖拽手柄列（排序） -->
         <el-table-column width="36" align="center" fixed="left" class-name="drag-col">
           <template #default>
             <span class="drag-handle" title="拖拽排序">⠿</span>
           </template>
         </el-table-column>
-        <!-- 序号列 (优化点 1: fixed) -->
+        <!-- 序号列 -->
         <el-table-column type="index" width="48" align="center" label="#" fixed="left" />
-        <!-- 行标签列 (优化点 1: fixed) -->
-        <el-table-column label="行标签" width="150" fixed="left">
+        <!-- 行标签列 -->
+        <el-table-column label="行标签" width="170" fixed="left">
           <template #default="{ row }">
             <div class="label-cell">
               <span v-if="dirtyRowIds.has(row.id)" class="dirty-dot" title="已修改"></span>
@@ -162,76 +162,25 @@
             </div>
           </template>
         </el-table-column>
-
-        <!-- 动态字段列 -->
-        <el-table-column
-          v-for="field in matrixFields"
-          :key="field.name"
-          :min-width="fieldColWidth(field)"
-          :class-name="isFieldFixed(field) ? 'fixed-col' : ''"
-        >
-          <template #header>
-            <el-tooltip placement="top" :show-after="150">
-              <template #content>
-                <div class="field-tip">{{ fieldTooltipText(field) }}</div>
-              </template>
-              <div class="field-col-header">
-                <div class="field-col-header__name">
-                  <el-icon v-if="isFieldFixed(field)" class="lock-icon"><Lock /></el-icon>
-                  {{ field.name }}
-                </div>
-                <div class="field-col-header__type">{{ fieldHint(field) }}</div>
-              </div>
-            </el-tooltip>
-          </template>
+        <!-- 数据摘要列（前 4 个字段值，悬浮看完整） -->
+        <el-table-column label="数据摘要" min-width="300" show-overflow-tooltip>
           <template #default="{ row }">
-            <!-- 固定值 (优化点 4: 更紧凑) -->
-            <template v-if="isFieldFixed(field)">
-              <span class="fixed-value">{{ field.constraint.value }}</span>
-            </template>
-            <!-- 枚举字段 → Select (优化点 5) -->
-            <template v-else-if="isFieldEnum(field)">
-              <el-select
-                :model-value="row.values[field.name]"
-                @update:model-value="(v) => onValueChange(row, field.name, v)"
-                size="small"
-                style="width: 100%;"
-              >
-                <el-option
-                  v-for="entry in field.constraint.entries"
-                  :key="entry.value ?? entry"
-                  :label="entry.label || String(entry)"
-                  :value="entry.value ?? entry"
-                />
-              </el-select>
-            </template>
-            <!-- 数值字段 → InputNumber (优化点 6: 校验) -->
-            <template v-else-if="isFieldNumeric(field)">
-              <el-input-number
-                :model-value="row.values[field.name]"
-                @update:model-value="(v) => onValueChange(row, field.name, v)"
-                :min="field.constraint?.min"
-                :max="field.constraint?.max"
-                size="small"
-                controls-position="right"
-                :class="{ 'cell-invalid': isCellInvalid(row, field) }"
-                style="width: 100%;"
-              />
-            </template>
-            <!-- 文本字段 → Input -->
-            <template v-else>
-              <el-input
-                :model-value="row.values[field.name]"
-                @update:model-value="(v) => onValueChange(row, field.name, v)"
-                size="small"
-              />
-            </template>
+            <span class="readonly-cell summary-cell">{{ summaryOf(row) }}</span>
           </template>
         </el-table-column>
-
-        <!-- 删除行 -->
-        <el-table-column label="" width="50" align="center" fixed="right">
+        <!-- 状态列（超限标记） -->
+        <el-table-column label="状态" width="92" align="center">
           <template #default="{ row }">
+            <el-tooltip v-if="rowOutOfRange(row) > 0" content="该行存在超出约束范围的字段值">
+              <el-tag size="small" type="danger" effect="plain">超限 {{ rowOutOfRange(row) }}</el-tag>
+            </el-tooltip>
+            <el-tag v-else size="small" type="success" effect="plain">正常</el-tag>
+          </template>
+        </el-table-column>
+        <!-- 操作列 -->
+        <el-table-column label="操作" width="118" fixed="right" align="center">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click.stop="openRowEditor(row)">编辑</el-button>
             <el-popconfirm title="确认删除该行？" @confirm="tdStore.removeRow(ds.id, row.id)">
               <template #reference><el-button class="row-delete-btn" type="danger" text size="small" :icon="Delete" /></template>
             </el-popconfirm>
@@ -293,36 +242,17 @@
         >
           <el-table-column type="selection" width="40" fixed="left" align="center" />
           <el-table-column type="index" width="48" align="center" label="#" fixed="left" />
-          <el-table-column label="行标签" width="170" fixed="left" show-overflow-tooltip>
+          <el-table-column label="行标签" width="190" fixed="left" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="readonly-cell">{{ row.label }}</span>
             </template>
           </el-table-column>
-          <el-table-column
-            v-for="field in matrixFields"
-            :key="`history-${field.name}`"
-            :min-width="fieldColWidth(field)"
-            :class-name="isFieldFixed(field) ? 'fixed-col' : ''"
-            show-overflow-tooltip
-          >
-            <template #header>
-              <el-tooltip placement="top" :show-after="150">
-                <template #content>
-                  <div class="field-tip">{{ fieldTooltipText(field) }}</div>
-                </template>
-                <div class="field-col-header">
-                  <div class="field-col-header__name">
-                    <el-icon v-if="isFieldFixed(field)" class="lock-icon"><Lock /></el-icon>
-                    {{ field.name }}
-                  </div>
-                  <div class="field-col-header__type">{{ fieldHint(field) }}</div>
-                </div>
-              </el-tooltip>
-            </template>
+          <el-table-column label="数据摘要" min-width="300" show-overflow-tooltip>
             <template #default="{ row }">
-              <span class="readonly-cell">{{ readonlyCellValue(row, field) }}</span>
+              <span class="readonly-cell summary-cell">{{ summaryOf(row) }}</span>
             </template>
           </el-table-column>
+          <el-table-column prop="createdAt" label="创建日期" width="110" />
           <el-table-column label="" width="56" align="center" fixed="right">
             <template #default="{ row }">
               <el-popconfirm title="确认删除该历史数据？" @confirm="onDeleteHistoryRow(row)">
@@ -338,22 +268,59 @@
       </div>
     </div>
 
-    <!-- ======== 数据预览 (优化点 24: 复制按钮) ======== -->
-    <el-collapse v-model="previewOpen" class="ds-preview">
-      <el-collapse-item name="preview">
-        <template #title>
-          <span class="fields-ref__title">
-            数据预览（JSON）
-          </span>
-        </template>
-        <div class="preview-toolbar">
-          <el-button size="small" text type="primary" @click="copyJson">复制到剪贴板</el-button>
+    <!-- ======== 行编辑抽屉（点击列表行打开，聚焦单条数据的字段编辑） ======== -->
+    <el-drawer v-model="rowEditorVisible" :title="`编辑行：${activeEditRow?.label || ''}`" size="480px">
+      <template v-if="activeEditRow">
+        <div class="row-edit-label">
+          <span>行标签</span>
+          <el-input v-model="activeEditRow.label" size="small" @change="(v) => tdStore.updateRowLabel(ds.id, activeEditRow.id, v)" />
         </div>
-        <pre class="preview-json">{{ previewJson }}</pre>
-      </el-collapse-item>
-    </el-collapse>
-
-    <SmartGenerateWorkbench v-model="showGenDialog" :dataset="ds" @confirmed="onSmartGenerated" />
+        <div v-for="field in matrixFields" :key="field.name" class="row-edit-field">
+          <div class="row-edit-field__label">
+            <span>{{ field.name }}</span>
+            <small :title="fieldTooltipText(field)">{{ fieldHint(field) }}</small>
+          </div>
+          <!-- 枚举字段 → Select -->
+          <template v-if="isFieldEnum(field)">
+            <el-select
+              :model-value="activeEditRow.values[field.name]"
+              @update:model-value="(v) => onValueChange(activeEditRow, field.name, v)"
+              size="small"
+              style="width: 100%;"
+            >
+              <el-option v-for="entry in field.constraint.entries" :key="entry.value ?? entry" :label="entry.label || String(entry)" :value="entry.value ?? entry" />
+            </el-select>
+          </template>
+          <!-- 数值字段 → InputNumber（约束校验） -->
+          <template v-else-if="isFieldNumeric(field)">
+            <el-input-number
+              :model-value="activeEditRow.values[field.name]"
+              @update:model-value="(v) => onValueChange(activeEditRow, field.name, v)"
+              :min="field.constraint?.min"
+              :max="field.constraint?.max"
+              size="small"
+              controls-position="right"
+              style="width: 100%;"
+              :class="{ 'cell-invalid': isCellInvalid(activeEditRow, field) }"
+            />
+          </template>
+          <!-- 文本字段 → Input -->
+          <template v-else>
+            <el-input
+              :model-value="activeEditRow.values[field.name]"
+              @update:model-value="(v) => onValueChange(activeEditRow, field.name, v)"
+              size="small"
+            />
+          </template>
+          <el-tag v-if="isCellInvalid(activeEditRow, field)" size="small" type="danger" effect="plain" style="margin-top: 4px">超出约束范围</el-tag>
+        </div>
+        <el-empty v-if="!matrixFields.length" description="无编辑字段（均为固定值或无字段定义）" :image-size="48" />
+        <div class="row-edit-footer">
+          <el-button type="danger" size="small" @click="deleteActiveRow">删除此行</el-button>
+          <el-button type="primary" size="small" @click="rowEditorVisible = false">完成</el-button>
+        </div>
+      </template>
+    </el-drawer>
 
     <!-- 行右键菜单 -->
     <teleport to="body">
@@ -368,9 +335,9 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import {
-  Download, Delete, Plus, Lock, Search, MagicStick, Link, Promotion, VideoPlay
+  Download, Delete, Plus, Lock, Search, Link, Promotion, VideoPlay
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import Sortable from 'sortablejs'
@@ -379,7 +346,6 @@ import { useProtocolStore, collectInterfaceDatasetFields } from '@/stores/protoc
 import { useConnectionStore } from '@/stores/connection'
 import { exportCsvFile, exportJsonFile } from '@/services/testDataService'
 import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
-import SmartGenerateWorkbench from '@/components/testdata/SmartGenerateWorkbench.vue'
 import TableRangeSelection from '@/components/common/TableRangeSelection.vue'
 
 const props = defineProps({
@@ -393,7 +359,6 @@ const protoStore = useProtocolStore()
 const connStore = useConnectionStore()
 const { nextUniqueName, validateName } = useEntityNameGuard()
 const router = useRouter()
-const route = useRoute()
 
 const ds = computed(() => props.dataset)
 const nameBeforeEdit = ref('')
@@ -568,13 +533,6 @@ const fieldTooltipText = (field) => {
   return lines.join('\n')
 }
 
-const readonlyCellValue = (row, field) => {
-  const value = row.values?.[field.name]
-  if (value !== undefined && value !== null && value !== '') return value
-  if (isFieldFixed(field)) return field.constraint.value
-  return '—'
-}
-
 /* ========== 单元格校验 (优化点 6) ========== */
 const isCellInvalid = (row, field) => {
   if (!field.constraint || field.constraint.mode !== 'range') return false
@@ -607,6 +565,43 @@ const onValueChange = (row, fieldName, value) => {
   tdStore.updateRowValue(ds.value.id, row.id, fieldName, value)
   checkDirty(row)
 }
+
+/* ========== 精简列表：摘要 / 超限 / 行编辑抽屉 ========== */
+const summaryOf = (row) => matrixFields.value.slice(0, 4).map((f) => {
+  const v = row.values?.[f.name]
+  return `${f.name}: ${v === '' || v == null ? '—' : v}`
+}).join('　')
+
+const rowOutOfRange = (row) => {
+  let count = 0
+  matrixFields.value.forEach((f) => {
+    const c = f.constraint
+    if (!c) return
+    const v = Number(row.values?.[f.name])
+    if (Number.isNaN(v)) return
+    if (c.mode === 'range' && (v < c.min || v > c.max)) count++
+    else if (c.mode === 'enum' && !(c.entries || []).some((e) => String(e.value ?? e) === String(v))) count++
+  })
+  return count
+}
+
+const rowEditorVisible = ref(false)
+const activeEditRow = ref(null)
+const openRowEditor = (row) => {
+  activeEditRow.value = row
+  rowEditorVisible.value = true
+}
+const onRowClick = (row) => openRowEditor(row)
+const deleteActiveRow = () => {
+  if (!activeEditRow.value) return
+  tdStore.removeRow(ds.value.id, activeEditRow.value.id)
+  activeEditRow.value = null
+  rowEditorVisible.value = false
+}
+// 抽屉内编辑实时刷新脏标记
+watch(() => activeEditRow.value?.values, () => {
+  if (activeEditRow.value) checkDirty(activeEditRow.value)
+}, { deep: true })
 
 /* ========== 行搜索 (优化点 12) ========== */
 const rowSearch = ref('')
@@ -685,13 +680,6 @@ const onDeleteSelectedHistoryRows = () => {
   clearHistorySelection()
   ElMessage.success(`已删除 ${count} 条历史数据`)
 }
-
-/* ========== 智能生成工作台 ========== */
-const showGenDialog = ref(false)
-const onSmartGenerated = () => nextTick(() => takeSnapshot())
-watch(() => [route.query.generate, route.query.datasetId, ds.value.id], ([generate, datasetId, id]) => {
-  if (generate === '1' && String(datasetId) === String(id)) showGenDialog.value = true
-}, { immediate: true })
 
 /* ========== 行右键菜单 ========== */
 const rowCtx = reactive({ visible: false, x: 0, y: 0, row: null })
@@ -836,24 +824,8 @@ const onExportJson = () => {
   ElMessage.success('JSON 导出成功')
 }
 
-/* ========== JSON 预览 ========== */
+/* ========== JSON 导出（预览面板已移除，保留导出能力） ========== */
 const fieldsRefOpen = ref([]) // 默认折叠，不展开
-const previewOpen = ref([])
-
-const previewJson = computed(() => {
-  const d = ds.value
-  if (!d || !d.rows.length) return '[]'
-  return JSON.stringify(d.rows.map(r => ({ label: r.label, ...r.values })), null, 2)
-})
-
-const copyJson = async () => {
-  try {
-    await navigator.clipboard.writeText(previewJson.value)
-    ElMessage.success('已复制到剪贴板')
-  } catch {
-    ElMessage.error('复制失败，请手动选中复制')
-  }
-}
 
 /* ========== 快捷键 (优化点 21) ========== */
 const onKeydown = (e) => {
@@ -1072,6 +1044,51 @@ const onKeydown = (e) => {
   line-height: 1.4;
 }
 
+/* 数据摘要列 */
+.summary-cell {
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  white-space: pre;
+}
+
+/* ======== 行编辑抽屉 ======== */
+.row-edit-label {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.row-edit-label > span { color: var(--el-text-color-secondary); font-size: 12px; }
+.row-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-extra-light);
+}
+.row-edit-field__label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.row-edit-field__label span { font-size: 13px; font-weight: 600; }
+.row-edit-field__label small { overflow: hidden; color: var(--el-text-color-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.row-edit-footer {
+  margin-top: 14px;
+  padding-top: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
 /* 拖拽手柄 */
 .drag-handle {
   cursor: grab;
@@ -1197,34 +1214,7 @@ const onKeydown = (e) => {
   background: var(--el-color-primary-light-9) !important;
 }
 
-/* ======== 数据预览 ======== */
-.ds-preview {
-  flex-shrink: 0;
-  :deep(.el-collapse-item__header) {
-    height: 36px;
-  }
-}
-
-.preview-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 4px;
-}
-
-.preview-json {
-  margin: 0;
-  padding: 12px;
-  background: var(--el-fill-color-lighter);
-  border-radius: 6px;
-  font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  max-height: 300px;
-  overflow: auto;
-  white-space: pre;
-}
-
-/* 行右键菜单 */
+/* ======== 行右键菜单 ======== */
 .row-ctx-mask { position: fixed; inset: 0; z-index: 3000; }
 .row-ctx-menu {
   position: fixed;
@@ -1247,68 +1237,4 @@ const onKeydown = (e) => {
   }
 }
 
-/* ======== 智能生成对话框 ======== */
-.gen-dialog {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.gen-form__row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.gen-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--el-text-color-primary);
-  min-width: 80px;
-  flex-shrink: 0;
-}
-
-.gen-hint {
-  font-size: 12px;
-  color: var(--el-text-color-placeholder);
-}
-
-.gen-strategies {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.gen-preview {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 12px;
-  background: var(--el-fill-color-lighter);
-
-  &__header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-    font-size: 13px;
-    font-weight: 500;
-  }
-}
-
-.gen-preview .mono {
-  font-family: 'Consolas', 'Monaco', monospace;
-}
-
-.gen-preview .gen-value {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-
-:deep(.gen-abnormal-row) > td {
-  background-color: rgba(245, 108, 108, 0.14) !important;
-}
-
-:deep(.gen-abnormal-row:hover) > td {
-  background-color: rgba(245, 108, 108, 0.22) !important;
-}
 </style>

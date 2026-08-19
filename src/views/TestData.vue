@@ -13,6 +13,7 @@
           <el-button :type="viewMode === 'dataset' ? 'primary' : ''" @click="viewMode = 'dataset'">数据集管理</el-button>
           <el-button :type="viewMode === 'history' ? 'primary' : ''" @click="viewMode = 'history'">历史数据库</el-button>
           <el-button :type="viewMode === 'excellent' ? 'warning' : ''" @click="viewMode = 'excellent'">优秀数据库</el-button>
+          <el-button :type="viewMode === 'analysis' ? 'success' : ''" @click="viewMode = 'analysis'">智能分析</el-button>
           <el-button :type="viewMode === 'files' ? 'primary' : ''" @click="viewMode = 'files'">数据文件管理</el-button>
         </el-button-group>
       </div>
@@ -118,6 +119,11 @@
       <HistoryDataManager mode="excellent" @use-for-generation="onUseExcellentForGeneration" @open-file="onOpenSourceFile" />
     </el-card>
 
+    <!-- ======== 智能分析视图（数据分布分析 + 智能数据生成） ======== -->
+    <el-card v-else-if="viewMode === 'analysis'" class="main history-main" shadow="never">
+      <SmartAnalysisTab @navigate="(v) => viewMode = v" />
+    </el-card>
+
     <!-- ======== 数据文件管理视图 ======== -->
     <el-card v-else class="main history-main" shadow="never">
       <ResourceFiles
@@ -180,6 +186,7 @@ import ResourceFiles from '@/components/testdata/ResourceFiles.vue'
 import CreateDatasetDialog from '@/components/testdata/CreateDatasetDialog.vue'
 import UploadFileDialog from '@/components/testdata/UploadFileDialog.vue'
 import HistoryDataManager from '@/components/testdata/HistoryDataManager.vue'
+import SmartAnalysisTab from '@/components/testdata/SmartAnalysisTab.vue'
 import DataChainImportDialog from '@/components/testdata/DataChainImportDialog.vue'
 import DatasetSchemeDialog from '@/components/testdata/DatasetSchemeDialog.vue'
 import DatasetSchemeDetail from '@/components/testdata/DatasetSchemeDetail.vue'
@@ -216,15 +223,11 @@ const onOpenSourceFile = ({ fileId, fileName }) => {
 }
 
 const onUseExcellentForGeneration = (rows) => {
+  // 智能生成已迁移至「智能分析」Tab，此处仅负责跳转
   const first = rows?.[0]
   if (!first) return
-  const target = tdStore.datasets.find((d) => d.id === first._datasetId)
-  if (target) {
-    tdStore.select(target.id)
-    selectedKey.value = `ds-${target.id}`
-    viewMode.value = 'dataset'
-    router.replace({ path: '/test-data', query: { generate: '1', datasetId: String(target.id) } })
-  }
+  viewMode.value = 'analysis'
+  router.replace({ path: '/test-data' })
 }
 
 /* ========== 树选择 + 搜索 ========== */

@@ -16,16 +16,29 @@
 
     <section class="asset-main">
       <div class="filters">
+        <el-select v-model="activeViewId" clearable placeholder="筛选视图" style="width: 126px" @change="onLoadView">
+          <el-option v-for="v in modeViews" :key="v.id" :label="v.name" :value="v.id" />
+        </el-select>
+        <el-button size="small" @click="saveView">存视图</el-button>
+        <el-button v-if="activeViewId" size="small" text type="danger" @click="removeView">删除</el-button>
         <el-select v-model="sourceFilter" clearable placeholder="来源" style="width: 130px">
           <el-option v-for="item in sources" :key="item" :label="item" :value="item" />
         </el-select>
         <el-select v-if="mode === 'history'" v-model="excellentFilter" clearable placeholder="是否优秀" style="width: 120px">
           <el-option label="优秀" value="yes" /><el-option label="非优秀" value="no" />
         </el-select>
+        <el-select v-if="mode === 'excellent'" v-model="scenarioFilter" clearable placeholder="认证场景" style="width: 150px">
+          <el-option v-for="s in scenarioOptions" :key="s" :label="s" :value="s" />
+        </el-select>
         <el-select v-model="abnormalFilter" clearable placeholder="异常状态" style="width: 120px">
           <el-option label="异常" value="yes" /><el-option label="正常" value="no" />
         </el-select>
         <el-date-picker v-model="dateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" style="width: 238px" />
+        <el-select v-if="mode === 'excellent'" v-model="sortMode" style="width: 160px">
+          <el-option label="按结构匹配度排序" value="match" />
+          <el-option label="按引用热度排序" value="rate" />
+          <el-option label="按创建时间排序" value="created" />
+        </el-select>
         <el-select v-model="tagFilter" multiple collapse-tags collapse-tags-tooltip clearable placeholder="标签筛选" style="width: 190px">
           <el-option v-for="tag in allTags" :key="tag" :label="tag" :value="tag" />
         </el-select>
@@ -39,6 +52,23 @@
         </button>
       </div>
 
+      <!-- E1：认证复审提醒 -->
+      <div v-if="mode === 'excellent' && overdueRows.length" class="review-banner">
+        <el-icon><WarningFilled /></el-icon>
+        <span>{{ overdueRows.length }} 条优秀报文认证已过期，建议复审</span>
+        <el-button link type="primary" size="small" @click="openDetail(overdueRows[0])">前往复审</el-button>
+      </div>
+
+      <div v-if="mode === 'excellent' && recommendRows.length" class="reco-bar">
+        <span class="reco-bar__title">相似推荐</span>
+        <button v-for="row in recommendRows" :key="row._rowKey" type="button" class="reco-card" @click="openDetail(row)">
+          <strong>{{ row.messageName }}</strong>
+          <span class="reco-card__score">结构匹配度 {{ matchScore(row) }}%</span>
+          <span v-if="recommendMatchedFields(row).length" class="reco-card__matched">匹配字段：{{ recommendMatchedFields(row).join('、') }}</span>
+          <span class="reco-card__meta">引用 {{ row.usageCount || 0 }} 次 · 最近复用 {{ row.lastUsedAt || '—' }}</span>
+        </button>
+      </div>
+
       <div class="asset-table">
         <el-table ref="historyTableRef" :data="filteredRows" height="100%" row-key="_rowKey" @selection-change="onSelectionChange" @row-dblclick="openDetail" @scroll="onTableScroll">
           <el-table-column type="selection" width="44" class-name="selection-cell" label-class-name="selection-cell" />
@@ -48,7 +78,7 @@
           <el-table-column prop="createdAt" label="创建日期" width="104" />
           <el-table-column v-if="mode === 'history'" label="是否优秀" width="82" align="center">
             <template #default="{ row }">
-              <el-switch :model-value="row.excellent" inline-prompt active-text="是" inactive-text="否" @change="toggleExcellent(row)" />
+              <el-switch :model-value="row.excellent" inline-prompt active-text="是" inactive-text="否" @change="(v) => onExcellentSwitch(row, v)" />
             </template>
           </el-table-column>
           <el-table-column prop="source" label="来源" width="94" align="center">
@@ -63,11 +93,22 @@
             <template #default="{ row }">
               <div class="tag-cell tag-cell--table" :title="[...(row.abnormal ? ['异常'] : []), ...(row.customTags || [])].join('、')">
                 <el-tag v-if="row.abnormal" size="small" type="danger" effect="dark"><el-icon><WarningFilled /></el-icon>异常</el-tag>
+                <el-tag v-if="mode === 'excellent' && row.certification" size="small" type="success" effect="dark"><el-icon><Stamp /></el-icon>已认证</el-tag>
                 <el-tag v-for="tag in row.customTags" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
-                <span v-if="!row.abnormal && !row.customTags?.length" class="muted">—</span>
+                <span v-if="!row.abnormal && !row.certification && !row.customTags?.length" class="muted">—</span>
               </div>
             </template>
           </el-table-column>
+          <el-table-column v-if="mode === 'excellent'" label="认证" width="86" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.certification" size="small" :type="isOverdue(row) ? 'warning' : 'success'" effect="plain">{{ isOverdue(row) ? '待复审' : '已认证' }}</el-tag>
+              <span v-else class="muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="mode === 'excellent'" label="引用" width="64" align="center">
+            <template #default="{ row }"><span class="muted-num">{{ row.usageCount || 0 }}</span></template>
+          </el-table-column>
+          <el-table-column v-if="mode === 'excellent'" label="最近复用" width="104" prop="lastUsedAt" />
           <el-table-column label="操作" :width="mode === 'excellent' ? 132 : 104" fixed="right" align="center">
             <template #default="{ row }">
               <div class="row-actions">
@@ -92,10 +133,20 @@
       <div class="batch-bar" :class="{ visible: selectedRows.length }">
         <span>已选 <b>{{ selectedRows.length }}</b> 条</span>
         <el-button size="small" :disabled="!selectedRows.length" @click="openBatchTags">批量加标签</el-button>
-        <el-button v-if="mode === 'history'" size="small" type="warning" plain :disabled="!selectedRows.length" @click="markSelectedExcellent">标记优秀</el-button>
+        <el-button v-if="mode === 'history'" size="small" type="warning" plain :disabled="!selectedRows.length" @click="openBatchCertify">标记优秀</el-button>
         <el-button size="small" type="success" plain :disabled="!selectedRows.length" @click="saveAsDataset">另存为数据集</el-button>
         <el-button size="small" type="primary" plain :disabled="!selectedRows.length" @click="sendSelected">直接发送</el-button>
-        <el-button size="small" :disabled="!selectedRows.length" @click="exportSelected">导出</el-button>
+        <el-dropdown trigger="click" @command="onExportCommand">
+          <el-button size="small" :disabled="!selectedRows.length && !filteredRows.length">导出<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="selected-json" :disabled="!selectedRows.length">选中行（JSON）</el-dropdown-item>
+              <el-dropdown-item command="selected-csv" :disabled="!selectedRows.length">选中行（CSV）</el-dropdown-item>
+              <el-dropdown-item command="filtered-json" :disabled="!filteredRows.length">当前筛选全部（JSON）</el-dropdown-item>
+              <el-dropdown-item command="filtered-csv" :disabled="!filteredRows.length">当前筛选全部（CSV）</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button v-if="mode === 'excellent'" size="small" type="primary" :disabled="!selectedRows.length" @click="$emit('use-for-generation', selectedRows)">用于智能生成</el-button>
         <el-button size="small" :disabled="!selectedRows.length" @click="clearSelection">取消勾选</el-button>
       </div>
@@ -109,6 +160,7 @@
         <el-descriptions :column="2" border size="small" class="detail-meta">
           <el-descriptions-item label="创建日期">{{ detailRow.createdAt }}</el-descriptions-item>
           <el-descriptions-item label="是否优秀">{{ detailRow.excellent ? '是' : '否' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detailRow.updatedAt" label="最近修改">{{ detailRow.updatedAt }}（{{ detailRow.updatedBy || '—' }}）</el-descriptions-item>
           <el-descriptions-item label="来源">{{ detailRow.source }}</el-descriptions-item>
           <el-descriptions-item label="实时结果"><el-tag :type="detailIsAbnormal ? 'danger' : 'success'" size="small">{{ detailIsAbnormal ? '异常' : '通过' }}</el-tag></el-descriptions-item>
           <el-descriptions-item v-if="detailRow.fileName" label="来源文件" :span="2">
@@ -118,6 +170,30 @@
 
         <h4>备注信息</h4>
         <el-input v-model="detailRemark" type="textarea" :rows="2" placeholder="补充报文用途、现场条件或复现说明" />
+
+        <h4>优秀认证</h4>
+        <div v-if="detailRow.certification" class="cert-box">
+          <el-descriptions :column="1" border size="small">
+            <el-descriptions-item label="认证人">{{ detailRow.certification.certifier }}</el-descriptions-item>
+            <el-descriptions-item label="认证时间">{{ detailRow.certification.certTime }}</el-descriptions-item>
+            <el-descriptions-item label="复审截止">{{ detailRow.reviewDueAt || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="达标指标">{{ detailRow.certification.criteria }}</el-descriptions-item>
+            <el-descriptions-item label="适用场景">{{ detailRow.certification.scenario }}</el-descriptions-item>
+            <el-descriptions-item label="备注">{{ detailRow.certification.remark || '—' }}</el-descriptions-item>
+          </el-descriptions>
+          <div class="cert-actions">
+            <el-button link type="primary" size="small" @click="openCertify(detailRow)">编辑认证</el-button>
+            <el-button link type="success" size="small" @click="reviewCurrent">复审通过</el-button>
+          </div>
+        </div>
+        <el-empty v-else description="尚未认证为优秀" :image-size="48" />
+
+        <h4>复用足迹</h4>
+        <div class="reuse-foot">
+          <div class="reuse-foot__item"><span>被引用</span><b>{{ detailRow.usageCount || 0 }}</b><small>次</small></div>
+          <div class="reuse-foot__item"><span>最近复用</span><b class="reuse-foot__time">{{ detailRow.lastUsedAt || '—' }}</b></div>
+          <div class="reuse-foot__item"><span>知识沉淀</span><b class="reuse-foot__kb" @click="openKnowledgeCase(detailRow)">{{ detailRow.caseDocId ? '查看案例卡' : '生成案例卡' }}</b></div>
+        </div>
 
         <div class="detail-section-head">
           <h4>报文数据</h4>
@@ -177,6 +253,28 @@
       </div>
       <template #footer><el-button @click="batchTagVisible = false">取消</el-button><el-button type="primary" :disabled="!batchTags.length && !batchTagInput.trim()" @click="confirmBatchTags">添加标签</el-button></template>
     </el-dialog>
+
+    <!-- A1：优秀认证表单 -->
+    <el-dialog v-model="certVisible" :title="certIsBatch ? '批量认证为优秀' : '认证为优秀报文'" width="480px">
+      <el-form label-width="84px">
+        <el-form-item label="认证人" required>
+          <el-input v-model="certForm.certifier" placeholder="如：张工" />
+        </el-form-item>
+        <el-form-item label="达标指标">
+          <el-input v-model="certForm.criteria" type="textarea" :rows="2" placeholder="如：字段完整率100%，联试通过率≥95%" />
+        </el-form-item>
+        <el-form-item label="适用场景">
+          <el-input v-model="certForm.scenario" placeholder="如：联试系统回归基线" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="certForm.remark" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="certVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmCertify">确认认证</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -184,11 +282,13 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, WarningFilled } from '@element-plus/icons-vue'
+import { Search, WarningFilled, Stamp, ArrowDown } from '@element-plus/icons-vue'
 import MonitorTree from '@/components/execution/MonitorTree.vue'
 import { useTestDataStore } from '@/stores/testData'
 import { useExecutionStore } from '@/stores/execution'
 import { useSystemStore } from '@/stores/system'
+import { useProtocolStore, collectInterfaceDatasetFields } from '@/stores/protocol'
+import { useReportStore } from '@/stores/report'
 import { downloadBlob } from '@/services/testDataService'
 import { checkFieldConstraints } from '@/utils/receiveValidator'
 
@@ -197,6 +297,8 @@ const emit = defineEmits(['use-for-generation', 'open-file'])
 const store = useTestDataStore()
 const executionStore = useExecutionStore()
 const systemStore = useSystemStore()
+const protoStore = useProtocolStore()
+const reportStore = useReportStore()
 const router = useRouter()
 
 const sources = ['手动创建', '文件导入', '智能生成', '接收报文']
@@ -216,6 +318,17 @@ const dateRange = ref([])
 const tagFilter = ref([])
 const keyword = ref('')
 const selectedRows = ref([])
+// H1：筛选视图
+const activeViewId = ref('')
+// E4：认证场景分组筛选
+const scenarioFilter = ref('')
+// A-1：优秀视图排序模式（'match' 结构匹配度 / 'rate' 引用热度 / 'created' 创建时间）
+const sortMode = ref('match')
+// A1：优秀认证表单状态
+const certVisible = ref(false)
+const certIsBatch = ref(false)
+const certTarget = ref(null)
+const certForm = ref({ certifier: '', criteria: '', scenario: '', remark: '' })
 const historyTableRef = ref(null)
 const selectionAnchorKey = ref('')
 const selectionRangeVisible = ref(false)
@@ -290,20 +403,65 @@ const baseRows = computed(() => store.allHistoryData
   .filter((row) => systemStore.currentId == null || row._systemId === systemStore.currentId)
   .filter((row) => props.mode !== 'excellent' || row.excellent))
 
-const filteredRows = computed(() => baseRows.value.filter((row) => {
-  if (selectedInterfaceId.value && String(row.interfaceId) !== String(selectedInterfaceId.value)) return false
-  if (selectedMessageId.value && String(row.messageId) !== String(selectedMessageId.value)) return false
-  if (sourceFilter.value && row.source !== sourceFilter.value) return false
-  if (excellentFilter.value === 'yes' && !row.excellent) return false
-  if (excellentFilter.value === 'no' && row.excellent) return false
-  if (abnormalFilter.value === 'yes' && !row.abnormal) return false
-  if (abnormalFilter.value === 'no' && row.abnormal) return false
-  if (dateRange.value?.length === 2 && (row.createdAt < dateRange.value[0] || row.createdAt > dateRange.value[1])) return false
-  if (tagFilter.value.length && !tagFilter.value.every((tag) => [...(row.customTags || []), ...(row.autoTags || [])].includes(tag))) return false
-  const kw = keyword.value.trim().toLowerCase()
-  if (kw && ![row.messageName, row.remark, ...(row.customTags || [])].some((value) => String(value || '').toLowerCase().includes(kw))) return false
-  return true
-}))
+const filteredRows = computed(() => {
+  const rows = baseRows.value.filter((row) => {
+    if (selectedInterfaceId.value && String(row.interfaceId) !== String(selectedInterfaceId.value)) return false
+    if (selectedMessageId.value && String(row.messageId) !== String(selectedMessageId.value)) return false
+    if (sourceFilter.value && row.source !== sourceFilter.value) return false
+    if (excellentFilter.value === 'yes' && !row.excellent) return false
+    if (excellentFilter.value === 'no' && row.excellent) return false
+    if (abnormalFilter.value === 'yes' && !row.abnormal) return false
+    if (abnormalFilter.value === 'no' && row.abnormal) return false
+    if (dateRange.value?.length === 2 && (row.createdAt < dateRange.value[0] || row.createdAt > dateRange.value[1])) return false
+    if (tagFilter.value.length && !tagFilter.value.every((tag) => [...(row.customTags || []), ...(row.autoTags || [])].includes(tag))) return false
+    if (props.mode === 'excellent' && scenarioFilter.value && row.certification?.scenario !== scenarioFilter.value) return false
+    const kw = keyword.value.trim().toLowerCase()
+    if (kw && ![row.messageName, row.remark, ...(row.customTags || [])].some((value) => String(value || '').toLowerCase().includes(kw))) return false
+    return true
+  })
+  // A-1：优秀视图按所选维度排序（结构匹配度 / 引用热度），默认创建时间保持原序
+  if (props.mode === 'excellent' && sortMode.value !== 'created') {
+    rows.sort((a, b) => sortValue(b) - sortValue(a))
+  }
+  return rows
+})
+
+// A-1：字段结构相似度推荐（纯客观：字段名 Jaccard + 约束模式匹配；不含任何收发结果指标）
+const fieldProfileOf = (row) => {
+  if (row._fieldProfile) return row._fieldProfile
+  const profile = store.fieldDefsOfDataset(row._datasetId).map((f) => ({
+    name: f.name,
+    mode: f.constraint?.mode || 'none',
+  }))
+  row._fieldProfile = profile
+  return profile
+}
+const structureSimilarity = (leftProfile, rightProfile) => {
+  const union = new Set([...leftProfile.map((f) => f.name), ...rightProfile.map((f) => f.name)])
+  if (!union.size) return 0
+  let inter = 0
+  leftProfile.forEach((f) => {
+    const rb = rightProfile.find((x) => x.name === f.name)
+    if (rb) inter += rb.mode === f.mode ? 1.5 : 1
+  })
+  return Math.round((inter / union.size) * 100)
+}
+const matchScore = (row) => {
+  const targetProfile = currentTargetProfile()
+  if (!targetProfile) {
+    // 无上下文：按引用热度弱排序（客观计数，仅作兜底）
+    return Math.min(100, Math.round((Number(row.usageCount || 0) / 20) * 100))
+  }
+  return structureSimilarity(fieldProfileOf(row), targetProfile)
+}
+const sortValue = (row) => {
+  if (sortMode.value === 'rate') return Number(row.usageCount || 0)
+  return matchScore(row)
+}
+// A-1：相似推荐 Top3（排除当前打开的详情行）
+const recommendRows = computed(() => filteredRows.value
+  .filter((row) => row._rowKey !== detailRowKey.value)
+  .slice(0, 3))
 
 const customTagLibrary = computed(() => [...new Set([...(store.customTagLibrary || []), ...baseRows.value.flatMap((row) => row.customTags || [])])].sort())
 const allTags = computed(() => [...customTagLibrary.value, ...(baseRows.value.some((row) => row.abnormal) ? ['异常'] : [])])
@@ -316,12 +474,157 @@ const onTreeSelect = (node) => {
 }
 const toggleFilterTag = (tag) => { tagFilter.value = tagFilter.value.includes(tag) ? tagFilter.value.filter((item) => item !== tag) : [...tagFilter.value, tag] }
 
+/* ---------- H1：筛选视图保存 ---------- */
+const modeViews = computed(() => store.historyViews.filter((view) => view.mode === props.mode))
+const saveView = async () => {
+  try {
+    const { value } = await ElMessageBox.prompt('为当前筛选组合命名', '保存筛选视图', { inputValue: `${props.mode === 'excellent' ? '优秀' : '历史'}筛选 ${modeViews.value.length + 1}` })
+    if (!String(value || '').trim()) return
+    store.saveHistoryView({
+      mode: props.mode,
+      name: String(value).trim(),
+      filters: {
+        sourceFilter: sourceFilter.value,
+        excellentFilter: excellentFilter.value,
+        abnormalFilter: abnormalFilter.value,
+        dateRange: dateRange.value,
+        tagFilter: tagFilter.value,
+        keyword: keyword.value,
+      },
+    })
+    ElMessage.success('筛选视图已保存')
+  } catch {}
+}
+const removeView = () => {
+  if (!activeViewId.value) return
+  store.removeHistoryView(activeViewId.value)
+  activeViewId.value = ''
+  ElMessage.success('筛选视图已删除')
+}
+const onLoadView = (id) => {
+  const view = store.historyViews.find((v) => v.id === id)
+  if (!view) return
+  const f = view.filters || {}
+  sourceFilter.value = f.sourceFilter || ''
+  excellentFilter.value = f.excellentFilter || ''
+  abnormalFilter.value = f.abnormalFilter || ''
+  dateRange.value = f.dateRange || []
+  tagFilter.value = f.tagFilter || []
+  keyword.value = f.keyword || ''
+  ElMessage.success(`已载入视图「${view.name}」`)
+}
+
+/* ---------- E1：认证复审 ---------- */
+const todayStr = () => new Date().toISOString().slice(0, 10)
+const isOverdue = (row) => !!(row.certification && row.reviewDueAt && row.reviewDueAt < todayStr())
+const overdueRows = computed(() => baseRows.value.filter(isOverdue))
+const reviewCurrent = () => {
+  if (!detailRow.value) return
+  store.reviewCertification(detailRow.value._datasetId, detailRow.value.id)
+  ElMessage.success('复审通过，认证有效期已刷新（90 天）')
+}
+
+/* ---------- E4：认证场景分组 ---------- */
+const scenarioOptions = computed(() => [...new Set(
+  baseRows.value
+    .filter((row) => row.excellent && row.certification?.scenario)
+    .map((row) => row.certification.scenario),
+)].sort())
+
+/* ---------- E2：推荐可解释（匹配字段） ---------- */
+const currentTargetProfile = () => {
+  const target = selectedMessageId.value
+    ? protoStore.interfaces.find((m) => String(m.id) === String(selectedMessageId.value))
+    : selectedInterfaceId.value
+      ? protoStore.interfaces.find((m) => String(m.ownerIfaceId) === String(selectedInterfaceId.value))
+      : null
+  if (!target) return null
+  return collectInterfaceDatasetFields(target, protoStore.protocols).map((f) => ({
+    name: f.name,
+    mode: f.constraint?.mode || 'none',
+  }))
+}
+const recommendMatchedFields = (row) => {
+  const targetProfile = currentTargetProfile()
+  if (!targetProfile) return []
+  const leftNames = new Set(fieldProfileOf(row).map((f) => f.name))
+  return targetProfile.filter((f) => leftNames.has(f.name)).map((f) => f.name).slice(0, 4)
+}
+
 const toggleExcellent = (row) => {
   store.toggleExcellent(row._datasetId, row.id)
   ElMessage.success(row.excellent ? '已移出优秀数据库' : '已加入优秀数据库')
 }
 const removeRow = (row) => store.removeHistoryRow(row._datasetId, row.id)
-const markSelectedExcellent = () => { store.setExcellentBatch(selectedRows.value, true); ElMessage.success(`已将 ${selectedRows.value.length} 条报文标记为优秀`) }
+
+// A1：打开认证表单（单条）
+const openCertify = (row) => {
+  certIsBatch.value = false
+  certTarget.value = { _datasetId: row._datasetId, id: row.id }
+  const c = row.certification || {}
+  certForm.value = { certifier: c.certifier || '', criteria: c.criteria || '', scenario: c.scenario || '', remark: c.remark || '' }
+  certVisible.value = true
+}
+// A1：批量打开认证表单
+const openBatchCertify = () => {
+  if (!selectedRows.value.length) return
+  certIsBatch.value = true
+  certTarget.value = selectedRows.value
+  certForm.value = { certifier: '', criteria: '', scenario: '', remark: '' }
+  certVisible.value = true
+}
+const confirmCertify = () => {
+  if (!certForm.value.certifier.trim()) {
+    ElMessage.warning('请填写认证人')
+    return
+  }
+  if (certIsBatch.value) {
+    store.setExcellentBatch(certTarget.value, true, { ...certForm.value })
+    certTarget.value.forEach((row) => materializeCase(row, { ...certForm.value }))
+    ElMessage.success(`已将 ${certTarget.value.length} 条报文认证为优秀`)
+  } else {
+    const t = certTarget.value
+    store.certifyExcellent(t._datasetId, t.id, { ...certForm.value })
+    materializeCase(t, { ...certForm.value })
+    ElMessage.success('已认证为优秀报文')
+  }
+  certVisible.value = false
+}
+// A-2：认证后自动将优秀报文沉淀为知识库「案例卡」（幂等，已存在则更新）
+const materializeCase = (row, cert) => {
+  const current = baseRows.value.find((r) => r._rowKey === `${row._datasetId}-${row.id}`) || row
+  const doc = reportStore.addExcellentCase({
+    rowKey: `${row._datasetId}-${row.id}`,
+    messageName: current.messageName,
+    certifier: cert.certifier,
+    criteria: cert.criteria,
+    scenario: cert.scenario,
+    remark: cert.remark,
+    interfaceId: current.interfaceId,
+    messageId: current.messageId,
+    tags: current.customTags,
+  })
+  const ds = store.datasets.find((d) => d.id === row._datasetId)
+  const hr = ds?.historyRows?.find((r) => r.id === row.id)
+  if (hr) hr.caseDocId = doc.id
+}
+const openKnowledgeCase = (row) => {
+  if (!row.caseDocId) {
+    const c = row.certification || {}
+    materializeCase(row, c)
+    ElMessage.success('已生成案例卡并沉淀至知识库')
+    return
+  }
+  router.push('/knowledge-model')
+}
+// A1：优秀开关联动认证（开启时弹窗认证，关闭时直接移出）
+const onExcellentSwitch = (row, val) => {
+  if (val) openCertify(row)
+  else {
+    store.toggleExcellent(row._datasetId, row.id)
+    ElMessage.success('已移出优秀数据库')
+  }
+}
 
 const appendTag = (list, value) => {
   const tag = String(value || '').trim()
@@ -409,13 +712,35 @@ const detailFields = computed(() => {
 })
 
 const saveAsDataset = async () => {
+  if (!selectedRows.value.length) return
+  const sample = selectedRows.value[0]
+  // H3：另存前字段覆盖确认——对比选中行字段与报文字段定义
+  const defs = store.fieldDefsOfDataset(sample._datasetId)
+  const rowKeys = Object.keys(sample.values || {})
+  const defNames = defs.map((f) => f.name)
+  const missing = defNames.filter((name) => !rowKeys.includes(name))
+  const extra = rowKeys.filter((name) => !defNames.includes(name))
+  if (defs.length) {
+    const lines = [
+      `选中 ${selectedRows.value.length} 条，行字段 ${rowKeys.length} 个；报文定义字段 ${defs.length} 个。`,
+    ]
+    if (missing.length) lines.push(`\n缺失字段（${missing.length}）：${missing.slice(0, 10).join('、')}${missing.length > 10 ? ' 等' : ''}`)
+    if (extra.length) lines.push(`\n多余字段（${extra.length}）：${extra.slice(0, 10).join('、')}${extra.length > 10 ? ' 等' : ''}`)
+    try {
+      await ElMessageBox.confirm(lines.join('\n'), '另存为数据集前确认', {
+        type: missing.length ? 'warning' : 'info',
+        confirmButtonText: '继续创建',
+        cancelButtonText: '取消',
+      })
+    } catch { return }
+  }
   try {
     const { value } = await ElMessageBox.prompt('输入新数据集名称', '另存为数据集', { inputValue: `${selectedRows.value[0]?.messageName || '历史报文'}复用集` })
-    const sample = selectedRows.value[0]
     const sourceDs = store.datasets.find((d) => d.id === sample._datasetId)
     const ds = store.addDataset({ name: value, systemId: sample._systemId, moduleName: sample._moduleName, linkedInterface: sample.messageName, messageId: sample.messageId, linkedProtocol: sourceDs?.linkedProtocol })
     ds.rows = selectedRows.value.map((row, index) => ({ id: Date.now() + index, label: row.label, values: JSON.parse(JSON.stringify(row.values)), source: '历史复用' }))
-    selectedRows.value.forEach((row) => store.updateHistoryRow(row._datasetId, row.id, { usageCount: Number(row.usageCount || 0) + 1, lastUsedAt: new Date().toLocaleString('zh-CN', { hour12: false }) }))
+    // A4：复用闭环——另存为数据集即视为一次成功复用
+    selectedRows.value.forEach((row) => store.updateReuseStats(row._datasetId, row.id))
     ElMessage.success(`已创建数据集“${ds.name}”`)
   } catch {}
 }
@@ -433,9 +758,60 @@ const sendSelected = async () => {
     )
     return
   }
+  // A4：复用闭环——发送清单创建成功即视为一次成功复用
+  selectedRows.value.forEach((row) => store.updateReuseStats(row._datasetId, row.id, true))
   router.push({ path: '/execution', query: { mode: 'send', draftId: result.draft.id } })
 }
-const exportSelected = () => { const data = selectedRows.value.map(({ _rowKey, ...row }) => row); downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' }), `${props.mode === 'excellent' ? '优秀' : '历史'}报文.json`) }
+/* ---------- H2：导出增强（JSON / CSV，选中或按筛选全部） ---------- */
+const stripMeta = (row) => {
+  const { _rowKey, _fieldProfile, ...rest } = row
+  return rest
+}
+const csvEscape = (value) => {
+  const text = value == null ? '' : String(value)
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+const exportAsCsv = (rows) => {
+  const clean = rows.map(stripMeta)
+  const fieldKeys = [...new Set(clean.flatMap((row) => Object.keys(row.values || {})))]
+  const isExc = props.mode === 'excellent'
+  const base = ['报文名', '创建日期', '来源', '备注', '标签']
+  // E3：优秀库导出附认证信息与客观引用统计
+  const excCols = isExc ? ['认证人', '认证时间', '复审截止', '引用次数', '最近复用'] : []
+  const head = [...base, ...excCols, ...fieldKeys]
+  const lines = [head.map(csvEscape).join(',')]
+  clean.forEach((row) => {
+    const cells = [
+      row.messageName || '',
+      row.createdAt || '',
+      normalizeSource(row.source),
+      row.remark || '',
+      (row.customTags || []).join('、'),
+      ...(isExc ? [
+        row.certification?.certifier || '',
+        row.certification?.certTime || '',
+        row.reviewDueAt || '',
+        Number(row.usageCount || 0),
+        row.lastUsedAt || '',
+      ] : []),
+      ...fieldKeys.map((key) => row.values?.[key] ?? ''),
+    ]
+    lines.push(cells.map(csvEscape).join(','))
+  })
+  downloadBlob(new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' }), `${props.mode === 'excellent' ? '优秀' : '历史'}报文.csv`)
+}
+const onExportCommand = (command) => {
+  const [scope, kind] = String(command).split('-')
+  const rows = scope === 'selected' ? selectedRows.value : filteredRows.value
+  if (!rows.length) return
+  const name = props.mode === 'excellent' ? '优秀' : '历史'
+  if (kind === 'json') {
+    downloadBlob(new Blob([JSON.stringify(rows.map(stripMeta), null, 2)], { type: 'application/json;charset=utf-8' }), `${name}报文.json`)
+  } else {
+    exportAsCsv(rows)
+  }
+  ElMessage.success(`已导出 ${rows.length} 条${scope === 'selected' ? '选中' : '筛选'}数据`)
+}
 </script>
 
 <style scoped lang="scss">
@@ -486,4 +862,27 @@ h4 { margin: 18px 0 10px; font-size: 14px; }
 .tag-library em { color: var(--el-text-color-placeholder); font-size: 12px; font-style: normal; }
 @media (max-width: 1180px) { .asset-library { grid-template-columns: 226px minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { .quick-tags button { transition: none; } }
+.reco-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 9px 12px; border: 1px dashed var(--el-border-color); border-radius: 8px; background: var(--el-fill-color-light); }
+.review-banner { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid #f5d8a8; border-radius: 8px; background: #fdf6ec; color: #a15c07; font-size: 12px; }
+.review-banner .el-icon { font-size: 14px; }
+.cert-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.reco-bar__title { font-size: 12px; font-weight: 700; color: var(--asset); }
+.reco-card { display: flex; flex-direction: column; gap: 2px; padding: 7px 12px; border: 1px solid var(--el-border-color); border-radius: 8px; background: #fff; cursor: pointer; text-align: left; min-width: 160px; }
+.reco-card:hover { border-color: var(--asset); background: color-mix(in srgb, var(--asset) 6%, white); }
+.reco-card strong { font-size: 13px; color: var(--el-text-color-primary); }
+.reco-card__score { font-size: 11px; color: var(--asset); font-weight: 700; }
+.reco-card__matched { font-size: 11px; color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reco-card__meta { font-size: 11px; color: var(--el-text-color-secondary); }
+.muted-num { color: var(--el-text-color-secondary); }
+.cert-box { margin-bottom: 12px; }
+.cert-box .el-button { margin-top: 8px; }
+.reuse-foot { display: flex; gap: 10px; flex-wrap: wrap; }
+.reuse-foot__item { flex: 1; min-width: 110px; display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 8px; background: var(--el-fill-color-light); border: 1px solid var(--el-border-color-lighter); }
+.reuse-foot__item span { font-size: 11px; color: var(--el-text-color-secondary); }
+.reuse-foot__item b { font-size: 18px; color: var(--el-text-color-primary); }
+.reuse-foot__item b.is-good { color: var(--el-color-success); }
+.reuse-foot__item b.is-mid { color: var(--el-color-warning); }
+.reuse-foot__item b.is-bad { color: var(--el-color-danger); }
+.reuse-foot__item small { color: var(--el-text-color-secondary); font-size: 11px; }
+.reuse-foot__time { font-size: 13px !important; line-height: 22px; }
 </style>

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { useRunBatchStore } from '@/stores/runBatch'
+import { useTestDataStore } from '@/stores/testData'
 
 let seq = 9000
 const uid = (p = 'r') => `${p}-${++seq}`
@@ -161,6 +162,13 @@ export const useReportStore = defineStore('report', {
       { id: uid('tpl'), name: '交付报告模板', fileName: '交付报告模板.docx', size: '56 KB', uploadedAt: '2026-06-22 16:20' }
     ],
 
+    /* —— C-1：章节方案（章节模板库：控制报告的章节构成与顺序） —— */
+    chapterPresets: [
+      { id: 'cp-standard', name: '标准结构', desc: '概述 / 规模 / 明细 / 结论', chapters: ['overview', 'metrics', 'results', 'anomaly', 'conclusion'] },
+      { id: 'cp-concise', name: '精简结构', desc: '概述 / 明细 / 结论', chapters: ['overview', 'results', 'conclusion'] },
+      { id: 'cp-data', name: '数据优先', desc: '概述 / 规模 / 明细（突出客观数据）', chapters: ['overview', 'metrics', 'results'] },
+    ],
+
     /* —— 知识库：集合 → 文档 → 分块 —— */
     knowledgeCollections: [
       { id: 'kc-standard', name: '实验规范', color: '#0f8b8d', desc: '实验流程、判定口径与交付规范' },
@@ -173,6 +181,7 @@ export const useReportStore = defineStore('report', {
       {
         id: uid('kb'), title: '接口超时处置规范.md', moduleId: null, source: '本地导入', type: 'md',
         collectionId: 'kc-method', version: 2, active: true, parseStatus: 'done', importedAt: '2026-06-20 10:12', vectorized: 'done',
+        summary: '接口超时判定阈值、连接池耗尽排查思路与超时处置流程，适用于发送侧超时类异常定位。',
         chunks: [
           { idx: 1, text: '接口接收超过约定阈值（默认 2000ms）即判定为超时，应记录发送上下文、下游服务与连接池状态。' },
           { idx: 2, text: '连接池耗尽时优先排查 max_connections 配置与慢查询；网关层超时常由下游瓶颈引起。' },
@@ -182,6 +191,7 @@ export const useReportStore = defineStore('report', {
       {
         id: uid('kb'), title: '历史联试优秀案例汇编.md', moduleId: null, source: '本地导入', type: 'md',
         collectionId: 'kc-case', version: 1, active: true, parseStatus: 'done', importedAt: '2026-06-21 09:30', vectorized: 'done',
+        summary: '优秀联试案例汇编：异常样本存库复现、报文与配置快照共同保存等可复用做法。',
         chunks: [
           { idx: 1, text: '某次接口联试中，将接收侧字段越界样本保存为数据集，后续在独立发送批次中完成复现。' },
           { idx: 2, text: '批量状态接口联试中，将无法解析报文与接口配置快照共同保存，便于后续追溯。' }
@@ -190,6 +200,7 @@ export const useReportStore = defineStore('report', {
       {
         id: uid('kb'), title: '联试报告撰写规范.txt', moduleId: null, source: '本地导入', type: 'txt',
         collectionId: 'kc-standard', version: 1, active: true, parseStatus: 'done', importedAt: '2026-06-22 14:05', vectorized: 'pending',
+        summary: '联试报告撰写规范：报告应包含概述、关键指标、服务结果、异常分析与结论建议五部分。',
         chunks: [
           { idx: 1, text: '报告应包含概述、关键指标、服务结果、异常分析与结论建议五部分，结论需可追溯到数据。' }
         ]
@@ -219,6 +230,9 @@ export const useReportStore = defineStore('report', {
     /* —— 已生成报告 —— */
     reports: [],
 
+    /* K1：检索反馈记录（key = `${docId}-${idx}`，值 ∈ [-0.6, 0.6]） */
+    searchFeedback: {},
+
     currentReportId: null,
     generating: false,
     genStage: -1
@@ -235,6 +249,22 @@ export const useReportStore = defineStore('report', {
       return s.reports
         .filter((r) => (r.lineageId || r.id) === lineageId)
         .sort((a, b) => (a.version || 1) - (b.version || 1))
+    },
+    /** K2：知识引用统计——遍历报告的知识引用，统计各文档被引用次数（Top 排序） */
+    knowledgeRefStats: (s) => {
+      const map = new Map()
+      s.reports.forEach((report) => {
+        (report.knowledgeCitations || []).forEach((citation) => {
+          map.set(citation.docId, (map.get(citation.docId) || 0) + 1)
+        })
+      })
+      return [...map.entries()]
+        .map(([docId, count]) => ({
+          docId,
+          docTitle: s.knowledgeDocs.find((doc) => doc.id === docId)?.title || '未知文档',
+          count,
+        }))
+        .sort((a, b) => b.count - a.count)
     }
   },
 
@@ -244,8 +274,10 @@ export const useReportStore = defineStore('report', {
       const d = {
         id: uid('kb'), title: doc.title || '未命名文档', moduleId: null, source: '本地导入',
         collectionId: doc.collectionId || this.knowledgeCollections[0]?.id || null,
-        type: doc.type || 'md', kind: doc.kind === 'image' ? 'image' : 'file', version: 1, active: true,
+        type: doc.type || 'md', kind: doc.kind === 'image' ? 'image' : doc.kind === 'case' ? 'case' : 'file', version: 1, active: true,
         importedAt: now(), parseStatus: doc.kind === 'image' ? 'ocr' : 'done', vectorized: 'pending',
+        // B4：内容摘要（文本类导入时自动生成；非文本为占位说明）
+        summary: doc.summary || '',
         chunks: doc.chunks || [{ idx: 1, text: '（导入文档内容，将自动分块）' }]
       }
       this.knowledgeDocs.unshift(d)
@@ -254,6 +286,40 @@ export const useReportStore = defineStore('report', {
     removeKnowledgeDoc(id) {
       const i = this.knowledgeDocs.findIndex((d) => d.id === id)
       if (i >= 0) this.knowledgeDocs.splice(i, 1)
+    },
+
+    /**
+     * A-2：优秀案例知识化沉淀——认证优秀时生成「案例卡」入知识库（优秀案例集合）。
+     * 幂等：同一优秀行（rowKey）已存在案例卡时更新而非新建。
+     */
+    addExcellentCase(data = {}) {
+      const existing = this.knowledgeDocs.find((doc) => doc.kind === 'case' && doc.rowKey === data.rowKey)
+      if (existing) {
+        Object.assign(existing, {
+          title: `${data.messageName} · 优秀案例`,
+          summary: data.criteria || `由 ${data.certifier || '—'} 认证的优秀报文案例`,
+          chunks: [
+            { idx: 1, text: `认证人：${data.certifier || '—'}；达标指标：${data.criteria || '—'}` },
+            { idx: 2, text: `适用场景：${data.scenario || '—'}；备注：${data.remark || '—'}` },
+            ...(data.tags?.length ? [{ idx: 3, text: `标签：${data.tags.join('、')}` }] : []),
+          ],
+        })
+        return existing
+      }
+      const d = {
+        id: uid('kb'), title: `${data.messageName} · 优秀案例`, moduleId: null, source: '优秀库沉淀', type: 'case',
+        kind: 'case', collectionId: 'kc-case', version: 1, active: true,
+        importedAt: now(), parseStatus: 'done', vectorized: 'pending',
+        summary: data.criteria || `由 ${data.certifier || '—'} 认证的优秀报文案例`,
+        rowKey: data.rowKey, interfaceId: data.interfaceId, messageId: data.messageId,
+        chunks: [
+          { idx: 1, text: `认证人：${data.certifier || '—'}；达标指标：${data.criteria || '—'}` },
+          { idx: 2, text: `适用场景：${data.scenario || '—'}；备注：${data.remark || '—'}` },
+          ...(data.tags?.length ? [{ idx: 3, text: `标签：${data.tags.join('、')}` }] : []),
+        ],
+      }
+      this.knowledgeDocs.unshift(d)
+      return d
     },
     vectorize(id) {
       const d = this.knowledgeDocs.find((x) => x.id === id)
@@ -297,11 +363,23 @@ export const useReportStore = defineStore('report', {
           const vec = d.vectorized === 'done' ? 0.55 + Math.random() * 0.4 : 0.2 + Math.random() * 0.3
           const keywordWeight = Number(weights.keyword ?? 0.5)
           const vectorWeight = Number(weights.vector ?? (1 - keywordWeight))
-          const score = +(keywordWeight * kw + vectorWeight * vec).toFixed(3)
-          hits.push({ docId: d.id, docTitle: d.title, idx: c.idx, text: c.text, kw: +kw.toFixed(2), vec: +vec.toFixed(2), score })
+          // K1：检索反馈加权（有用 +0.15 / 无用 -0.2）
+          const feedback = this.searchFeedback?.[`${d.id}-${c.idx}`] || 0
+          const score = +(keywordWeight * kw + vectorWeight * vec + feedback).toFixed(3)
+          hits.push({ docId: d.id, docTitle: d.title, idx: c.idx, text: c.text, kw: +kw.toFixed(2), vec: +vec.toFixed(2), feedback, score })
         })
       })
       return hits.sort((a, b) => b.score - a.score).slice(0, topK)
+    },
+
+    /** K1：记录检索反馈（有用 +1 / 无用 -1），影响后续排序 */
+    recordFeedback(docId, idx, useful) {
+      const key = `${docId}-${idx}`
+      if (!this.searchFeedback) this.searchFeedback = {}
+      const base = this.searchFeedback[key] || 0
+      const delta = useful ? 0.15 : -0.2
+      // 同向累计上限 ±0.6，避免单条反馈过度支配
+      this.searchFeedback[key] = Math.max(-0.6, Math.min(0.6, base + delta))
     },
 
     /* —— 模型配置 —— */
@@ -330,7 +408,7 @@ export const useReportStore = defineStore('report', {
     },
 
     /* —— 生成报告（静态：进度模拟 + 按批次确定性组织 + 描述段变体） —— */
-    async generateReport({ batchId, runId, title, templateId, materials, generatorName, knowledgeCollectionIds, regenerateFromId } = {}) {
+    async generateReport({ batchId, runId, title, templateId, materials, generatorName, knowledgeCollectionIds, regenerateFromId, chapterPresetId, titlePrefix } = {}) {
       if (this.generating) return null
       const run = useRunBatchStore().byId(batchId || runId)
       if (!run) return null
@@ -342,6 +420,20 @@ export const useReportStore = defineStore('report', {
           .map((r) => r.version || 1)) + 1
         : 1
       const seedIndex = (version - 1) % 4
+      // C1：优秀案例溯源——按批次接口范围收敛优秀历史报文（无接口范围时取全部）
+      const testDataStore = useTestDataStore()
+      const scopeIds = (run.scope?.interfaceIds || []).map(String)
+      const excellentCaseCitations = testDataStore.allHistoryData
+        .filter((h) => h.excellent)
+        .filter((h) => !scopeIds.length || scopeIds.includes(String(h.interfaceId)))
+        .slice(0, 5)
+        .map((h) => ({
+          rowKey: h._rowKey,
+          messageName: h.messageName,
+          interfaceId: h.interfaceId,
+          usageCount: Number(h.usageCount || 0),
+          certifier: h.certification?.certifier || '—'
+        }))
       const fallbackTitle = `${scopeNameOf(run)} ${run.batchType === 'receive' ? '接收' : '发送'}联试报告`
       this.generating = true
       this.genStage = 0
@@ -349,11 +441,27 @@ export const useReportStore = defineStore('report', {
         this.genStage = i
         await new Promise((r) => setTimeout(r, 420 + Math.random() * 260))
       }
+      // C-1：占位符变量渲染（标题支持 {{batchName}} {{scopeName}} {{batchType}} 等）
+      const vars = this.templateVars(run, { generatorName, titlePrefix })
+      const renderedTitle = title
+        ? this.renderVars(title, vars)
+        : titlePrefix
+          ? `${this.renderVars(titlePrefix, vars)} ${fallbackTitle}`
+          : sourceReport?.title || fallbackTitle
+      // C-1：章节方案（过滤并排序章节构成）
+      let sections = buildSections(run, seedIndex)
+      const preset = chapterPresetId ? this.chapterPresets.find((p) => p.id === chapterPresetId) : null
+      if (preset) {
+        const order = preset.chapters
+        sections = sections
+          .filter((s) => order.includes(s.key))
+          .sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key))
+      }
       const rep = {
         id: uid('rep'),
         lineageId,
         version,
-        title: title || sourceReport?.title || fallbackTitle,
+        title: renderedTitle,
         batchId: run.id,
         batchType: run.batchType || 'send',
         runId: run.id,
@@ -361,12 +469,14 @@ export const useReportStore = defineStore('report', {
         taskCreator: run.taskCreator || '—',
         generatorName: generatorName || '—',
         templateId: templateId || null,
+        chapterPresetId: preset?.id || null,
         materials: (materials || []).map((m) => ({ ...m })),
         knowledgeCollectionIds: [...(knowledgeCollectionIds || this.selectedKnowledgeCollectionIds || [])],
         knowledgeCitations: this.searchKnowledge(scopeNameOf(run), knowledgeCollectionIds || this.selectedKnowledgeCollectionIds, 3),
+        excellentCaseCitations,
         createdAt: now(),
         status: 'done',
-        sections: buildSections(run, seedIndex),
+        sections,
         sourceReportId: sourceReport?.id || null,
         seedIndex
       }
@@ -375,6 +485,57 @@ export const useReportStore = defineStore('report', {
       this.generating = false
       this.genStage = -1
       return rep
+    },
+
+    /**
+     * C-1：占位符变量上下文（全部来自批次客观数据）。
+     * 可用变量：batchName / scopeName / batchType / interfaceCount / sentCount / receivedCount / taskCreator / generator / createdAt
+     */
+    templateVars(run = {}, meta = {}) {
+      const summary = run.summary || {}
+      return {
+        batchName: run.name || '',
+        scopeName: run.scope?.displayName || '未命名接口范围',
+        batchType: run.batchType === 'receive' ? '接收' : '发送',
+        interfaceCount: run.scope?.interfaceIds?.length || 0,
+        sentCount: summary.sentCount ?? summary.totalRequests ?? 0,
+        receivedCount: summary.totalReceived ?? 0,
+        taskCreator: run.taskCreator || '—',
+        generator: meta.generatorName || '—',
+        titlePrefix: meta.titlePrefix || '',
+        createdAt: now(),
+      }
+    },
+    /** C-1：替换 {{变量}} 占位符（未识别变量原样保留） */
+    renderVars(text = '', vars = {}) {
+      return String(text).replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) => (key in vars ? vars[key] : match))
+    },
+
+    /**
+     * C-3：批量生成报告（按批次依次执行，复用生成管线）。
+     * @returns {Array<object>} 生成的报告列表
+     */
+    async generateBatch({ batchIds = [], chapterPresetId, generatorName, knowledgeCollectionIds, titlePrefix = '' }) {
+      const runStore = useRunBatchStore()
+      const ids = (batchIds || []).filter(Boolean)
+      const results = []
+      this.generating = true
+      for (let i = 0; i < ids.length; i += 1) {
+        const run = runStore.byId(ids[i])
+        if (!run) continue
+        this.genStage = Math.round((i / Math.max(ids.length, 1)) * (REPORT_STAGES.length - 1))
+        const rep = await this.generateReport({
+          batchId: run.id,
+          titlePrefix,
+          generatorName,
+          knowledgeCollectionIds: knowledgeCollectionIds || this.selectedKnowledgeCollectionIds,
+          chapterPresetId,
+        })
+        if (rep) results.push(rep)
+      }
+      this.generating = false
+      this.genStage = -1
+      return results
     },
 
     // 描述性章节轮换内容（不暴露 RAG，仅作为「重新生成」）
@@ -411,6 +572,15 @@ export const useReportStore = defineStore('report', {
         ].join('\n'))
       }
       parts.push(report.sections.map((s) => `## ${s.title}\n\n${s.content}\n`).join('\n'))
+      // C1：导出附溯源引用，使 DOCX/PDF 等导出物携带知识引用与优秀案例来源
+      const cites = []
+      if (report.knowledgeCitations?.length) {
+        cites.push(`## 知识引用\n` + report.knowledgeCitations.map((c) => `- ${c.docTitle} #${c.idx}`).join('\n'))
+      }
+      if (report.excellentCaseCitations?.length) {
+        cites.push(`## 优秀案例溯源\n` + report.excellentCaseCitations.map((c) => `- ${c.messageName}（认证人：${c.certifier}，引用 ${c.usageCount} 次）`).join('\n'))
+      }
+      if (cites.length) parts.push(cites.join('\n\n'))
       return `${parts.join('\n\n')}\n`
     }
   }

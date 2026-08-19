@@ -84,6 +84,18 @@
             <el-tag size="small" type="success" effect="plain">{{ item.docTitle }} #{{ item.idx }}</el-tag>
           </el-tooltip>
         </div>
+        <!-- C1：优秀案例溯源 -->
+        <div v-if="cur.excellentCaseCitations?.length" class="citation-strip citation-strip--case">
+          <span>优秀案例溯源</span>
+          <el-tooltip
+            v-for="item in cur.excellentCaseCitations"
+            :key="item.rowKey"
+            :content="`认证人：${item.certifier} · 引用 ${item.usageCount} 次`"
+            placement="top"
+          >
+            <el-tag size="small" type="warning" effect="plain">{{ item.messageName }}</el-tag>
+          </el-tooltip>
+        </div>
         <section v-for="sec in cur.sections" :key="sec.key" class="sec">
           <div class="sec__head">
             <el-input v-if="editMode" v-model="sec.title" size="small" class="sec__title-input" />
@@ -538,6 +550,8 @@ const handleExportPdf = (mode) => {
 }
 .citation-strip { margin: -10px 0 20px; padding: 9px 11px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; border-left: 3px solid #0f8b8d; background: #f0f9f8; }
 .citation-strip > span { margin-right: 4px; color: #0f8b8d; font-size: 12px; font-weight: 700; }
+.citation-strip--case { border-left-color: #c98212; background: #fdf6ec; }
+.citation-strip--case > span { color: #c98212; }
 .sec { margin-bottom: 22px; }
 .sec__head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding-left: 10px; border-left: 3px solid var(--el-color-primary); }
 .sec__title { font-size: 17px; font-weight: 600; color: #1e3a8a; }

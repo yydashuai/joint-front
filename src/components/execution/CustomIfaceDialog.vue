@@ -7,14 +7,6 @@
     append-to-body
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <el-alert
-      type="info"
-      :closable="false"
-      show-icon
-      class="tip"
-      title="自定义接口：内部数据/字段系统不解析"
-      description="仅需配置传输类型、报文体（可为加密数据）与报文头；报文头与传输参数在「传输配置」两步弹窗中按协议模板定义。"
-    />
     <el-form label-width="90px" label-position="left" class="cf-form">
       <el-form-item label="接口名称">
         <el-input v-model="form.name" placeholder="如：外部密文接口A" clearable />

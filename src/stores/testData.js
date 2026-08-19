@@ -3,6 +3,7 @@ import { datasets as seedDatasets, files as seedFiles } from '@/mock/testData'
 import { useProtocolStore, collectInterfaceDatasetFields } from '@/stores/protocol'
 import { checkFieldConstraints } from '@/utils/receiveValidator'
 import { makeUniqueName } from '@/utils/entityName'
+import { coverageOf, sampleByDistribution } from '@/utils/dataGen'
 
 let _dsSeq = 100
 let _rowSeq = 1000
@@ -11,6 +12,12 @@ let _fileSeq = 100
 
 const clone = (data) => JSON.parse(JSON.stringify(data))
 const today = () => new Date().toISOString().slice(0, 10)
+/** E1：认证复审截止日（默认 90 天后，YYYY-MM-DD） */
+const inDays = (days) => {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 const normalizeHistoryRow = (row = {}, dataset = {}, index = 0) => {
   const abnormal = !!row.abnormal
@@ -38,6 +45,8 @@ const normalizeHistoryRow = (row = {}, dataset = {}, index = 0) => {
     datasetId: row.datasetId ?? dataset.id ?? null,
     usageCount: Number(row.usageCount || 0),
     lastUsedAt: row.lastUsedAt || '',
+    // A1：优秀认证信息（certifier / certTime / criteria / scenario / remark）
+    certification: row.certification || null,
     values: clone(row.values || {}),
   }
 }
@@ -116,6 +125,25 @@ const normalizeDatasets = () => {
   })
   // 演示标注：首条历史数据标记为「优秀历史」，便于展示优秀标签与筛选
   if (list[0]?.historyRows?.length) list[0].historyRows[0].excellent = true
+  // A1/E1：为演示数据中已有的优秀行预置认证台账与客观复用统计；首条认证设为已过期（演示复审提醒）
+  list.forEach((dataset, di) => {
+    (dataset.historyRows || []).forEach((row, ri) => {
+      if (!row.excellent) return
+      if (!row.certification) {
+        row.certification = {
+          certifier: '张工',
+          certTime: `${row.createdAt || today()} 10:00`,
+          criteria: '字段完整率100%，约束符合度100%，可作回归基线',
+          scenario: '某系统联试回归基线',
+          remark: '可作为回归基线复用',
+        }
+      }
+      // 演示：首条认证已超期（2026-06 认证），其余 80 天后到期
+      if (!row.reviewDueAt) row.reviewDueAt = di === 0 && ri === 0 ? '2026-07-01' : inDays(80)
+      if (!row.usageCount) row.usageCount = 18
+      if (!row.lastUsedAt) row.lastUsedAt = `${today()} 14:22`
+    })
+  })
   return list
 }
 
@@ -180,7 +208,14 @@ export const useTestDataStore = defineStore('testData', {
       datasets: initial.datasets,
       files: initial.files,
       customTagLibrary: ['边界值', '回归样本', '稳定样本', '典型异常'],
-      selectedDatasetId: null
+      selectedDatasetId: null,
+      // D-1：生成策略（可保存复用）
+      generationStrategies: [
+        { id: 'gs-default-mixed', name: '默认综合策略', count: 10, mode: 'mixed', method: 'constraint', coverage: { enumAll: true } },
+        { id: 'gs-excellent-dist', name: '优秀样本分布策略', count: 8, mode: 'mixed', method: 'distribution', coverage: { enumAll: false } },
+      ],
+      // H1：历史/优秀库筛选视图（保存常用筛选组合）
+      historyViews: [],
     }
   },
 
@@ -587,6 +622,9 @@ export const useTestDataStore = defineStore('testData', {
           next.customTags = [...new Set(next.customTags.map(String).map((v) => v.trim()).filter(Boolean))]
           this.registerCustomTags(next.customTags)
         }
+        // H4：行级编辑留痕（客观记录最近修改时间与操作人）
+        next.updatedAt = new Date().toLocaleString('zh-CN', { hour12: false })
+        next.updatedBy = next.updatedBy || '张工'
         Object.assign(row, next)
       }
     },
@@ -601,12 +639,71 @@ export const useTestDataStore = defineStore('testData', {
       })
     },
 
-    setExcellentBatch(rows, excellent = true) {
+    /**
+     * 批量设置优秀标记，可选携带认证信息（A1）。
+     * @param {{_datasetId:any,id:any}[]} rows
+     * @param {boolean} excellent
+     * @param {object|null} cert 认证信息 {certifier,criteria,scenario,remark}，certTime 自动取当前时间
+     */
+    setExcellentBatch(rows, excellent = true, cert = null) {
+      const certPayload = cert
+        ? { ...cert, certTime: new Date().toLocaleString('zh-CN', { hour12: false }), reviewDueAt: inDays(90) }
+        : null
       rows.forEach(({ _datasetId, id }) => {
         const ds = this.datasets.find((d) => d.id === _datasetId)
         const row = ds?.historyRows?.find((item) => item.id === id)
-        if (row) row.excellent = excellent
+        if (!row) return
+        row.excellent = excellent
+        if (excellent && certPayload) {
+          row.certification = certPayload
+          row.reviewDueAt = inDays(90)
+        }
       })
+    },
+
+    /**
+     * A1：单条认证为优秀（设置优秀标记 + 写入认证台账）。
+     * @param {any} datasetId
+     * @param {any} rowId
+     * @param {object} cert 认证信息 {certifier,criteria,scenario,remark}
+     */
+    certifyExcellent(datasetId, rowId, cert) {
+      const ds = this.datasets.find((d) => d.id === datasetId)
+      const row = ds?.historyRows?.find((r) => r.id === rowId)
+      if (!row) return
+      row.excellent = true
+      row.certification = {
+        ...(cert || {}),
+        certTime: new Date().toLocaleString('zh-CN', { hour12: false }),
+      }
+      // E1：认证复审截止日（90 天后）
+      row.reviewDueAt = inDays(90)
+    },
+
+    /**
+     * E1：认证复审通过——刷新复审截止日（90 天后）。
+     */
+    reviewCertification(datasetId, rowId) {
+      const ds = this.datasets.find((d) => d.id === datasetId)
+      const row = ds?.historyRows?.find((r) => r.id === rowId)
+      if (!row) return false
+      if (row.certification) row.certification.reviewedAt = new Date().toLocaleString('zh-CN', { hour12: false })
+      row.reviewDueAt = inDays(90)
+      return true
+    },
+
+    /**
+     * A4：复用闭环反馈——累加引用次数、更新最近复用时间（仅客观计数）。
+     * @param {any} datasetId
+     * @param {any} rowId
+     */
+    updateReuseStats(datasetId, rowId) {
+      const ds = this.datasets.find((d) => d.id === datasetId)
+      const row = ds?.historyRows?.find((r) => r.id === rowId)
+      if (!row) return
+      // 仅维护客观计数：引用次数 + 最近引用时间（不引入任何结果性指标）
+      row.usageCount = Number(row.usageCount || 0) + 1
+      row.lastUsedAt = new Date().toLocaleString('zh-CN', { hour12: false })
     },
 
     registerCustomTags(tags = []) {
@@ -636,6 +733,7 @@ export const useTestDataStore = defineStore('testData', {
       const ds = this.datasets.find(d => d.id === datasetId)
       if (!ds) return []
       const selectedReferences = Array.isArray(options.referenceRows) ? options.referenceRows : []
+      const fieldOverrides = options.fieldOverrides || {}
       const sourceRows = selectedReferences.length
         ? [...ds.rows, ...selectedReferences]
         : [...ds.rows, ...(ds.historyRows || [])]
@@ -756,6 +854,20 @@ export const useTestDataStore = defineStore('testData', {
         fieldNames.forEach((field) => {
           const def = defMap[field]
           const c = def?.constraint
+          // D-1：字段级策略覆盖（boundary / fixed / enum / min / max）
+          const override = fieldOverrides[field]
+          if (override) {
+            if (override === 'boundary') { values[field] = makeBoundary(c, analysis[field], i); return }
+            if (override === 'fixed') {
+              if (c?.mode === 'fixed') values[field] = c.value
+              else if (c?.mode === 'enum') values[field] = c.entries?.[0]?.value ?? c.entries?.[0] ?? ''
+              else values[field] = analysis[field]?.uniqueValues?.[0] ?? ''
+              return
+            }
+            if (override === 'enum') { const e = (c?.entries || [])[0]; values[field] = e?.value ?? e ?? values[field]; return }
+            if (override === 'min') { values[field] = c?.min ?? values[field]; return }
+            if (override === 'max') { values[field] = c?.max ?? values[field]; return }
+          }
           if (c && ['fixed', 'enum', 'range'].includes(c.mode)) {
             const isViol = wantAbnormal && !abnormalDone && violatable[violIdx] === def
             if (isViol) { values[field] = makeAbnormal(c, analysis[field]); abnormalDone = true }
@@ -812,6 +924,67 @@ export const useTestDataStore = defineStore('testData', {
       }
 
       return generated
+    },
+
+    /* ========== 生成策略（D-1） ========== */
+    saveGenerationStrategy(data = {}) {
+      const id = data.id || `gs-${Date.now()}`
+      const strategy = { ...data, id }
+      const idx = this.generationStrategies.findIndex((s) => s.id === id)
+      if (idx >= 0) this.generationStrategies.splice(idx, 1, strategy)
+      else this.generationStrategies.unshift(strategy)
+      return strategy
+    },
+    removeGenerationStrategy(id) {
+      const idx = this.generationStrategies.findIndex((s) => s.id === id)
+      if (idx >= 0) this.generationStrategies.splice(idx, 1)
+    },
+
+    /* ========== 筛选视图（H1） ========== */
+    saveHistoryView({ mode, name, filters }) {
+      const view = { id: `hv-${Date.now()}`, mode, name, filters: JSON.parse(JSON.stringify(filters || {})) }
+      this.historyViews.unshift(view)
+      return view
+    },
+    removeHistoryView(id) {
+      const idx = this.historyViews.findIndex((v) => v.id === id)
+      if (idx >= 0) this.historyViews.splice(idx, 1)
+    },
+
+    /**
+     * D-1/D-2：按策略执行一次生成（含覆盖率统计）。
+     * @param {any} datasetId
+     * @param {{count:number, mode:string, method:'constraint'|'distribution', referenceRows?:any[], fieldOverrides?:object}} opts
+     * @returns {{ok:boolean, rows:any[], coverage:object, reason?:string}}
+     */
+    runGeneration(datasetId, opts = {}) {
+      const ds = this.datasets.find((d) => d.id === datasetId)
+      if (!ds) return { ok: false, reason: '数据集不存在', rows: [], coverage: null }
+      const { count = 8, mode = 'mixed', method = 'constraint', referenceRows = [], fieldOverrides = {} } = opts
+      let rows = []
+      if (method === 'distribution') {
+        const samples = referenceRows.length
+          ? referenceRows
+          : [...ds.rows, ...(ds.historyRows || [])]
+        rows = sampleByDistribution(samples, count)
+        rows.forEach((row) => {
+          row.abnormal = this.computeAbnormal(row.values, datasetId)
+          row.autoTags = row.abnormal ? ['异常'] : []
+        })
+      } else {
+        rows = this.generateTestData(datasetId, count, mode, {
+          referenceRows,
+          referenceIds: referenceRows.map((row) => `${row._datasetId}-${row.id}`),
+          preferExcellent: referenceRows.some((row) => row.excellent),
+          fieldOverrides,
+        })
+      }
+      const protocolStore = useProtocolStore()
+      let defs = []
+      const iface = resolveLinkedIface(ds, protocolStore)
+      if (iface) defs = collectInterfaceDatasetFields(iface, protocolStore.protocols)
+      const coverage = coverageOf(defs, rows)
+      return { ok: true, rows, coverage, ds }
     },
 
     /* ========== 资源文件 ========== */
