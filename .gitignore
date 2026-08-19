@@ -29,3 +29,8 @@ docs
 .start-dev.bat
 .playwright-mcp
 search-mq.ps1
+
+# 工具分享页临时产物（SmartPage 注入/运行时/页面快照，可随时删除）
+_shared_conv.js
+_shared_inject.js
+_shared_tmp.html
