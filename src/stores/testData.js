@@ -12,12 +12,6 @@ let _fileSeq = 100
 
 const clone = (data) => JSON.parse(JSON.stringify(data))
 const today = () => new Date().toISOString().slice(0, 10)
-/** E1：认证复审截止日（默认 90 天后，YYYY-MM-DD） */
-const inDays = (days) => {
-  const d = new Date()
-  d.setDate(d.getDate() + days)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 const normalizeHistoryRow = (row = {}, dataset = {}, index = 0) => {
   const abnormal = !!row.abnormal
@@ -133,7 +127,7 @@ const normalizeDatasets = () => {
       row.savedAt = row.savedAt || row.createdAt
     })
   })
-  // A1/E1：为演示数据中已有的优秀行预置认证台账与客观复用统计；首条认证设为已过期（演示复审提醒）
+  // A1：为演示数据中已有的优秀行预置认证台账与客观复用统计
   list.forEach((dataset, di) => {
     (dataset.historyRows || []).forEach((row, ri) => {
       if (!row.excellent) return
@@ -146,11 +140,13 @@ const normalizeDatasets = () => {
           remark: '可作为回归基线复用',
         }
       }
-      // 演示：首条认证已超期（2026-06 认证），其余 80 天后到期
-      if (!row.reviewDueAt) row.reviewDueAt = di === 0 && ri === 0 ? '2026-07-01' : inDays(80)
-      // 引用次数：按数据集/行号派生（5~44），保证「按引用热度排序」有可见区分度
+      // 引用次数与最近复用：提供有区分度的演示热度数据
       if (!row.usageCount) row.usageCount = 5 + ((di * 7 + ri * 5) % 40)
-      if (!row.lastUsedAt) row.lastUsedAt = `${today()} 14:22`
+      if (!row.lastUsedAt) {
+        const usedAt = new Date()
+        usedAt.setDate(usedAt.getDate() - (di * 17 + ri * 29) % 150)
+        row.lastUsedAt = `${usedAt.getFullYear()}-${String(usedAt.getMonth() + 1).padStart(2, '0')}-${String(usedAt.getDate()).padStart(2, '0')} 14:22`
+      }
     })
   })
   return list
@@ -691,7 +687,7 @@ export const useTestDataStore = defineStore('testData', {
      */
     setExcellentBatch(rows, excellent = true, cert = null) {
       const certPayload = cert
-        ? { ...cert, certTime: new Date().toLocaleString('zh-CN', { hour12: false }), reviewDueAt: inDays(90) }
+        ? { ...cert, certTime: new Date().toLocaleString('zh-CN', { hour12: false }) }
         : null
       rows.forEach(({ _datasetId, id }) => {
         const ds = this.datasets.find((d) => d.id === _datasetId)
@@ -700,7 +696,6 @@ export const useTestDataStore = defineStore('testData', {
         row.excellent = excellent
         if (excellent && certPayload) {
           row.certification = certPayload
-          row.reviewDueAt = inDays(90)
         }
       })
     },
@@ -720,20 +715,6 @@ export const useTestDataStore = defineStore('testData', {
         ...(cert || {}),
         certTime: new Date().toLocaleString('zh-CN', { hour12: false }),
       }
-      // E1：认证复审截止日（90 天后）
-      row.reviewDueAt = inDays(90)
-    },
-
-    /**
-     * E1：认证复审通过——刷新复审截止日（90 天后）。
-     */
-    reviewCertification(datasetId, rowId) {
-      const ds = this.datasets.find((d) => d.id === datasetId)
-      const row = ds?.historyRows?.find((r) => r.id === rowId)
-      if (!row) return false
-      if (row.certification) row.certification.reviewedAt = new Date().toLocaleString('zh-CN', { hour12: false })
-      row.reviewDueAt = inDays(90)
-      return true
     },
 
     /**

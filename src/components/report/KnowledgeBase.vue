@@ -45,6 +45,13 @@
             <template #default="{ row }"><div class="doc-title" :title="row.summary || row.title"><el-icon :class="{ image: row.kind === 'image', case: row.kind === 'case' }"><Picture v-if="row.kind === 'image'" /><Star v-else-if="row.kind === 'case'" /><Document v-else /></el-icon><span><strong>{{ row.title }}</strong><small>v{{ row.version || 1 }} · {{ docTypeLabel(row) }}</small></span></div></template>
           </el-table-column>
           <el-table-column label="知识集合" width="104" show-overflow-tooltip><template #default="{ row }">{{ collectionName(row.collectionId) }}</template></el-table-column>
+          <el-table-column label="自动质量分" width="92" align="center">
+            <template #default="{ row }">
+              <el-tooltip :content="qualityHint(row)" placement="top">
+                <span class="quality-score" :class="`quality-score--${qualityTone(row)}`">{{ qualityMeta(row).qualityScore }}</span>
+              </el-tooltip>
+            </template>
+          </el-table-column>
           <el-table-column label="被引用" width="72" align="center">
             <template #default="{ row }">
               <el-tag v-if="docRefCount(row.id)" size="small" type="warning" effect="plain">{{ docRefCount(row.id) }}</el-tag>
@@ -79,6 +86,9 @@
             <el-descriptions-item label="知识集合">{{ collectionName(selectedDoc.collectionId) }}</el-descriptions-item>
             <el-descriptions-item label="文件类型">{{ selectedDoc.type?.toUpperCase() || '—' }}</el-descriptions-item>
             <el-descriptions-item label="更新时间">{{ selectedDoc.importedAt }}</el-descriptions-item>
+            <el-descriptions-item label="自动质量分"><span class="quality-inline"><b>{{ qualityMeta(selectedDoc).qualityScore }}</b> · {{ qualityMeta(selectedDoc).status }}</span></el-descriptions-item>
+            <el-descriptions-item label="自动引用率">{{ qualityMeta(selectedDoc).citationCount }} / {{ qualityMeta(selectedDoc).candidateCount }}（{{ qualityMeta(selectedDoc).citationRate }}%）</el-descriptions-item>
+            <el-descriptions-item label="最近引用">{{ qualityMeta(selectedDoc).lastCitationAt || '尚未引用' }}</el-descriptions-item>
           </el-descriptions>
           <div v-if="selectedDoc.summary" class="summary-card">
             <span class="summary-card__label">内容摘要</span>
@@ -132,11 +142,6 @@
                 <p>{{ hit.text }}</p>
                 <footer><span>{{ hit.docTitle }} #{{ hit.idx }}</span><b>{{ Math.round(hit.score * 100) }}%</b></footer>
                 <el-progress :percentage="Math.round(hit.score * 100)" :stroke-width="4" :show-text="false" />
-                <div class="hit-feedback">
-                  <span>结果是否有用？</span>
-                  <el-button size="small" text type="success" :disabled="(hit.feedback || 0) > 0" @click="feedback(hit, true)">有用</el-button>
-                  <el-button size="small" text type="danger" :disabled="(hit.feedback || 0) < 0" @click="feedback(hit, false)">无用</el-button>
-                </div>
               </div>
             </div>
             <el-empty v-if="!hits.length" :description="query ? '暂无命中片段' : '输入问题验证检索效果'" :image-size="58" />
@@ -188,6 +193,17 @@ const docTypeLabel = (doc) => doc.kind === 'case' ? '优秀案例' : (doc.type?.
 /* ---------- K2：知识引用热榜 / K3：批量管理 ---------- */
 const refStats = computed(() => store.knowledgeRefStats)
 const docRefCount = (id) => refStats.value.find((item) => item.docId === id)?.count || 0
+const qualityMeta = (doc) => store.knowledgeQualityOfDoc(doc.id)
+const qualityTone = (doc) => {
+  const meta = qualityMeta(doc)
+  if (meta.status === '低利用') return 'low'
+  if (meta.status === '稳定') return 'stable'
+  return 'learning'
+}
+const qualityHint = (doc) => {
+  const meta = qualityMeta(doc)
+  return `${meta.status} · 报告引用 ${meta.citationCount} / 候选曝光 ${meta.candidateCount} · 最近引用 ${meta.lastCitationAt || '暂无'}`
+}
 const selectDocById = (docId) => {
   const doc = store.knowledgeDocs.find((item) => item.id === docId)
   if (doc) {
@@ -308,13 +324,6 @@ const runSearch = () => {
   const ids = collectionId.value ? [collectionId.value] : null
   hits.value = store.searchKnowledge(query.value, ids, 5)
 }
-// K1：检索反馈（影响后续排序）
-const feedback = (hit, useful) => {
-  store.recordFeedback(hit.docId, hit.idx, useful)
-  hit.feedback = useful ? (hit.feedback || 0) + 0.15 : (hit.feedback || 0) - 0.2
-  ElMessage.success(useful ? '已标记有用，后续检索将提升该片段' : '已标记无用，后续检索将降低该片段')
-}
-
 const importVisible = ref(false)
 const importCollectionId = ref('kc-standard')
 const fileInput = ref(null)
@@ -373,10 +382,14 @@ const confirmImport = async () => {
 .doc-batchbar { padding: 7px 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--el-border-color-lighter); background: var(--el-fill-color-extra-light); }
 .doc-batchbar > span { margin-right: auto; font-size: 12px; }
 .doc-title { display: flex; align-items: center; gap: 8px; }.doc-title > .el-icon { color: #0f8b8d; font-size: 17px; }.doc-title > .el-icon.image { color: #c98212; }.doc-title > .el-icon.case { color: #c98212; }.doc-title span { min-width: 0; display: flex; flex-direction: column; }.doc-title strong, .doc-title small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.doc-title small { color: var(--el-text-color-secondary); font-size: 10px; }
+.quality-score { display: inline-grid; min-width: 38px; height: 24px; padding: 0 7px; place-items: center; border: 1px solid #b7d9d5; border-radius: 12px; background: #eef9f7; color: #0f766e; cursor: help; font-size: 12px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.quality-score--stable { border-color: #91d5ad; background: #eefaf3; color: #16794a; }
+.quality-score--low { border-color: #efc0b8; background: #fff3f1; color: #b54736; }
+.quality-inline b { color: #0f8b8d; font-size: 14px; }
 .inspector-panel { padding: 0 13px 12px; display: flex; flex-direction: column; }.inspector-tabs { flex-shrink: 0; }.inspector-tabs :deep(.el-tabs__header) { margin-bottom: 12px; }.inspector-tabs :deep(.el-tabs__content) { display: none; }
 .doc-inspector, .retrieval-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }.inspector-title { margin-bottom: 12px; display: flex; gap: 10px; align-items: center; }.inspector-title > span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 7px; background: #e8f6f3; color: #0f8b8d; }.inspector-title div { min-width: 0; display: flex; flex-direction: column; }.inspector-title strong, .inspector-title small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.inspector-title small { color: var(--el-text-color-secondary); }
 .chunk-head { margin: 15px 0 7px; display: flex; justify-content: space-between; }.chunk-head span { color: var(--el-text-color-secondary); font-size: 10px; }.chunk-list { flex: 1; min-height: 0; }.chunk-card { width: 100%; padding: 9px; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 7px; border: 0; border-bottom: 1px solid var(--el-border-color-lighter); background: transparent; cursor: pointer; text-align: left; }.chunk-card:hover { background: #effafa; }.chunk-card__idx { color: #0f8b8d; font-size: 10px; }.chunk-card__body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }.chunk-card__heading { overflow: hidden; color: #0f8b8d; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }.chunk-card__text { display: -webkit-box; overflow: hidden; color: var(--el-text-color-regular); font-size: 11px; line-height: 1.6; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }.chunk-card__type { color: var(--el-text-color-placeholder); font-size: 10px; white-space: nowrap; }
-.search-options { margin: 10px 0; display: flex; align-items: center; justify-content: space-between; }.search-options span { color: var(--el-text-color-secondary); font-size: 11px; }.hit-list { flex: 1; min-height: 0; margin-top: 2px; }.hit-card { padding: 9px 0; display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 8px; border-bottom: 1px solid var(--el-border-color-lighter); }.hit-rank { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: #eef4ff; color: #2f6feb; font-size: 10px; font-weight: 700; }.hit-card p { margin: 0 0 5px; font-size: 11px; line-height: 1.55; }.hit-card footer { display: flex; justify-content: space-between; color: var(--el-text-color-secondary); font-size: 10px; }.hit-card footer b { color: #2f6feb; }.hit-feedback { margin-top: 5px; display: flex; align-items: center; gap: 2px; color: var(--el-text-color-placeholder); font-size: 10px; }.hit-feedback .el-button { margin-left: 2px; font-size: 11px; }
+.search-options { margin: 10px 0; display: flex; align-items: center; justify-content: space-between; }.search-options span { color: var(--el-text-color-secondary); font-size: 11px; }.hit-list { flex: 1; min-height: 0; margin-top: 2px; }.hit-card { padding: 9px 0; display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 8px; border-bottom: 1px solid var(--el-border-color-lighter); }.hit-rank { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: #eef4ff; color: #2f6feb; font-size: 10px; font-weight: 700; }.hit-card p { margin: 0 0 5px; font-size: 11px; line-height: 1.55; }.hit-card footer { display: flex; justify-content: space-between; color: var(--el-text-color-secondary); font-size: 10px; }.hit-card footer b { color: #2f6feb; }
 .hidden-input { display: none; }.file-picker { width: 100%; min-height: 88px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; border: 1px dashed #8ec6c7; border-radius: 8px; background: #f4fbfb; color: #0f8b8d; cursor: pointer; }.file-picker .el-icon { font-size: 24px; }.pending-files { max-height: 180px; overflow: auto; }.pending-files div { padding: 7px 9px; display: flex; justify-content: space-between; border-bottom: 1px solid var(--el-border-color-lighter); }
 .summary-card { margin-top: 12px; padding: 9px 11px; border: 1px solid #bfe6e0; border-left: 3px solid #0f8b8d; border-radius: 7px; background: #f2fbfa; }
 .summary-card__label { display: block; margin-bottom: 4px; color: #0f8b8d; font-size: 11px; font-weight: 700; }

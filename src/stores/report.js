@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { useRunBatchStore } from '@/stores/runBatch'
 import { useTestDataStore } from '@/stores/testData'
+import { decayedUsageCounts, knowledgeQualityScore, knowledgeUsageKey, summarizeKnowledgeUsage } from '@/utils/knowledgeQuality'
 
 let seq = 9000
 const uid = (p = 'r') => `${p}-${++seq}`
@@ -12,7 +13,7 @@ const now = () => new Date().toISOString().slice(0, 16).replace('T', ' ')
  *  - 硬数据章节由所选批次的 summary / stepResults / 异常确定性组织
  *  - 描述性章节给多份变体，「重新生成」时轮换（体现生成灵活，不暴露 RAG）
  *  - 模板 = 上传的 DOCX 文件（全局复用），素材 = 生成时按需上传
- *  - 知识库 / 模型配置保留，供独立的「知识模型管理」页使用，本向导不引用
+ *  - 报告生成自动记录知识候选曝光与最终引用，用于维护知识质量分
  * ========================================================== */
 
 // 章节 kind 仅为内部字段，决定描述段能否「重新生成」，UI 不暴露
@@ -207,6 +208,9 @@ export const useReportStore = defineStore('report', {
       }
     ],
 
+    /* 自动知识质量：按 文档版本 + 片段 维护候选曝光与报告引用 */
+    knowledgeUsageStats: {},
+
     /* —— 模型配置（全局，供「知识库管理」页 / 系统设置使用） —— */
     modelConfig: {
       provider: 'api',
@@ -230,9 +234,6 @@ export const useReportStore = defineStore('report', {
     /* —— 已生成报告 —— */
     reports: [],
 
-    /* K1：检索反馈记录（key = `${docId}-${idx}`，值 ∈ [-0.6, 0.6]） */
-    searchFeedback: {},
-
     currentReportId: null,
     generating: false,
     genStage: -1
@@ -243,6 +244,15 @@ export const useReportStore = defineStore('report', {
     // 知识库统一管理，不按系统/模块过滤（保留 getter 名兼容旧调用）
     docsOfModule: (s) => () => s.knowledgeDocs,
     docsOfCollection: (s) => (collectionId) => s.knowledgeDocs.filter((doc) => !collectionId || doc.collectionId === collectionId),
+    knowledgeQualityOfDoc: (s) => (docId) => {
+      const doc = s.knowledgeDocs.find((item) => item.id === docId)
+      if (!doc) return summarizeKnowledgeUsage([])
+      const prefix = `${doc.id}::v${doc.version || 1}::`
+      const stats = Object.entries(s.knowledgeUsageStats)
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([, stat]) => stat)
+      return summarizeKnowledgeUsage(stats)
+    },
     versionsOfReport: (s) => (report) => {
       if (!report) return []
       const lineageId = report.lineageId || report.id
@@ -286,6 +296,9 @@ export const useReportStore = defineStore('report', {
     removeKnowledgeDoc(id) {
       const i = this.knowledgeDocs.findIndex((d) => d.id === id)
       if (i >= 0) this.knowledgeDocs.splice(i, 1)
+      Object.keys(this.knowledgeUsageStats).forEach((key) => {
+        if (key.startsWith(`${id}::`)) delete this.knowledgeUsageStats[key]
+      })
     },
 
     /**
@@ -363,23 +376,70 @@ export const useReportStore = defineStore('report', {
           const vec = d.vectorized === 'done' ? 0.55 + Math.random() * 0.4 : 0.2 + Math.random() * 0.3
           const keywordWeight = Number(weights.keyword ?? 0.5)
           const vectorWeight = Number(weights.vector ?? (1 - keywordWeight))
-          // K1：检索反馈加权（有用 +0.15 / 无用 -0.2）
-          const feedback = this.searchFeedback?.[`${d.id}-${c.idx}`] || 0
-          const score = +(keywordWeight * kw + vectorWeight * vec + feedback).toFixed(3)
-          hits.push({ docId: d.id, docTitle: d.title, idx: c.idx, text: c.text, kw: +kw.toFixed(2), vec: +vec.toFixed(2), feedback, score })
+          const score = +(keywordWeight * kw + vectorWeight * vec).toFixed(3)
+          hits.push({ docId: d.id, docTitle: d.title, idx: c.idx, text: c.text, kw: +kw.toFixed(2), vec: +vec.toFixed(2), score })
         })
       })
       return hits.sort((a, b) => b.score - a.score).slice(0, topK)
     },
 
-    /** K1：记录检索反馈（有用 +1 / 无用 -1），影响后续排序 */
-    recordFeedback(docId, idx, useful) {
-      const key = `${docId}-${idx}`
-      if (!this.searchFeedback) this.searchFeedback = {}
-      const base = this.searchFeedback[key] || 0
-      const delta = useful ? 0.15 : -0.2
-      // 同向累计上限 ±0.6，避免单条反馈过度支配
-      this.searchFeedback[key] = Math.max(-0.6, Math.min(0.6, base + delta))
+    /** 报告生成专用：相关性召回 → 自动质量重排 → 系统记录曝光与引用。 */
+    rankKnowledgeForGeneration(query, collectionIds = null, candidateTopK = 12, citationTopK = 3) {
+      const candidates = this.searchKnowledge(query, collectionIds, candidateTopK, {
+        keyword: this.modelConfig.keywordWeight,
+        vector: this.modelConfig.vectorWeight,
+      })
+      const ranked = candidates.map((hit) => {
+        const doc = this.knowledgeDocs.find((item) => item.id === hit.docId)
+        const key = knowledgeUsageKey(hit.docId, doc?.version || 1, hit.idx)
+        const stat = this.knowledgeUsageStats[key] || {}
+        const qualityScore = knowledgeQualityScore(stat)
+        const explorationScore = 1 / Math.sqrt(Number(stat.candidateCount || 0) + 1)
+        const relevanceScore = Math.max(0, Math.min(1, Number(hit.score || 0)))
+        const finalScore = 0.75 * relevanceScore + 0.2 * (qualityScore / 100) + 0.05 * explorationScore
+        return { ...hit, version: doc?.version || 1, retrievalScore: hit.score, qualityScore, score: +finalScore.toFixed(3) }
+      }).sort((a, b) => b.score - a.score)
+
+      candidates.forEach((hit) => this.recordKnowledgeUsage(hit, 'candidate'))
+      const citations = ranked.slice(0, citationTopK)
+      citations.forEach((hit) => {
+        this.recordKnowledgeUsage(hit, 'used')
+        this.recordKnowledgeUsage(hit, 'citation')
+      })
+      return citations
+    },
+
+    recordKnowledgeUsage(hit, type) {
+      const doc = this.knowledgeDocs.find((item) => item.id === hit.docId)
+      if (!doc) return
+      const key = knowledgeUsageKey(hit.docId, doc.version || 1, hit.idx)
+      const current = this.knowledgeUsageStats[key] || {}
+      const weighted = decayedUsageCounts(current)
+      const timestamp = now()
+      const next = {
+        ...current,
+        docId: hit.docId,
+        version: doc.version || 1,
+        idx: hit.idx,
+        candidateCount: Number(current.candidateCount || 0),
+        usedCount: Number(current.usedCount || 0),
+        citationCount: Number(current.citationCount || 0),
+        weightedCandidateCount: weighted.candidates,
+        weightedCitationCount: weighted.citations,
+        updatedAt: timestamp,
+      }
+      if (type === 'candidate') {
+        next.candidateCount += 1
+        next.weightedCandidateCount += 1
+        next.lastCandidateAt = timestamp
+      }
+      if (type === 'used') next.usedCount += 1
+      if (type === 'citation') {
+        next.citationCount += 1
+        next.weightedCitationCount += 1
+        next.lastCitationAt = timestamp
+      }
+      this.knowledgeUsageStats[key] = next
     },
 
     /* —— 模型配置 —— */
@@ -457,8 +517,15 @@ export const useReportStore = defineStore('report', {
           .filter((s) => order.includes(s.key))
           .sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key))
       }
+      const reportId = uid('rep')
+      const knowledgeCitations = this.rankKnowledgeForGeneration(
+        scopeNameOf(run),
+        knowledgeCollectionIds || this.selectedKnowledgeCollectionIds,
+        Math.max(12, Number(this.modelConfig.retrievalTopK || 6)),
+        3,
+      )
       const rep = {
-        id: uid('rep'),
+        id: reportId,
         lineageId,
         version,
         title: renderedTitle,
@@ -472,7 +539,7 @@ export const useReportStore = defineStore('report', {
         chapterPresetId: preset?.id || null,
         materials: (materials || []).map((m) => ({ ...m })),
         knowledgeCollectionIds: [...(knowledgeCollectionIds || this.selectedKnowledgeCollectionIds || [])],
-        knowledgeCitations: this.searchKnowledge(scopeNameOf(run), knowledgeCollectionIds || this.selectedKnowledgeCollectionIds, 3),
+        knowledgeCitations,
         excellentCaseCitations,
         createdAt: now(),
         status: 'done',

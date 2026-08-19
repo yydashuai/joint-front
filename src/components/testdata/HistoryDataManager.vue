@@ -35,10 +35,13 @@
         </el-select>
         <el-date-picker v-model="dateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" style="width: 238px" />
         <el-select v-if="mode === 'excellent'" v-model="sortMode" style="width: 160px">
+          <el-option label="按综合热度排序" value="hot" />
           <el-option label="按结构匹配度排序" value="match" />
-          <el-option label="按引用热度排序" value="rate" />
           <el-option label="按创建时间排序" value="created" />
         </el-select>
+        <el-tooltip v-if="mode === 'excellent'" content="综合热度由实际复用次数、最近复用时间和入库时间计算；陈旧且长期未复用的数据会自然沉底" placement="bottom">
+          <span class="heat-rule">热度规则</span>
+        </el-tooltip>
         <el-select v-model="tagFilter" multiple collapse-tags collapse-tags-tooltip clearable placeholder="标签筛选" style="width: 190px">
           <el-option v-for="tag in allTags" :key="tag" :label="tag" :value="tag" />
         </el-select>
@@ -53,18 +56,11 @@
         </button>
       </div>
 
-      <!-- E1：认证复审提醒 -->
-      <div v-if="mode === 'excellent' && overdueRows.length" class="review-banner">
-        <el-icon><WarningFilled /></el-icon>
-        <span>{{ overdueRows.length }} 条优秀报文认证已过期，建议复审</span>
-        <el-button link type="primary" size="small" @click="openDetail(overdueRows[0])">前往复审</el-button>
-      </div>
-
       <div v-if="mode === 'excellent' && recommendRows.length" class="reco-bar">
         <span class="reco-bar__title">{{ hasRecommendContext ? '相似推荐' : '热门推荐' }}</span>
         <button v-for="row in recommendRows" :key="row._rowKey" type="button" class="reco-card" @click="openDetail(row)">
           <strong>{{ row.messageName }}</strong>
-          <span class="reco-card__score">{{ hasRecommendContext ? `结构匹配度 ${matchScore(row)}%` : `引用热度 ${matchScore(row)}%` }}</span>
+          <span class="reco-card__score">{{ hasRecommendContext ? `结构匹配度 ${matchScore(row)}%` : `综合热度 ${matchScore(row)}` }}</span>
           <span v-if="hasRecommendContext && recommendMatchedFields(row).length" class="reco-card__matched">匹配字段：{{ recommendMatchedFields(row).join('、') }}</span>
           <span class="reco-card__meta">引用 {{ row.usageCount || 0 }} 次 · 最近复用 {{ row.lastUsedAt || '—' }}</span>
         </button>
@@ -90,7 +86,7 @@
             <template #default="{ row }">
               <div class="tag-cell tag-cell--table" :title="[...(row.abnormal ? ['异常'] : []), ...(row.customTags || [])].join('、')">
                 <el-tag v-if="row.abnormal" size="small" type="danger" effect="dark"><el-icon><WarningFilled /></el-icon>异常</el-tag>
-                <el-tag v-if="mode === 'excellent' && row.certification" size="small" :type="isOverdue(row) ? 'warning' : 'success'" effect="dark"><el-icon><Stamp /></el-icon>{{ isOverdue(row) ? '待复审' : '已认证' }}</el-tag>
+                <el-tag v-if="mode === 'excellent' && row.certification" size="small" type="success" effect="dark"><el-icon><Stamp /></el-icon>已认证</el-tag>
                 <el-tag v-for="tag in row.customTags" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
                 <span v-if="!row.abnormal && !row.certification && !row.customTags?.length" class="muted">—</span>
               </div>
@@ -102,12 +98,16 @@
           <el-table-column prop="createdAt" label="创建日期" width="104" />
           <el-table-column v-if="mode === 'excellent'" label="认证" width="86" align="center">
             <template #default="{ row }">
-              <el-tag v-if="row.certification" size="small" :type="isOverdue(row) ? 'warning' : 'success'" effect="plain">{{ isOverdue(row) ? '待复审' : '已认证' }}</el-tag>
+              <el-tag v-if="row.certification" size="small" type="success" effect="plain">已认证</el-tag>
               <span v-else class="muted">—</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="mode === 'excellent'" label="引用" width="64" align="center">
-            <template #default="{ row }"><span class="muted-num">{{ row.usageCount || 0 }}</span></template>
+          <el-table-column v-if="mode === 'excellent'" label="热度" width="72" align="center">
+            <template #default="{ row }">
+              <el-tooltip :content="heatHint(row)" placement="top">
+                <span class="heat-score">{{ hotScore(row) }}</span>
+              </el-tooltip>
+            </template>
           </el-table-column>
           <el-table-column v-if="mode === 'excellent'" label="最近复用" width="104" prop="lastUsedAt" />
           <el-table-column label="操作" :width="mode === 'excellent' ? 132 : 104" fixed="right" align="center">
@@ -177,20 +177,19 @@
           <el-descriptions :column="1" border size="small">
             <el-descriptions-item label="认证人">{{ detailRow.certification.certifier }}</el-descriptions-item>
             <el-descriptions-item label="认证时间">{{ detailRow.certification.certTime }}</el-descriptions-item>
-            <el-descriptions-item label="复审截止">{{ detailRow.reviewDueAt || '—' }}</el-descriptions-item>
             <el-descriptions-item label="达标指标">{{ detailRow.certification.criteria }}</el-descriptions-item>
             <el-descriptions-item label="适用场景">{{ detailRow.certification.scenario }}</el-descriptions-item>
             <el-descriptions-item label="备注">{{ detailRow.certification.remark || '—' }}</el-descriptions-item>
           </el-descriptions>
           <div class="cert-actions">
             <el-button link type="primary" size="small" @click="openCertify(detailRow)">编辑认证</el-button>
-            <el-button link type="success" size="small" @click="reviewCurrent">复审通过</el-button>
           </div>
         </div>
         <el-empty v-else description="尚未认证为优秀" :image-size="48" />
 
         <h4>复用足迹</h4>
         <div class="reuse-foot">
+          <div class="reuse-foot__item"><span>综合热度</span><b class="reuse-foot__heat">{{ hotScore(detailRow) }}</b><small>满分 100</small></div>
           <div class="reuse-foot__item"><span>被引用</span><b>{{ detailRow.usageCount || 0 }}</b><small>次</small></div>
           <div class="reuse-foot__item"><span>最近复用</span><b class="reuse-foot__time">{{ detailRow.lastUsedAt || '—' }}</b></div>
           <div class="reuse-foot__item"><span>知识沉淀</span><b class="reuse-foot__kb" @click="openKnowledgeCase(detailRow)">{{ detailRow.caseDocId ? '查看案例卡' : '生成案例卡' }}</b></div>
@@ -305,6 +304,7 @@ import { useExecutionStore } from '@/stores/execution'
 import { useSystemStore } from '@/stores/system'
 import { useProtocolStore, collectInterfaceDatasetFields } from '@/stores/protocol'
 import { useReportStore } from '@/stores/report'
+import { excellentHeatHint, excellentHeatScore } from '@/utils/excellentHeat'
 import { downloadBlob } from '@/services/testDataService'
 import { checkFieldConstraints } from '@/utils/receiveValidator'
 
@@ -338,8 +338,8 @@ const selectedRows = ref([])
 const activeViewId = ref('')
 // E4：认证场景分组筛选
 const scenarioFilter = ref('')
-// A-1：优秀视图排序模式（'match' 结构匹配度 / 'rate' 引用热度 / 'created' 创建时间）
-const sortMode = ref('match')
+// 优秀视图默认按综合热度排序，也可切换为结构匹配度或创建时间
+const sortMode = ref('hot')
 // A1：优秀认证表单状态
 const certVisible = ref(false)
 const certIsBatch = ref(false)
@@ -435,7 +435,7 @@ const filteredRows = computed(() => {
     if (kw && ![row.messageName, row.remark, ...(row.customTags || [])].some((value) => String(value || '').toLowerCase().includes(kw))) return false
     return true
   })
-  // A-1：优秀视图按所选维度排序（结构匹配度 / 引用热度 / 创建时间）
+  // 优秀视图默认按综合热度排序，让长期未复用的数据自然沉底
   if (props.mode === 'excellent') {
     if (sortMode.value === 'created') rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     else rows.sort((a, b) => sortValue(b) - sortValue(a))
@@ -466,23 +466,18 @@ const structureSimilarity = (leftProfile, rightProfile) => {
 const matchScore = (row) => {
   const targetProfile = currentTargetProfile()
   if (!targetProfile) {
-    // 无上下文：按引用热度（相对全局最大引用次数的归一化，0~100%）
+    // 无上下文：按综合热度推荐
     return hotScore(row)
   }
   return structureSimilarity(fieldProfileOf(row), targetProfile)
 }
-// 引用热度：相对全局最大引用次数的百分比，避免固定折算导致大量 100%
-const hotScore = (row) => {
-  const all = baseRows.value.map((r) => Number(r.usageCount || 0))
-  const maxUsage = all.length ? Math.max(...all) : 0
-  if (!maxUsage) return 0
-  return Math.min(100, Math.round((Number(row.usageCount || 0) / maxUsage) * 100))
-}
+const hotScore = (row) => excellentHeatScore(row, baseRows.value)
+const heatHint = (row) => excellentHeatHint(row, baseRows.value)
 const sortValue = (row) => {
-  if (sortMode.value === 'rate') return Number(row.usageCount || 0)
+  if (sortMode.value === 'hot') return hotScore(row)
   return matchScore(row)
 }
-// A-1：是否有推荐上下文（树选中或正在查看的报文/接口）→ 无上下文按引用热度推荐（标题「热门推荐」），有上下文按结构匹配（标题「相似推荐」）
+// 是否有推荐上下文：无上下文按综合热度推荐，有上下文按结构匹配推荐
 const hasRecommendContext = computed(() => !!recommendContext.value)
 
 // A-1：相似推荐 Top3
@@ -636,16 +631,6 @@ const onLoadView = (id) => {
   ElMessage.success(`已载入视图「${view.name}」`)
 }
 
-/* ---------- E1：认证复审 ---------- */
-const todayStr = () => new Date().toISOString().slice(0, 10)
-const isOverdue = (row) => !!(row.certification && row.reviewDueAt && row.reviewDueAt < todayStr())
-const overdueRows = computed(() => baseRows.value.filter(isOverdue))
-const reviewCurrent = () => {
-  if (!detailRow.value) return
-  store.reviewCertification(detailRow.value._datasetId, detailRow.value.id)
-  ElMessage.success('复审通过，认证有效期已刷新（90 天）')
-}
-
 /* ---------- E4：认证场景分组 ---------- */
 const scenarioOptions = computed(() => [...new Set(
   baseRows.value
@@ -655,7 +640,7 @@ const scenarioOptions = computed(() => [...new Set(
 
 /* ---------- E2：推荐可解释（匹配字段） ---------- */
 // 推荐上下文：左侧树选中报文/接口 > 当前打开的详情行报文（"正在查看谁，就推荐与谁相似的"）；
-// 都没有则为空 → 「热门推荐」（按引用热度），有上下文 → 「相似推荐」（按结构匹配度）
+// 都没有则为空 → 「热门推荐」（按综合热度），有上下文 → 「相似推荐」（按结构匹配度）
 const recommendContext = computed(() => {
   const target = selectedMessageId.value
     ? protoStore.interfaces.find((m) => String(m.id) === String(selectedMessageId.value))
@@ -916,7 +901,7 @@ const exportAsCsv = (rows) => {
   const isExc = props.mode === 'excellent'
   const base = ['报文名', '创建日期', '来源', '备注', '标签']
   // E3：优秀库导出附认证信息与客观引用统计
-  const excCols = isExc ? ['认证人', '认证时间', '复审截止', '引用次数', '最近复用'] : []
+  const excCols = isExc ? ['认证人', '认证时间', '综合热度', '引用次数', '最近复用'] : []
   const head = [...base, ...excCols, ...fieldKeys]
   const lines = [head.map(csvEscape).join(',')]
   clean.forEach((row) => {
@@ -929,7 +914,7 @@ const exportAsCsv = (rows) => {
       ...(isExc ? [
         row.certification?.certifier || '',
         row.certification?.certTime || '',
-        row.reviewDueAt || '',
+        hotScore(row),
         Number(row.usageCount || 0),
         row.lastUsedAt || '',
       ] : []),
@@ -961,6 +946,7 @@ const onExportCommand = (command) => {
 .asset-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .filters__search { flex: 1; min-width: 220px; }
+.heat-rule { color: var(--asset); cursor: help; font-size: 11px; text-decoration: underline dotted; text-underline-offset: 3px; }
 .quick-tags { min-height: 28px; display: flex; align-items: center; gap: 7px; color: var(--el-text-color-secondary); font-size: 12px; }
 .quick-tags button { padding: 3px 9px; border: 1px solid var(--el-border-color); border-radius: 12px; background: #fff; color: var(--el-text-color-regular); cursor: pointer; }
 .quick-tags button:hover, .quick-tags button.active { border-color: var(--asset); color: var(--asset); background: color-mix(in srgb, var(--asset) 7%, white); }
@@ -1002,8 +988,6 @@ h4 { margin: 18px 0 10px; font-size: 14px; }
 @media (max-width: 1180px) { .asset-library { grid-template-columns: 226px minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { .quick-tags button { transition: none; } }
 .reco-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 9px 12px; border: 1px dashed var(--el-border-color); border-radius: 8px; background: var(--el-fill-color-light); }
-.review-banner { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid #f5d8a8; border-radius: 8px; background: #fdf6ec; color: #a15c07; font-size: 12px; }
-.review-banner .el-icon { font-size: 14px; }
 .cert-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
 .reco-bar__title { font-size: 12px; font-weight: 700; color: var(--asset); }
 .reco-card { display: flex; flex-direction: column; gap: 2px; padding: 7px 12px; border: 1px solid var(--el-border-color); border-radius: 8px; background: #fff; cursor: pointer; text-align: left; min-width: 160px; }
@@ -1016,6 +1000,7 @@ h4 { margin: 18px 0 10px; font-size: 14px; }
 .drawer-reco { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px dashed var(--el-border-color); border-radius: 8px; background: var(--el-fill-color-extra-light); }
 .drawer-reco__empty { margin: 0; font-size: 12px; color: var(--el-text-color-placeholder); }
 .muted-num { color: var(--el-text-color-secondary); }
+.heat-score { display: inline-grid; min-width: 36px; height: 24px; padding: 0 7px; place-items: center; border: 1px solid #efc879; border-radius: 12px; background: #fff8e8; color: #9a5a05; cursor: help; font-size: 12px; font-weight: 750; font-variant-numeric: tabular-nums; }
 .cert-box { margin-bottom: 12px; }
 .cert-box .el-button { margin-top: 8px; }
 .reuse-foot { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -1026,5 +1011,6 @@ h4 { margin: 18px 0 10px; font-size: 14px; }
 .reuse-foot__item b.is-mid { color: var(--el-color-warning); }
 .reuse-foot__item b.is-bad { color: var(--el-color-danger); }
 .reuse-foot__item small { color: var(--el-text-color-secondary); font-size: 11px; }
+.reuse-foot__heat { color: #b66a05 !important; }
 .reuse-foot__time { font-size: 13px !important; line-height: 22px; }
 </style>

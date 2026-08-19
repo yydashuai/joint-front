@@ -34,51 +34,13 @@
             <ChartCard title="历史数据来源构成">
               <DonutChart :data="sourceDonut" center-label="历史数据" />
             </ChartCard>
-            <ChartCard title="优秀报文引用热度 Top">
+            <ChartCard title="优秀报文综合热度 Top">
               <BarChart :data="topUsage" horizontal />
-            </ChartCard>
-            <ChartCard title="优秀报文认证人分布">
-              <DonutChart :data="certifierDonut" center-label="认证报文" />
             </ChartCard>
             <ChartCard title="历史数据量趋势（近 30 日）">
               <LineChart :series="[{ name: '数据量', color: '#2f6bff', points: volumeTrend }]" unit="条" />
             </ChartCard>
           </div>
-
-          <ChartCard title="字段值分布分析" full>
-            <template #extra>
-              <el-select v-model="selectedDsId" size="small" filterable style="width: 220px" placeholder="选择数据集">
-                <el-option v-for="ds in scopeDatasets" :key="ds.id" :label="ds.name" :value="ds.id" />
-              </el-select>
-            </template>
-            <el-table :data="fieldDist" size="small" max-height="240" empty-text="所选数据集暂无样本数据">
-              <el-table-column prop="name" label="字段" min-width="140" />
-              <el-table-column prop="type" label="类型" width="80" align="center">
-                <template #default="{ row }">
-                  <el-tag size="small" :type="row.type === '数值' ? 'primary' : 'info'" effect="plain">{{ row.type }}</el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column prop="summary" label="取值分布摘要" min-width="220" />
-              <el-table-column prop="constraint" label="字段约束" min-width="140" show-overflow-tooltip />
-            </el-table>
-          </ChartCard>
-
-          <ChartCard title="数据质量体检" full>
-            <template #extra>基于所选数据集样本的客观检查</template>
-            <div v-if="qualityReport" class="quality-grid">
-              <div><span>样本总数</span><b>{{ qualityReport.total }}</b></div>
-              <div><span>空值行</span><b :class="{ bad: qualityReport.emptyRows }">{{ qualityReport.emptyRows }}</b></div>
-              <div><span>缺省字段</span><b :class="{ bad: qualityReport.missingFields.length }">{{ qualityReport.missingFields.length }}</b></div>
-              <div><span>类型混用字段</span><b :class="{ bad: qualityReport.mixedFields.length }">{{ qualityReport.mixedFields.length }}</b></div>
-            </div>
-            <div v-if="qualityReport && qualityReport.missingFields.length" class="quality-detail">缺省字段：{{ qualityReport.missingFields.join('、') }}</div>
-            <div v-if="qualityReport && qualityReport.mixedFields.length" class="quality-detail">类型混用：{{ qualityReport.mixedFields.join('、') }}</div>
-            <div v-if="dupPairs.length" class="quality-detail dup">
-              <span class="quality-detail__label">疑似重复数据集（结构相似 ≥ 80%）</span>
-              <span v-for="p in dupPairs" :key="`${p.a}-${p.b}`" class="dup-pair">{{ p.a }} ↔ {{ p.b }}（{{ p.sim }}%）</span>
-            </div>
-            <el-empty v-if="!qualityReport" description="选择数据集查看质量检查" :image-size="56" />
-          </ChartCard>
 
           <ChartCard title="数据集资产明细" full>
             <el-table :data="datasetRows" size="small" max-height="230" empty-text="暂无数据集">
@@ -115,8 +77,8 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
-import { RefreshLeft, Download } from '@element-plus/icons-vue'
+import { computed, ref } from 'vue'
+import { Download } from '@element-plus/icons-vue'
 import BarChart from '@/components/stats/BarChart.vue'
 import ChartCard from '@/components/stats/ChartCard.vue'
 import DonutChart from '@/components/stats/DonutChart.vue'
@@ -126,7 +88,7 @@ import { useTestDataStore } from '@/stores/testData'
 import { useAnalysisStore } from '@/stores/analysis'
 import { useSystemStore } from '@/stores/system'
 import { useProtocolStore } from '@/stores/protocol'
-import { analyzeDistribution } from '@/utils/dataGen'
+import { excellentHeatScore } from '@/utils/excellentHeat'
 
 const emit = defineEmits(['navigate'])
 const tdStore = useTestDataStore()
@@ -134,7 +96,6 @@ const analysisStore = useAnalysisStore()
 const systemStore = useSystemStore()
 const protoStore = useProtocolStore()
 const activePanel = ref('analysis')
-const selectedDsId = ref(tdStore.datasets[0]?.id || null)
 
 /* ---------- S1：范围筛选 ---------- */
 const systemId = ref('')
@@ -148,12 +109,6 @@ const scopeTitle = computed(() => {
   if (interfaceId.value) parts.push(protoStore.testInterfaces.find((i) => String(i.id) === String(interfaceId.value))?.name || '')
   return parts.filter(Boolean).join(' · ')
 })
-watch(selectedDsId, (id) => {
-  if (id && !scopeDatasets.value.some((ds) => ds.id === id)) {
-    selectedDsId.value = scopeDatasets.value[0]?.id || null
-  }
-})
-
 /* ---------- 客观指标（随范围过滤） ---------- */
 const scopeDatasets = computed(() => tdStore.datasets.filter((ds) => !systemId.value || ds.systemId === systemId.value))
 const scopeFiles = computed(() => tdStore.files.filter((file) => !systemId.value || file.systemId === systemId.value))
@@ -193,21 +148,9 @@ const sourceDonut = computed(() => {
 })
 
 const topUsage = computed(() => [...excellentRows.value]
-  .sort((a, b) => Number(b.usageCount || 0) - Number(a.usageCount || 0))
+  .sort((a, b) => excellentHeatScore(b, excellentRows.value) - excellentHeatScore(a, excellentRows.value))
   .slice(0, 6)
-  .map((row) => ({ label: row.messageName, value: Number(row.usageCount || 0), color: '#c98212' })))
-
-const CERT_COLORS = ['#c98212', '#2f6bff', '#0f8b8d', '#6d5ce7', '#d97706']
-const certifierDonut = computed(() => {
-  const map = new Map()
-  excellentRows.value.forEach((row) => {
-    const name = row.certification?.certifier || '未记录'
-    map.set(name, (map.get(name) || 0) + 1)
-  })
-  return [...map.entries()]
-    .map(([label, value], index) => ({ label, value, color: CERT_COLORS[index % CERT_COLORS.length] }))
-    .filter((item) => item.value > 0)
-})
+  .map((row) => ({ label: row.messageName, value: excellentHeatScore(row, excellentRows.value), color: '#c98212' })))
 
 const volumeTrend = computed(() => {
   const map = new Map()
@@ -220,30 +163,6 @@ const volumeTrend = computed(() => {
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(-30)
     .map(([x, y]) => ({ x: x.slice(5), y }))
-})
-
-/* ---------- 字段分布 ---------- */
-const constraintText = (constraint) => {
-  if (!constraint?.mode) return '—'
-  if (constraint.mode === 'range') return `${constraint.min ?? '—'} ~ ${constraint.max ?? '—'}`
-  if (constraint.mode === 'fixed') return `固定 ${constraint.value}`
-  if (constraint.mode === 'enum') return `枚举 ${(constraint.entries || []).map((item) => item.value ?? item).join('/')}`
-  return constraint.mode
-}
-const fieldDist = computed(() => {
-  const ds = scopeDatasets.value.find((d) => d.id === selectedDsId.value)
-  if (!ds) return []
-  const samples = [...(ds.rows || []), ...(ds.historyRows || [])]
-  const dist = analyzeDistribution(samples)
-  const defMap = new Map(tdStore.fieldDefsOfDataset(ds.id).map((f) => [f.name, f]))
-  return Object.entries(dist).slice(0, 12).map(([name, info]) => ({
-    name,
-    type: info.type === 'numeric' ? '数值' : '文本',
-    summary: info.type === 'numeric'
-      ? `范围 ${info.min} ~ ${info.max}${info.isInteger ? '' : '（浮点）'}`
-      : `取值 ${Object.keys(info.freq).length} 种`,
-    constraint: constraintText(defMap.get(name)?.constraint),
-  }))
 })
 
 /* ---------- 数据集资产明细 ---------- */
@@ -263,46 +182,6 @@ const datasetRows = computed(() => scopeDatasets.value.map((ds) => {
 /* ---------- 生成记录 ---------- */
 const genLogs = computed(() => analysisStore.logsOfType('智能生成').slice(0, 6))
 
-/* ---------- S3：数据质量体检（客观检查） ---------- */
-const qualityReport = computed(() => {
-  const ds = scopeDatasets.value.find((d) => d.id === selectedDsId.value)
-  if (!ds) return null
-  const samples = [...(ds.rows || []), ...(ds.historyRows || [])]
-  const defs = tdStore.fieldDefsOfDataset(ds.id)
-  const dist = analyzeDistribution(samples)
-  const emptyRows = samples.filter((row) => Object.values(row.values || {}).every((v) => v === '' || v == null)).length
-  const rowKeys = samples.length ? Object.keys(samples[0].values || {}) : []
-  const missingFields = defs.map((f) => f.name).filter((name) => !rowKeys.includes(name))
-  const mixedFields = Object.entries(dist)
-    .filter(([, info]) => {
-      const keys = Object.keys(info.freq)
-      const hasNum = keys.some((k) => /^-?\d+(\.\d+)?$/.test(k))
-      const hasStr = keys.some((k) => !/^-?\d+(\.\d+)?$/.test(k))
-      return hasNum && hasStr
-    })
-    .map(([name]) => name)
-  return { total: samples.length, emptyRows, missingFields, mixedFields }
-})
-
-/* ---------- S5：重复数据集检测（结构相似度） ---------- */
-const dupPairs = computed(() => {
-  const list = scopeDatasets.value
-  const pairs = []
-  for (let i = 0; i < list.length; i += 1) {
-    for (let j = i + 1; j < list.length; j += 1) {
-      const a = new Set(tdStore.fieldDefsOfDataset(list[i].id).map((f) => f.name))
-      const b = new Set(tdStore.fieldDefsOfDataset(list[j].id).map((f) => f.name))
-      const union = new Set([...a, ...b])
-      if (!union.size) continue
-      let inter = 0
-      a.forEach((name) => { if (b.has(name)) inter += 1 })
-      const sim = inter / union.size
-      if (sim >= 0.8) pairs.push({ a: list[i].name, b: list[j].name, sim: Math.round(sim * 100) })
-    }
-  }
-  return pairs
-})
-
 /* ---------- S4：分析快照导出 ---------- */
 const toCsv = (headers, rows) => [
   headers.join(','),
@@ -313,19 +192,10 @@ const exportSnapshot = () => {
   parts.push(`智能分析快照（${scopeTitle.value || '全部范围'}），${new Date().toLocaleString('zh-CN', { hour12: false })}`)
   parts.push(toCsv(['指标', '数值'], kpiList.value.map((k) => ({ 指标: k.label, 数值: k.value }))))
   parts.push('数据来源构成：' + sourceDonut.value.map((d) => `${d.label}=${d.value}`).join('，'))
-  parts.push('优秀引用热度 Top：' + topUsage.value.map((d) => `${d.label}=${d.value}`).join('，'))
-  parts.push('认证人分布：' + certifierDonut.value.map((d) => `${d.label}=${d.value}`).join('，'))
+  parts.push('优秀综合热度 Top：' + topUsage.value.map((d) => `${d.label}=${d.value}`).join('，'))
   parts.push(toCsv(['数据集', '关联报文', '数据行', '历史行', '优秀行', '字段数'], datasetRows.value.map((r) => ({
     数据集: r.name, 关联报文: r.iface, 数据行: r.rows, 历史行: r.hist, 优秀行: r.excellent, 字段数: r.fields,
   }))))
-  if (qualityReport.value) {
-    parts.push(toCsv(['检查项', '结果'], [
-      { 检查项: '样本总数', 结果: qualityReport.value.total },
-      { 检查项: '空值行', 结果: qualityReport.value.emptyRows },
-      { 检查项: '缺省字段', 结果: qualityReport.value.missingFields.join('、') || '无' },
-      { 检查项: '类型混用字段', 结果: qualityReport.value.mixedFields.join('、') || '无' },
-    ]))
-  }
   const blob = new Blob([`\uFEFF${parts.join('\n\n')}`], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -407,15 +277,6 @@ const exportSnapshot = () => {
 }
 .exc-num { color: #c98212; }
 .muted { color: var(--el-text-color-secondary); font-size: 12px; }
-.quality-grid { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; margin-bottom: 10px; }
-.quality-grid > div { padding: 10px 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-fill-color-extra-light); }
-.quality-grid span { display: block; color: var(--el-text-color-secondary); font-size: 11px; }
-.quality-grid b { font-size: 20px; }
-.quality-grid b.bad { color: var(--el-color-danger); }
-.quality-detail { margin-top: 6px; padding: 7px 10px; border-radius: 6px; background: var(--el-fill-color-light); color: var(--el-text-color-regular); font-size: 12px; }
-.quality-detail.dup { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #fdf6ec; }
-.quality-detail__label { color: #a15c07; font-weight: 600; }
-.dup-pair { padding: 2px 8px; border-radius: 10px; background: #fff; border: 1px solid #f0d9b5; color: #854f0b; font-size: 11px; }
 @media (max-width: 1200px) {
   .kpi-grid { grid-template-columns: repeat(3, minmax(130px, 1fr)); }
   .chart-grid { grid-template-columns: 1fr; }
