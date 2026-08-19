@@ -125,6 +125,14 @@ const normalizeDatasets = () => {
   })
   // 演示标注：首条历史数据标记为「优秀历史」，便于展示优秀标签与筛选
   if (list[0]?.historyRows?.length) list[0].historyRows[0].excellent = true
+  // 演示数据区分度：为「按创建时间排序」与日期筛选提供多样化的创建日期（按数据集 × 行号递增，日期错开）
+  list.forEach((dataset, di) => {
+    (dataset.historyRows || []).forEach((row, ri) => {
+      const d = new Date(2026, 5, 20 + di * 3 + ri)
+      row.createdAt = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      row.savedAt = row.savedAt || row.createdAt
+    })
+  })
   // A1/E1：为演示数据中已有的优秀行预置认证台账与客观复用统计；首条认证设为已过期（演示复审提醒）
   list.forEach((dataset, di) => {
     (dataset.historyRows || []).forEach((row, ri) => {
@@ -140,7 +148,8 @@ const normalizeDatasets = () => {
       }
       // 演示：首条认证已超期（2026-06 认证），其余 80 天后到期
       if (!row.reviewDueAt) row.reviewDueAt = di === 0 && ri === 0 ? '2026-07-01' : inDays(80)
-      if (!row.usageCount) row.usageCount = 18
+      // 引用次数：按数据集/行号派生（5~44），保证「按引用热度排序」有可见区分度
+      if (!row.usageCount) row.usageCount = 5 + ((di * 7 + ri * 5) % 40)
       if (!row.lastUsedAt) row.lastUsedAt = `${today()} 14:22`
     })
   })
@@ -408,20 +417,29 @@ export const useTestDataStore = defineStore('testData', {
     },
 
     /* ========== 数据行操作 ========== */
-    addRow(datasetId) {
+    /**
+     * 添加测试行。可通过 init 传入初始值：{ label, values, remark, customTags }
+     * 空值按现有行字段键补齐（与旧行为一致）。
+     */
+    addRow(datasetId, init = {}) {
       const ds = this.datasets.find(d => d.id === datasetId)
       if (!ds) return
+      const values = init.values ? { ...init.values } : {}
       const newRow = {
         id: ++_rowSeq,
-        label: `测试行 ${ds.rows.length + 1}`,
-        values: {}
+        label: init.label || `测试行 ${ds.rows.length + 1}`,
+        values,
+        createdAt: today(),
+        remark: init.remark || '',
+        customTags: Array.isArray(init.customTags) ? [...init.customTags] : []
       }
       // 用现有行的 keys 初始化空值
       if (ds.rows.length > 0) {
         const keys = Object.keys(ds.rows[0].values)
-        keys.forEach(k => { newRow.values[k] = '' })
+        keys.forEach(k => { if (newRow.values[k] === undefined) newRow.values[k] = '' })
       }
       ds.rows.push(newRow)
+      if (newRow.customTags.length) this.registerCustomTags(newRow.customTags)
       return newRow
     },
 
@@ -452,6 +470,25 @@ export const useTestDataStore = defineStore('testData', {
       if (!ds) return
       const row = ds.rows.find(r => r.id === rowId)
       if (row) row.label = label
+    },
+
+    /** 更新矩阵行备注（与历史数据备注方案一致） */
+    updateRowRemark(datasetId, rowId, remark) {
+      const ds = this.datasets.find(d => d.id === datasetId)
+      if (!ds) return
+      const row = ds.rows.find(r => r.id === rowId)
+      if (row) row.remark = remark
+    },
+
+    /** 更新矩阵行标签（去重 + 同步进标签库，与历史数据标签方案一致） */
+    updateRowTags(datasetId, rowId, tags = []) {
+      const ds = this.datasets.find(d => d.id === datasetId)
+      if (!ds) return
+      const row = ds.rows.find(r => r.id === rowId)
+      if (row) {
+        row.customTags = [...new Set(tags.map(String).map((v) => v.trim()).filter(Boolean))]
+        this.registerCustomTags(row.customTags)
+      }
     },
 
     /** 重排行（拖拽排序后用） */
@@ -489,7 +526,13 @@ export const useTestDataStore = defineStore('testData', {
     insertRowsAfter(datasetId, afterRowId, rowsData) {
       const ds = this.datasets.find(d => d.id === datasetId)
       if (!ds) return
-      const newRows = rowsData.map(r => ({ ...JSON.parse(JSON.stringify(r)), id: ++_rowSeq }))
+      const newRows = rowsData.map(r => ({
+        ...JSON.parse(JSON.stringify(r)),
+        id: ++_rowSeq,
+        createdAt: r.createdAt || today(),
+        remark: r.remark || '',
+        customTags: Array.isArray(r.customTags) ? [...r.customTags] : [],
+      }))
       if (afterRowId == null) {
         ds.rows.push(...newRows)
       } else {
@@ -497,6 +540,7 @@ export const useTestDataStore = defineStore('testData', {
         if (idx < 0) { ds.rows.push(...newRows); return }
         ds.rows.splice(idx + 1, 0, ...newRows)
       }
+      this.registerCustomTags(newRows.flatMap((row) => row.customTags || []))
     },
 
     /** 上移行 */

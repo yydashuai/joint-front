@@ -43,6 +43,7 @@
           <el-option v-for="tag in allTags" :key="tag" :label="tag" :value="tag" />
         </el-select>
         <el-input v-model="keyword" :prefix-icon="Search" clearable placeholder="检索报文名、备注、标签" class="filters__search" />
+        <el-button v-if="selectedMessageId || selectedInterfaceId" size="small" type="primary" plain @click="clearTreeFilter">查看全部</el-button>
       </div>
 
       <div class="quick-tags">
@@ -60,11 +61,11 @@
       </div>
 
       <div v-if="mode === 'excellent' && recommendRows.length" class="reco-bar">
-        <span class="reco-bar__title">相似推荐</span>
+        <span class="reco-bar__title">{{ hasRecommendContext ? '相似推荐' : '热门推荐' }}</span>
         <button v-for="row in recommendRows" :key="row._rowKey" type="button" class="reco-card" @click="openDetail(row)">
           <strong>{{ row.messageName }}</strong>
-          <span class="reco-card__score">结构匹配度 {{ matchScore(row) }}%</span>
-          <span v-if="recommendMatchedFields(row).length" class="reco-card__matched">匹配字段：{{ recommendMatchedFields(row).join('、') }}</span>
+          <span class="reco-card__score">{{ hasRecommendContext ? `结构匹配度 ${matchScore(row)}%` : `引用热度 ${matchScore(row)}%` }}</span>
+          <span v-if="hasRecommendContext && recommendMatchedFields(row).length" class="reco-card__matched">匹配字段：{{ recommendMatchedFields(row).join('、') }}</span>
           <span class="reco-card__meta">引用 {{ row.usageCount || 0 }} 次 · 最近复用 {{ row.lastUsedAt || '—' }}</span>
         </button>
       </div>
@@ -75,30 +76,30 @@
           <el-table-column label="报文名" min-width="145" show-overflow-tooltip>
             <template #default="{ row }"><button class="message-link" type="button" @click="openDetail(row)">{{ row.messageName }}</button></template>
           </el-table-column>
-          <el-table-column prop="createdAt" label="创建日期" width="104" />
-          <el-table-column v-if="mode === 'history'" label="是否优秀" width="82" align="center">
-            <template #default="{ row }">
-              <el-switch :model-value="row.excellent" inline-prompt active-text="是" inactive-text="否" @change="(v) => onExcellentSwitch(row, v)" />
-            </template>
-          </el-table-column>
           <el-table-column prop="source" label="来源" width="94" align="center">
             <template #default="{ row }">
               <el-tag size="small" effect="plain" :type="sourceType(row.source)">{{ normalizeSource(row.source) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="remark" label="备注信息" min-width="116" show-overflow-tooltip>
-            <template #default="{ row }"><span :class="{ muted: !row.remark }">{{ row.remark || '暂无备注' }}</span></template>
+          <el-table-column v-if="mode === 'history'" label="是否优秀" width="82" align="center">
+            <template #default="{ row }">
+              <el-switch :model-value="row.excellent" inline-prompt active-text="是" inactive-text="否" @change="(v) => onExcellentSwitch(row, v)" />
+            </template>
           </el-table-column>
           <el-table-column label="标签" min-width="142">
             <template #default="{ row }">
               <div class="tag-cell tag-cell--table" :title="[...(row.abnormal ? ['异常'] : []), ...(row.customTags || [])].join('、')">
                 <el-tag v-if="row.abnormal" size="small" type="danger" effect="dark"><el-icon><WarningFilled /></el-icon>异常</el-tag>
-                <el-tag v-if="mode === 'excellent' && row.certification" size="small" type="success" effect="dark"><el-icon><Stamp /></el-icon>已认证</el-tag>
+                <el-tag v-if="mode === 'excellent' && row.certification" size="small" :type="isOverdue(row) ? 'warning' : 'success'" effect="dark"><el-icon><Stamp /></el-icon>{{ isOverdue(row) ? '待复审' : '已认证' }}</el-tag>
                 <el-tag v-for="tag in row.customTags" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
                 <span v-if="!row.abnormal && !row.certification && !row.customTags?.length" class="muted">—</span>
               </div>
             </template>
           </el-table-column>
+          <el-table-column prop="remark" label="备注信息" min-width="116" show-overflow-tooltip>
+            <template #default="{ row }"><span :class="{ muted: !row.remark }">{{ row.remark || '暂无备注' }}</span></template>
+          </el-table-column>
+          <el-table-column prop="createdAt" label="创建日期" width="104" />
           <el-table-column v-if="mode === 'excellent'" label="认证" width="86" align="center">
             <template #default="{ row }">
               <el-tag v-if="row.certification" size="small" :type="isOverdue(row) ? 'warning' : 'success'" effect="plain">{{ isOverdue(row) ? '待复审' : '已认证' }}</el-tag>
@@ -194,6 +195,21 @@
           <div class="reuse-foot__item"><span>最近复用</span><b class="reuse-foot__time">{{ detailRow.lastUsedAt || '—' }}</b></div>
           <div class="reuse-foot__item"><span>知识沉淀</span><b class="reuse-foot__kb" @click="openKnowledgeCase(detailRow)">{{ detailRow.caseDocId ? '查看案例卡' : '生成案例卡' }}</b></div>
         </div>
+
+        <template v-if="mode === 'excellent'">
+          <h4>相似推荐</h4>
+          <div class="drawer-reco">
+            <template v-if="drawerRecommendRows.length">
+              <button v-for="row in drawerRecommendRows" :key="row._rowKey" type="button" class="reco-card reco-card--drawer" @click="openDetail(row)">
+                <strong>{{ row.messageName }}</strong>
+                <span class="reco-card__score">结构匹配度 {{ drawerMatchScore(row) }}%</span>
+                <span v-if="drawerMatchedFields(row).length" class="reco-card__matched">匹配字段：{{ drawerMatchedFields(row).join('、') }}</span>
+                <span class="reco-card__meta">引用 {{ row.usageCount || 0 }} 次 · 最近复用 {{ row.lastUsedAt || '—' }}</span>
+              </button>
+            </template>
+            <p v-else class="drawer-reco__empty">暂无结构相近的优秀样本</p>
+          </div>
+        </template>
 
         <div class="detail-section-head">
           <h4>报文数据</h4>
@@ -419,9 +435,10 @@ const filteredRows = computed(() => {
     if (kw && ![row.messageName, row.remark, ...(row.customTags || [])].some((value) => String(value || '').toLowerCase().includes(kw))) return false
     return true
   })
-  // A-1：优秀视图按所选维度排序（结构匹配度 / 引用热度），默认创建时间保持原序
-  if (props.mode === 'excellent' && sortMode.value !== 'created') {
-    rows.sort((a, b) => sortValue(b) - sortValue(a))
+  // A-1：优秀视图按所选维度排序（结构匹配度 / 引用热度 / 创建时间）
+  if (props.mode === 'excellent') {
+    if (sortMode.value === 'created') rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+    else rows.sort((a, b) => sortValue(b) - sortValue(a))
   }
   return rows
 })
@@ -444,33 +461,138 @@ const structureSimilarity = (leftProfile, rightProfile) => {
     const rb = rightProfile.find((x) => x.name === f.name)
     if (rb) inter += rb.mode === f.mode ? 1.5 : 1
   })
-  return Math.round((inter / union.size) * 100)
+  return Math.min(100, Math.round((inter / union.size) * 100))
 }
 const matchScore = (row) => {
   const targetProfile = currentTargetProfile()
   if (!targetProfile) {
-    // 无上下文：按引用热度弱排序（客观计数，仅作兜底）
-    return Math.min(100, Math.round((Number(row.usageCount || 0) / 20) * 100))
+    // 无上下文：按引用热度（相对全局最大引用次数的归一化，0~100%）
+    return hotScore(row)
   }
   return structureSimilarity(fieldProfileOf(row), targetProfile)
+}
+// 引用热度：相对全局最大引用次数的百分比，避免固定折算导致大量 100%
+const hotScore = (row) => {
+  const all = baseRows.value.map((r) => Number(r.usageCount || 0))
+  const maxUsage = all.length ? Math.max(...all) : 0
+  if (!maxUsage) return 0
+  return Math.min(100, Math.round((Number(row.usageCount || 0) / maxUsage) * 100))
 }
 const sortValue = (row) => {
   if (sortMode.value === 'rate') return Number(row.usageCount || 0)
   return matchScore(row)
 }
-// A-1：相似推荐 Top3（排除当前打开的详情行）
-const recommendRows = computed(() => filteredRows.value
-  .filter((row) => row._rowKey !== detailRowKey.value)
-  .slice(0, 3))
+// A-1：是否有推荐上下文（树选中或正在查看的报文/接口）→ 无上下文按引用热度推荐（标题「热门推荐」），有上下文按结构匹配（标题「相似推荐」）
+const hasRecommendContext = computed(() => !!recommendContext.value)
+
+// A-1：相似推荐 Top3
+// 基于全量优秀样本（baseRows，不受主表格报文/筛选影响——点击报文后表格只剩该报文，推荐仍显示其他报文）；
+// 上下文 = recommendContext（树选中 > 详情行，"查看谁推荐与谁相似的"）；
+// 排除上下文所在报文（树选中报文集合 + 详情行所在报文，不推荐自己）；同一报文仅推荐一条（避免重复）。
+const recommendRows = computed(() => {
+  const excludeMessageIds = new Set()
+  if (selectedMessageId.value) excludeMessageIds.add(String(selectedMessageId.value))
+  if (selectedInterfaceId.value) {
+    protoStore.interfaces
+      .filter((m) => String(m.ownerIfaceId) === String(selectedInterfaceId.value))
+      .forEach((m) => excludeMessageIds.add(String(m.id)))
+  }
+  if (detailRow.value) excludeMessageIds.add(String(detailRow.value.messageId))
+  const seenMessages = new Set()
+  return baseRows.value
+    .filter((row) => !excludeMessageIds.has(String(row.messageId)))
+    .filter((row) => {
+      const key = String(row.messageId ?? row.messageName)
+      if (seenMessages.has(key)) return false
+      seenMessages.add(key)
+      return true
+    })
+    .sort((a, b) => matchScore(b) - matchScore(a))
+    .slice(0, 3)
+})
+
+// A-1：详情抽屉内的相似推荐（独立基于当前详情报文计算，不受树选中/筛选影响；排除详情行所在报文）
+const drawerRecommendRows = computed(() => {
+  if (props.mode !== 'excellent' || !detailRow.value) return []
+  const target = protoStore.interfaces.find((m) => String(m.id) === String(detailRow.value.messageId))
+  if (!target) return []
+  const targetProfile = collectInterfaceDatasetFields(target, protoStore.protocols).map((f) => ({
+    name: f.name,
+    mode: f.constraint?.mode || 'none',
+  }))
+  const seenMessages = new Set()
+  const list = store.allHistoryData
+    .filter((row) => row.excellent)
+    .filter((row) => String(row.messageId) !== String(detailRow.value.messageId))
+    .filter((row) => {
+      const key = String(row.messageId ?? row.messageName)
+      if (seenMessages.has(key)) return false
+      seenMessages.add(key)
+      return true
+    })
+    .map((row) => ({ ...row, _rowKey: `${row._datasetId}-${row.id}`, source: normalizeSource(row.source) }))
+    .sort((a, b) => drawerMatchScore(b) - drawerMatchScore(a))
+    .slice(0, 3)
+  return list
+})
+const drawerMatchScore = (row) => {
+  if (!detailRow.value) return 0
+  const target = protoStore.interfaces.find((m) => String(m.id) === String(detailRow.value.messageId))
+  if (!target) return 0
+  const targetProfile = collectInterfaceDatasetFields(target, protoStore.protocols).map((f) => ({
+    name: f.name,
+    mode: f.constraint?.mode || 'none',
+  }))
+  return structureSimilarity(fieldProfileOf(row), targetProfile)
+}
+const drawerMatchedFields = (row) => {
+  if (!detailRow.value) return []
+  const target = protoStore.interfaces.find((m) => String(m.id) === String(detailRow.value.messageId))
+  if (!target) return []
+  const targetNames = new Set(collectInterfaceDatasetFields(target, protoStore.protocols).map((f) => f.name))
+  return fieldProfileOf(row).filter((f) => targetNames.has(f.name)).map((f) => f.name).slice(0, 4)
+}
 
 const customTagLibrary = computed(() => [...new Set([...(store.customTagLibrary || []), ...baseRows.value.flatMap((row) => row.customTags || [])])].sort())
 const allTags = computed(() => [...customTagLibrary.value, ...(baseRows.value.some((row) => row.abnormal) ? ['异常'] : [])])
 const ifaceBadge = (iface) => `${baseRows.value.filter((row) => String(row.interfaceId) === String(iface.id)).length} 条`
 const messageBadge = (message) => `${baseRows.value.filter((row) => String(row.messageId) === String(message.id)).length} 条`
 const onTreeSelect = (node) => {
-  selectedInterfaceId.value = node.kind === 'iface' ? node.ref.id : null
-  selectedMessageId.value = node.kind === 'message' ? node.ref.id : null
-  if (node.kind === 'message') selectedInterfaceId.value = node.ref.ownerIfaceId || null
+  const kind = node.kind
+  const id = node.ref?.id != null ? String(node.ref.id) : ''
+  if (kind === 'message') {
+    // 再次点击已选报文 → 取消选择，回到查看全部
+    if (selectedMessageId.value === id) {
+      selectedMessageId.value = null
+      selectedInterfaceId.value = null
+      treeKey.value = ''
+      return
+    }
+    selectedMessageId.value = id
+    selectedInterfaceId.value = node.ref.ownerIfaceId != null ? String(node.ref.ownerIfaceId) : null
+    return
+  }
+  if (kind === 'iface') {
+    // 再次点击已选接口 → 取消选择
+    if (selectedInterfaceId.value === id) {
+      selectedInterfaceId.value = null
+      selectedMessageId.value = null
+      treeKey.value = ''
+      return
+    }
+    selectedInterfaceId.value = id
+    selectedMessageId.value = null
+    return
+  }
+  // 其他节点（方案/自定义接口）→ 清空报文/接口筛选
+  selectedInterfaceId.value = null
+  selectedMessageId.value = null
+}
+/** 清除树筛选，查看全部报文 */
+const clearTreeFilter = () => {
+  selectedInterfaceId.value = null
+  selectedMessageId.value = null
+  treeKey.value = ''
 }
 const toggleFilterTag = (tag) => { tagFilter.value = tagFilter.value.includes(tag) ? tagFilter.value.filter((item) => item !== tag) : [...tagFilter.value, tag] }
 
@@ -532,12 +654,20 @@ const scenarioOptions = computed(() => [...new Set(
 )].sort())
 
 /* ---------- E2：推荐可解释（匹配字段） ---------- */
-const currentTargetProfile = () => {
+// 推荐上下文：左侧树选中报文/接口 > 当前打开的详情行报文（"正在查看谁，就推荐与谁相似的"）；
+// 都没有则为空 → 「热门推荐」（按引用热度），有上下文 → 「相似推荐」（按结构匹配度）
+const recommendContext = computed(() => {
   const target = selectedMessageId.value
     ? protoStore.interfaces.find((m) => String(m.id) === String(selectedMessageId.value))
     : selectedInterfaceId.value
       ? protoStore.interfaces.find((m) => String(m.ownerIfaceId) === String(selectedInterfaceId.value))
-      : null
+      : detailRow.value
+        ? protoStore.interfaces.find((m) => String(m.id) === String(detailRow.value.messageId))
+        : null
+  return target || null
+})
+const currentTargetProfile = () => {
+  const target = recommendContext.value
   if (!target) return null
   return collectInterfaceDatasetFields(target, protoStore.protocols).map((f) => ({
     name: f.name,
@@ -738,7 +868,16 @@ const saveAsDataset = async () => {
     const { value } = await ElMessageBox.prompt('输入新数据集名称', '另存为数据集', { inputValue: `${selectedRows.value[0]?.messageName || '历史报文'}复用集` })
     const sourceDs = store.datasets.find((d) => d.id === sample._datasetId)
     const ds = store.addDataset({ name: value, systemId: sample._systemId, moduleName: sample._moduleName, linkedInterface: sample.messageName, messageId: sample.messageId, linkedProtocol: sourceDs?.linkedProtocol })
-    ds.rows = selectedRows.value.map((row, index) => ({ id: Date.now() + index, label: row.label, values: JSON.parse(JSON.stringify(row.values)), source: '历史复用' }))
+    ds.rows = selectedRows.value.map((row, index) => ({
+      id: Date.now() + index,
+      label: row.label,
+      values: JSON.parse(JSON.stringify(row.values)),
+      source: '历史复用',
+      createdAt: row.createdAt || '',
+      remark: row.remark || '',
+      customTags: [...(row.customTags || [])],
+    }))
+    store.registerCustomTags(selectedRows.value.flatMap((row) => row.customTags || []))
     // A4：复用闭环——另存为数据集即视为一次成功复用
     selectedRows.value.forEach((row) => store.updateReuseStats(row._datasetId, row.id))
     ElMessage.success(`已创建数据集“${ds.name}”`)
@@ -873,6 +1012,9 @@ h4 { margin: 18px 0 10px; font-size: 14px; }
 .reco-card__score { font-size: 11px; color: var(--asset); font-weight: 700; }
 .reco-card__matched { font-size: 11px; color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reco-card__meta { font-size: 11px; color: var(--el-text-color-secondary); }
+.reco-card--drawer { width: 100%; min-width: 0; margin-bottom: 8px; }
+.drawer-reco { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px dashed var(--el-border-color); border-radius: 8px; background: var(--el-fill-color-extra-light); }
+.drawer-reco__empty { margin: 0; font-size: 12px; color: var(--el-text-color-placeholder); }
 .muted-num { color: var(--el-text-color-secondary); }
 .cert-box { margin-bottom: 12px; }
 .cert-box .el-button { margin-top: 8px; }

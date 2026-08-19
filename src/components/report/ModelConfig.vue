@@ -39,10 +39,6 @@
         </section>
       </div>
 
-      <el-alert type="info" :closable="false" show-icon class="mc__note">
-        <template #title>静态设计说明</template>
-        报告生成调用在线 / 本地大模型接口，知识向量化使用嵌入模型。当前为前端静态演示，真实生成对接后端报告服务。
-      </el-alert>
     </div>
   </el-card>
 </template>

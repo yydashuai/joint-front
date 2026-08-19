@@ -177,11 +177,47 @@ const _i = (o) => ({ id: pid(), desc: '', datasetIds: [], fields: [], ...o })
 // 报文定义携带 fields（内联字段）；导出时生成 __inline 字段协议与 protocolRefs。
 // 传输类型不再在报文中定义（仅在收发监控侧配置）。
 const allInterfaces = [
+  // ── 示例（面向甲方演示：字段采用中性命名，避免关注字段含义，排在最前便于默认展示）──
+  _i({
+    name: '示例',
+    systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
+    datasetIds: [1],
+    desc: '演示用示例报文：字段采用中性命名（字段1、字段2…），仅用于功能演示',
+    fields: [
+      field({ category: 'scalar', name: '字段1', encoding: 'uint8', constraint: range(0, 255), desc: '通用数值字段' }),
+      field({ category: 'scalar', name: '字段2', encoding: 'uint16', constraint: range(0, 4096), desc: '通用数值字段' }),
+      field({ category: 'scalar', name: '字段3', encoding: 'uint8', constraint: enumC([{ value: 1, label: '方式一' }, { value: 2, label: '方式二' }, { value: 3, label: '方式三' }]), desc: '通用枚举字段' }),
+      field({ category: 'scalar', name: '字段4', encoding: 'float32', constraint: range(-100, 100), desc: '通用浮点字段' }),
+      field({ category: 'scalar', name: '字段5', encoding: 'uint8', constraint: range(0, 100), desc: '通用百分比字段' }),
+      field({ category: 'scalar', name: '字段6', encoding: 'uint32', constraint: range(0, 4294967295), desc: '通用长整型字段' }),
+      field({ category: 'bitstream', name: '字段7', dataType: 'uint16', constraint: range(0, 65535), desc: '通用状态字段' }),
+      field({ category: 'scalar', name: '字段8', encoding: 'uint8', constraint: range(0, 255), desc: '通用标志字段' }),
+    ],
+  }),
+
+  // ── 示例相似（与「示例」报文结构高度相似：字段1~6 同名，用于相似推荐演示）──
+  _i({
+    name: '示例相似',
+    systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
+    datasetIds: [2],
+    desc: '演示用示例报文B：字段与「示例报文」高度相似（字段1~6 同名），用于优秀库相似推荐演示',
+    fields: [
+      field({ category: 'scalar', name: '字段1', encoding: 'uint8', constraint: range(1, 200), desc: '通用数值字段' }),
+      field({ category: 'scalar', name: '字段2', encoding: 'uint16', constraint: range(0, 2048), desc: '通用数值字段' }),
+      field({ category: 'scalar', name: '字段3', encoding: 'uint8', constraint: enumC([{ value: 1, label: '方式一' }, { value: 2, label: '方式二' }, { value: 3, label: '方式三' }]), desc: '通用枚举字段' }),
+      field({ category: 'scalar', name: '字段4', encoding: 'float32', constraint: range(-50, 50), desc: '通用浮点字段' }),
+      field({ category: 'scalar', name: '字段5', encoding: 'uint8', constraint: range(0, 80), desc: '通用百分比字段' }),
+      field({ category: 'scalar', name: '字段6', encoding: 'uint32', constraint: range(0, 4294967295), desc: '通用长整型字段' }),
+      field({ category: 'scalar', name: '字段11', encoding: 'uint8', constraint: range(0, 100), desc: '扩展数值字段' }),
+      field({ category: 'bitstream', name: '字段12', dataType: 'uint16', constraint: range(0, 1024), desc: '扩展状态字段' }),
+    ],
+  }),
+
   // ── 武器管理 ──
   _i({
     name: '查询设备状态',
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    datasetIds: [2],
+    datasetIds: [4],
     desc: '查询设备状态，返回遥测帧与状态附件',
     fields: [
       field({ category: 'scalar', name: '设备编号', encoding: 'uint8', constraint: range(1, 32), desc: '武器管理设备编号' }),
@@ -200,7 +236,7 @@ const allInterfaces = [
   _i({
     name: '武器装订指令',
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    datasetIds: [4],
+    datasetIds: [7],
     desc: '下发武器装订参数并确认',
     fields: [
       field({ category: 'scalar', name: '指令序号', encoding: 'uint32', constraint: range(0, 4294967295), desc: '装订指令流水号' }),
@@ -218,12 +254,15 @@ const allInterfaces = [
   _i({
     name: '帧控制指令',
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '武器管理模块'),
-    datasetIds: [1],
+    datasetIds: [3],
     desc: '帧控制字（纯字节）发送控制指令',
     fields: [
       field({ category: 'bitstream', name: '帧头', dataType: 'uint16', constraint: fixed(0xAA55), desc: '固定帧头 0xAA55' }),
       field({ category: 'bitstream', name: '控制字', dataType: 'uint8', constraint: range(0, 255), desc: '帧控制字（1=加密 2=压缩 4=分片 8=应答）' }),
       field({ category: 'scalar', name: '数据长度', encoding: 'uint16', constraint: range(0, 4096), desc: '后续载荷字节数' }),
+      field({ category: 'scalar', name: '帧序号', encoding: 'uint16', constraint: range(0, 65535), desc: '帧序号（逐帧递增）' }),
+      field({ category: 'scalar', name: '载荷类型', encoding: 'uint8', constraint: enumC([{ value: 1, label: 'JSON' }, { value: 2, label: '二进制' }, { value: 3, label: '分片' }, { value: 4, label: 'XML' }]), desc: '载荷类型枚举' }),
+      field({ category: 'scalar', name: '校验和', encoding: 'uint16', constraint: range(0, 65535), desc: '帧校验和' }),
     ],
   }),
 
@@ -248,7 +287,7 @@ const allInterfaces = [
   _i({
     name: '挂载状态查询',
     systemId: 'sys-weapon', moduleId: byName('sys-weapon', '挂载检测模块'),
-    datasetIds: [5],
+    datasetIds: [8],
     desc: '查询全部挂点挂载状态',
     fields: [
       field({ category: 'scalar', name: '飞机编号', encoding: 'uint16', constraint: range(1, 65535), desc: '飞机编号' }),
@@ -259,6 +298,8 @@ const allInterfaces = [
         { type: 'scalar', name: '锁定状态', encoding: 'uint8', constraint: enumC([{ value: 0, label: '未锁定' }, { value: 1, label: '锁定' }]), desc: '锁定状态' },
       ]}),
       field({ category: 'bitstream', name: '识别帧', dataType: 'uint8', constraint: range(0, 255), desc: '原始识别帧字节' }),
+      field({ category: 'scalar', name: '载荷温度', encoding: 'float32', constraint: range(-40, 85), desc: '挂载载荷温度' }),
+      field({ category: 'scalar', name: '挂点数量', encoding: 'uint8', constraint: range(1, 12), desc: '有效挂点数量' }),
     ],
   }),
 
@@ -279,7 +320,7 @@ const allInterfaces = [
   _i({
     name: '遥测帧上报',
     systemId: 'sys-fire', moduleId: byName('sys-fire', '火控解算模块'),
-    datasetIds: [3],
+    datasetIds: [6],
     desc: '上报火控解算遥测帧（温度/航向/电量）',
     fields: [
       field({ category: 'bitstream', name: '遥测帧头', dataType: 'uint16', constraint: fixed(0xEB90), desc: '固定帧头 0xEB90' }),
@@ -294,7 +335,7 @@ const allInterfaces = [
   _i({
     name: '指挥指令下发',
     systemId: 'sys-fire', moduleId: byName('sys-fire', '指挥链路模块'),
-    datasetIds: [6],
+    datasetIds: [9],
     desc: '从指挥所向下游下发作战指令',
     fields: [
       field({ category: 'scalar', name: '指令类型', encoding: 'uint8', constraint: enumC([{ value: 1, label: '目标跟踪' }, { value: 2, label: '火力分配' }, { value: 9, label: '任务撤销' }]), desc: '指令类型枚举' }),
@@ -331,6 +372,8 @@ export const protocols = inlineFieldPool
 // 演示 1:N：查询设备状态接口挂 2 报文（查询设备状态 + 帧控制指令），
 // 目标分配解算接口挂 2 报文（目标分配解算 + 遥测帧上报），其余 1:1。
 const IFACE_GROUPS = [
+  ['示例'],
+  ['示例相似'],
   ['查询设备状态', '帧控制指令'],
   ['武器装订指令'],
   ['上报弹药余量'],

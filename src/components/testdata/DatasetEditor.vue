@@ -135,7 +135,6 @@
           @selection-change="handleSelectionChange"
           @scroll="handleScroll"
           @row-contextmenu="onRowContextMenu"
-          @row-click="onRowClick"
           style="width: 100%;"
           height="100%"
         >
@@ -149,19 +148,6 @@
         </el-table-column>
         <!-- 序号列 -->
         <el-table-column type="index" width="48" align="center" label="#" fixed="left" />
-        <!-- 行标签列 -->
-        <el-table-column label="行标签" width="170" fixed="left">
-          <template #default="{ row }">
-            <div class="label-cell">
-              <span v-if="dirtyRowIds.has(row.id)" class="dirty-dot" title="已修改"></span>
-              <el-input
-                v-model="row.label"
-                size="small"
-                @change="(v) => tdStore.updateRowLabel(ds.id, row.id, v)"
-              />
-            </div>
-          </template>
-        </el-table-column>
         <!-- 数据摘要列（前 4 个字段值，悬浮看完整） -->
         <el-table-column label="数据摘要" min-width="300" show-overflow-tooltip>
           <template #default="{ row }">
@@ -177,6 +163,27 @@
             <el-tag v-else size="small" type="success" effect="plain">正常</el-tag>
           </template>
         </el-table-column>
+        <!-- 标签列（只读展示，点击编辑按钮在抽屉中配置） -->
+        <el-table-column label="标签" min-width="160">
+          <template #default="{ row }">
+            <div class="tag-cell tag-cell--table" :title="(row.customTags || []).join('、')">
+              <el-tag v-for="tag in row.customTags" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
+              <span v-if="!(row.customTags || []).length" class="muted">—</span>
+            </div>
+          </template>
+        </el-table-column>
+        <!-- 备注列（只读展示，点击编辑按钮在抽屉中配置） -->
+        <el-table-column label="备注" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span :class="{ muted: !row.remark }" class="readonly-cell">{{ row.remark || '暂无备注' }}</span>
+          </template>
+        </el-table-column>
+        <!-- 创建日期列 -->
+        <el-table-column label="创建日期" width="110">
+          <template #default="{ row }">
+            <span class="readonly-cell">{{ row.createdAt || '—' }}</span>
+          </template>
+        </el-table-column>
         <!-- 操作列 -->
         <el-table-column label="操作" width="118" fixed="right" align="center">
           <template #default="{ row }">
@@ -188,7 +195,7 @@
         </el-table-column>
 
         <template #append>
-          <button class="matrix-add-row" type="button" @click="onAddRow">
+          <button class="matrix-add-row" type="button" @click="openAddRowDialog">
             <el-icon><Plus /></el-icon>
             <span>添加测试行</span>
           </button>
@@ -268,12 +275,111 @@
       </div>
     </div>
 
+    <!-- ======== 添加测试行弹窗（配置报文数据后再添加） ======== -->
+    <el-dialog v-model="addRowVisible" title="添加测试行" width="520px" append-to-body>
+      <template v-if="addRowForm">
+        <div v-for="field in matrixFields" :key="field.name" class="row-edit-field">
+          <div class="row-edit-field__label">
+            <span>{{ field.name }}</span>
+            <small :title="fieldTooltipText(field)">{{ fieldHint(field) }}</small>
+          </div>
+          <!-- 枚举字段 → Select -->
+          <template v-if="isFieldEnum(field)">
+            <el-select
+              v-model="addRowForm.values[field.name]"
+              size="small"
+              style="width: 100%;"
+            >
+              <el-option v-for="entry in field.constraint.entries" :key="entry.value ?? entry" :label="entry.label || String(entry)" :value="entry.value ?? entry" />
+            </el-select>
+          </template>
+          <!-- 数值字段 → InputNumber（约束校验） -->
+          <template v-else-if="isFieldNumeric(field)">
+            <el-input-number
+              v-model="addRowForm.values[field.name]"
+              :min="field.constraint?.min"
+              :max="field.constraint?.max"
+              size="small"
+              controls-position="right"
+              style="width: 100%;"
+              :class="{ 'cell-invalid': isAddCellInvalid(field) }"
+            />
+          </template>
+          <!-- 文本字段 → Input -->
+          <template v-else>
+            <el-input v-model="addRowForm.values[field.name]" size="small" />
+          </template>
+          <el-tag v-if="isAddCellInvalid(field)" size="small" type="danger" effect="plain" style="margin-top: 4px">超出约束范围</el-tag>
+        </div>
+        <el-empty v-if="!matrixFields.length" description="无编辑字段（均为固定值或无字段定义）" :image-size="48" />
+        <!-- 备注 -->
+        <div class="row-edit-meta">
+          <span>备注</span>
+          <el-input v-model="addRowForm.remark" type="textarea" :rows="2" size="small" placeholder="补充行用途、现场条件或复现说明" />
+        </div>
+        <!-- 标签（与历史数据方案一致：标签库快捷选择 + 自定义） -->
+        <div class="row-edit-meta">
+          <span>标签</span>
+          <div class="tag-editor">
+            <div class="tag-cell tag-cell--detail">
+              <el-tag v-for="tag in addRowTags" :key="tag" closable @close="removeAddRowTag(tag)">{{ tag }}</el-tag>
+              <span v-if="!addRowTags.length" class="muted">暂无标签</span>
+            </div>
+            <div class="tag-library">
+              <span>标签库</span>
+              <button v-for="tag in customTagLibrary" :key="tag" type="button" :class="{ selected: addRowTags.includes(tag) }" @click="toggleAddRowTag(tag)">{{ tag }}</button>
+              <em v-if="!customTagLibrary.length">暂无历史标签</em>
+            </div>
+            <div class="tag-editor__input">
+              <el-input v-model="addRowTagInput" size="small" placeholder="输入自定义标签后回车" @keyup.enter="addAddRowTag" />
+              <el-button size="small" type="primary" plain @click="addAddRowTag">添加</el-button>
+            </div>
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <el-button size="small" @click="addRowVisible = false">取消</el-button>
+        <el-button size="small" type="primary" @click="confirmAddRow">添加</el-button>
+      </template>
+    </el-dialog>
+
     <!-- ======== 行编辑抽屉（点击列表行打开，聚焦单条数据的字段编辑） ======== -->
     <el-drawer v-model="rowEditorVisible" :title="`编辑行：${activeEditRow?.label || ''}`" size="480px">
       <template v-if="activeEditRow">
         <div class="row-edit-label">
           <span>行标签</span>
           <el-input v-model="activeEditRow.label" size="small" @change="(v) => tdStore.updateRowLabel(ds.id, activeEditRow.id, v)" />
+        </div>
+        <!-- 备注（与历史数据方案一致） -->
+        <div class="row-edit-meta">
+          <span>备注</span>
+          <el-input
+            v-model="activeEditRow.remark"
+            type="textarea"
+            :rows="2"
+            size="small"
+            placeholder="补充行用途、现场条件或复现说明"
+            @change="(v) => tdStore.updateRowRemark(ds.id, activeEditRow.id, v)"
+          />
+        </div>
+        <!-- 标签（与历史数据方案一致：标签库快捷选择 + 自定义） -->
+        <div class="row-edit-meta">
+          <span>标签</span>
+          <div class="tag-editor">
+            <div class="tag-cell tag-cell--detail">
+              <el-tag v-for="tag in drawerTags" :key="tag" closable @close="removeDrawerTag(tag)">{{ tag }}</el-tag>
+              <span v-if="!drawerTags.length" class="muted">暂无标签</span>
+            </div>
+            <div class="tag-library">
+              <span>标签库</span>
+              <button v-for="tag in customTagLibrary" :key="tag" type="button" :class="{ selected: drawerTags.includes(tag) }" @click="toggleDrawerTag(tag)">{{ tag }}</button>
+              <em v-if="!customTagLibrary.length">暂无历史标签</em>
+            </div>
+            <div class="tag-editor__input">
+              <el-input v-model="drawerTagInput" size="small" placeholder="输入自定义标签后回车" @keyup.enter="addDrawerTag" />
+              <el-button size="small" type="primary" plain @click="addDrawerTag">添加</el-button>
+            </div>
+          </div>
         </div>
         <div v-for="field in matrixFields" :key="field.name" class="row-edit-field">
           <div class="row-edit-field__label">
@@ -587,21 +693,122 @@ const rowOutOfRange = (row) => {
 
 const rowEditorVisible = ref(false)
 const activeEditRow = ref(null)
+const drawerTags = ref([])
+const drawerTagInput = ref('')
 const openRowEditor = (row) => {
   activeEditRow.value = row
+  drawerTags.value = [...(row.customTags || [])]
+  drawerTagInput.value = ''
   rowEditorVisible.value = true
 }
-const onRowClick = (row) => openRowEditor(row)
+const commitDrawerTags = () => {
+  if (activeEditRow.value) onRowTagsChange(activeEditRow.value, drawerTags.value)
+}
+const removeDrawerTag = (tag) => {
+  drawerTags.value = drawerTags.value.filter(t => t !== tag)
+  commitDrawerTags()
+}
+const toggleDrawerTag = (tag) => {
+  drawerTags.value = drawerTags.value.includes(tag)
+    ? drawerTags.value.filter(t => t !== tag)
+    : [...drawerTags.value, tag]
+  commitDrawerTags()
+}
+const addDrawerTag = () => {
+  const value = drawerTagInput.value
+  if (value && !drawerTags.value.includes(value)) {
+    drawerTags.value = [...drawerTags.value, value]
+    commitDrawerTags()
+  }
+  drawerTagInput.value = ''
+}
 const deleteActiveRow = () => {
   if (!activeEditRow.value) return
   tdStore.removeRow(ds.value.id, activeEditRow.value.id)
   activeEditRow.value = null
   rowEditorVisible.value = false
 }
+
+/* ========== 添加测试行弹窗（配置报文数据后再添加） ========== */
+const addRowVisible = ref(false)
+const addRowForm = ref(null) // { values, remark }
+const addRowTags = ref([])
+const addRowTagInput = ref('')
+
+const defaultFieldValue = (f) => {
+  const c = f.constraint
+  if (!c) return ''
+  if (c.mode === 'fixed') return c.value
+  if (c.mode === 'enum') { const e = (c.entries || [])[0]; return e?.value ?? e ?? '' }
+  if (c.mode === 'range') return c.min
+  return ''
+}
+
+const openAddRowDialog = () => {
+  const values = {}
+  dynamicFields.value.forEach((f) => { values[f.name] = defaultFieldValue(f) })
+  // 补充现有行中未出现在字段定义里的键（兼容泛型 KV 数据集）
+  if (ds.value.rows.length) {
+    Object.keys(ds.value.rows[0].values).forEach((k) => { if (values[k] === undefined) values[k] = '' })
+  }
+  addRowForm.value = { values, remark: '' }
+  addRowTags.value = []
+  addRowTagInput.value = ''
+  addRowVisible.value = true
+}
+
+const isAddCellInvalid = (field) => {
+  if (!addRowForm.value) return false
+  if (!field.constraint || field.constraint.mode !== 'range') return false
+  const val = addRowForm.value.values[field.name]
+  if (val == null || val === '') return false
+  const num = Number(val)
+  if (isNaN(num)) return true
+  return num < field.constraint.min || num > field.constraint.max
+}
+
+const confirmAddRow = () => {
+  if (!addRowForm.value) return
+  tdStore.addRow(ds.value.id, {
+    values: addRowForm.value.values,
+    remark: addRowForm.value.remark,
+    customTags: addRowTags.value,
+  })
+  addRowVisible.value = false
+  addRowForm.value = null
+  nextTick(() => takeSnapshot())
+  ElMessage.success('已添加测试行')
+}
+
+const removeAddRowTag = (tag) => {
+  addRowTags.value = addRowTags.value.filter(t => t !== tag)
+}
+const toggleAddRowTag = (tag) => {
+  addRowTags.value = addRowTags.value.includes(tag)
+    ? addRowTags.value.filter(t => t !== tag)
+    : [...addRowTags.value, tag]
+}
+const addAddRowTag = () => {
+  const value = addRowTagInput.value
+  if (value && !addRowTags.value.includes(value)) addRowTags.value = [...addRowTags.value, value]
+  addRowTagInput.value = ''
+}
 // 抽屉内编辑实时刷新脏标记
 watch(() => activeEditRow.value?.values, () => {
   if (activeEditRow.value) checkDirty(activeEditRow.value)
 }, { deep: true })
+
+/* ========== 行标签编辑（与历史数据库标签方案一致：自定义 + 标签库快捷选择） ========== */
+// 标签库 = 全局标签库 + 本数据集已有行标签，排序后展示
+const customTagLibrary = computed(() => [...new Set([
+  ...(tdStore.customTagLibrary || []),
+  ...ds.value.rows.flatMap((r) => r.customTags || []),
+])].sort())
+
+const onRowTagsChange = (row, tags) => {
+  tdStore.updateRowTags(ds.value.id, row.id, tags)
+  checkDirty(row)
+}
 
 /* ========== 行搜索 (优化点 12) ========== */
 const rowSearch = ref('')
@@ -610,6 +817,8 @@ const displayRows = computed(() => {
   const kw = rowSearch.value.toLowerCase()
   return ds.value.rows.filter(r => {
     if (r.label?.toLowerCase().includes(kw)) return true
+    if ((r.remark || '').toLowerCase().includes(kw)) return true
+    if ((r.customTags || []).some(t => t.toLowerCase().includes(kw))) return true
     return Object.values(r.values).some(v => String(v).toLowerCase().includes(kw))
   })
 })
@@ -770,11 +979,6 @@ const rowClassName = ({ row }) => {
 }
 
 /* ========== 操作 ========== */
-const onAddRow = () => {
-  tdStore.addRow(ds.value.id)
-  nextTick(() => takeSnapshot())
-}
-
 const onDelete = () => {
   emit('delete', ds.value.id)
 }
@@ -818,6 +1022,9 @@ const onExportJson = () => {
   if (!validateBeforeExport()) return
   const data = ds.value.rows.map(r => ({
     label: r.label,
+    createdAt: r.createdAt || '',
+    remark: r.remark || '',
+    tags: r.customTags || [],
     ...r.values
   }))
   exportJsonFile(data, `${ds.value.name}.json`)
@@ -831,7 +1038,7 @@ const fieldsRefOpen = ref([]) // 默认折叠，不展开
 const onKeydown = (e) => {
   if (e.ctrlKey && e.key === 'n') {
     e.preventDefault()
-    onAddRow()
+    openAddRowDialog()
   }
   if (e.ctrlKey && e.key === 's') {
     e.preventDefault()
@@ -1062,6 +1269,16 @@ const onKeydown = (e) => {
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .row-edit-label > span { color: var(--el-text-color-secondary); font-size: 12px; }
+.row-edit-meta {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  margin-bottom: 14px;
+}
+.row-edit-meta > span { padding-top: 4px; color: var(--el-text-color-secondary); font-size: 12px; }
+.row-edit-meta .el-textarea,
+.row-edit-meta .el-select { width: 100%; }
 .row-edit-field {
   display: flex;
   flex-direction: column;
@@ -1102,21 +1319,20 @@ const onKeydown = (e) => {
   cursor: default;
 }
 
-/* 标签单元格 */
-.label-cell {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* 脏数据标记 (优化点 7) */
-.dirty-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--el-color-warning);
-  flex-shrink: 0;
-}
+/* ======== 标签展示与编辑（与历史数据库方案一致） ======== */
+.row-tags-select { width: 100%; }
+.tag-cell { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.tag-cell--table { min-height: 24px; }
+.tag-cell--detail { padding: 10px; border: 1px dashed var(--el-border-color); border-radius: 7px; }
+.tag-editor { width: 100%; display: flex; flex-direction: column; gap: 9px; }
+.tag-editor__input { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.tag-library { padding: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; border: 1px solid var(--el-border-color-lighter); border-radius: 7px; background: var(--el-fill-color-extra-light); }
+.tag-library > span { margin-right: 2px; color: var(--el-text-color-secondary); font-size: 12px; }
+.tag-library button { padding: 3px 8px; border: 1px solid var(--el-border-color); border-radius: 12px; background: #fff; color: var(--el-text-color-regular); cursor: pointer; font-size: 12px; }
+.tag-library button:hover,
+.tag-library button.selected { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
+.tag-library em { color: var(--el-text-color-placeholder); font-size: 12px; font-style: normal; }
+.muted { color: var(--el-text-color-placeholder); }
 
 :deep(.dirty-row) {
   background-color: rgba(230, 162, 60, 0.06) !important;

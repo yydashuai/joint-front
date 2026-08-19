@@ -15,7 +15,6 @@
     </div>
 
     <el-dialog v-model="configVisible" title="知识模型配置" width="560px">
-      <el-alert type="info" :closable="false" show-icon title="演示环境仅保存配置参数，不发起真实模型调用；正式接入后端后生效。" style="margin-bottom: 12px" />
       <el-form label-width="120px" size="small">
         <el-form-item label="接入方式">
           <el-radio-group v-model="store.modelConfig.provider">
