@@ -86,9 +86,8 @@
             <template #default="{ row }">
               <div class="tag-cell tag-cell--table" :title="[...(row.abnormal ? ['异常'] : []), ...(row.customTags || [])].join('、')">
                 <el-tag v-if="row.abnormal" size="small" type="danger" effect="dark"><el-icon><WarningFilled /></el-icon>异常</el-tag>
-                <el-tag v-if="mode === 'excellent' && row.certification" size="small" type="success" effect="dark"><el-icon><Stamp /></el-icon>已认证</el-tag>
                 <el-tag v-for="tag in row.customTags" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
-                <span v-if="!row.abnormal && !row.certification && !row.customTags?.length" class="muted">—</span>
+                <span v-if="!row.abnormal && !row.customTags?.length" class="muted">—</span>
               </div>
             </template>
           </el-table-column>
@@ -96,12 +95,6 @@
             <template #default="{ row }"><span :class="{ muted: !row.remark }">{{ row.remark || '暂无备注' }}</span></template>
           </el-table-column>
           <el-table-column prop="createdAt" label="创建日期" width="104" />
-          <el-table-column v-if="mode === 'excellent'" label="认证" width="86" align="center">
-            <template #default="{ row }">
-              <el-tag v-if="row.certification" size="small" type="success" effect="plain">已认证</el-tag>
-              <span v-else class="muted">—</span>
-            </template>
-          </el-table-column>
           <el-table-column v-if="mode === 'excellent'" label="热度" width="72" align="center">
             <template #default="{ row }">
               <el-tooltip :content="heatHint(row)" placement="top">
@@ -297,7 +290,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, WarningFilled, Stamp, ArrowDown } from '@element-plus/icons-vue'
+import { Search, WarningFilled, ArrowDown } from '@element-plus/icons-vue'
 import MonitorTree from '@/components/execution/MonitorTree.vue'
 import { useTestDataStore } from '@/stores/testData'
 import { useExecutionStore } from '@/stores/execution'
@@ -482,8 +475,8 @@ const hasRecommendContext = computed(() => !!recommendContext.value)
 
 // A-1：相似推荐 Top3
 // 基于全量优秀样本（baseRows，不受主表格报文/筛选影响——点击报文后表格只剩该报文，推荐仍显示其他报文）；
-// 上下文 = recommendContext（树选中 > 详情行，"查看谁推荐与谁相似的"）；
-// 排除上下文所在报文（树选中报文集合 + 详情行所在报文，不推荐自己）；同一报文仅推荐一条（避免重复）。
+// 上下文 = recommendContext（仅由左侧树选中报文/接口决定，不随详情抽屉变化）；
+// 排除上下文所在报文（树选中报文/接口下所有报文，相似推荐时不推荐自己）；同一报文仅推荐一条（避免重复）。
 const recommendRows = computed(() => {
   const excludeMessageIds = new Set()
   if (selectedMessageId.value) excludeMessageIds.add(String(selectedMessageId.value))
@@ -492,7 +485,6 @@ const recommendRows = computed(() => {
       .filter((m) => String(m.ownerIfaceId) === String(selectedInterfaceId.value))
       .forEach((m) => excludeMessageIds.add(String(m.id)))
   }
-  if (detailRow.value) excludeMessageIds.add(String(detailRow.value.messageId))
   const seenMessages = new Set()
   return baseRows.value
     .filter((row) => !excludeMessageIds.has(String(row.messageId)))
@@ -639,16 +631,15 @@ const scenarioOptions = computed(() => [...new Set(
 )].sort())
 
 /* ---------- E2：推荐可解释（匹配字段） ---------- */
-// 推荐上下文：左侧树选中报文/接口 > 当前打开的详情行报文（"正在查看谁，就推荐与谁相似的"）；
-// 都没有则为空 → 「热门推荐」（按综合热度），有上下文 → 「相似推荐」（按结构匹配度）
+// 推荐上下文：仅由左侧树选中报文/接口决定。
+// 无上下文 → 「热门推荐」（按综合热度），有上下文 → 「相似推荐」（按结构匹配度）。
+// 注意：详情抽屉内独立展示「相似推荐」（drawerRecommendRows），点击推荐卡片打开详情时不应影响顶部推荐栏上下文。
 const recommendContext = computed(() => {
   const target = selectedMessageId.value
     ? protoStore.interfaces.find((m) => String(m.id) === String(selectedMessageId.value))
     : selectedInterfaceId.value
       ? protoStore.interfaces.find((m) => String(m.ownerIfaceId) === String(selectedInterfaceId.value))
-      : detailRow.value
-        ? protoStore.interfaces.find((m) => String(m.id) === String(detailRow.value.messageId))
-        : null
+      : null
   return target || null
 })
 const currentTargetProfile = () => {
