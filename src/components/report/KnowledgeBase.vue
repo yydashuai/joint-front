@@ -59,8 +59,8 @@
             </template>
           </el-table-column>
           <el-table-column label="内容片段" width="78" align="center"><template #default="{ row }">{{ row.chunks?.length || 0 }}</template></el-table-column>
-          <el-table-column prop="importedAt" label="更新时间" width="110" show-overflow-tooltip />
-          <el-table-column label="状态" width="74"><template #default="{ row }"><el-tag size="small" :type="row.active ? 'success' : 'info'">{{ row.active ? '可引用' : '已停用' }}</el-tag></template></el-table-column>
+          <el-table-column prop="importedAt" label="更新时间" width="150" show-overflow-tooltip />
+          <el-table-column label="状态" width="96"><template #default="{ row }"><el-tag size="small" :type="row.active ? 'success' : 'info'">{{ row.active ? '可引用' : '已停用' }}</el-tag></template></el-table-column>
           <el-table-column label="操作" width="52" align="center">
             <template #default="{ row }">
               <el-dropdown trigger="click" @command="(command) => handleDocCommand(command, row)">
