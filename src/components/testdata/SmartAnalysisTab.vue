@@ -1,36 +1,35 @@
 <template>
   <div class="smart-tab">
-    <!-- S1：分析范围筛选 -->
-    <div class="scope-bar">
-      <span class="scope-bar__label">分析范围</span>
-      <el-select v-model="systemId" clearable placeholder="全部系统" style="width: 150px" @change="onSystemChange">
-        <el-option v-for="s in systemStore.systems" :key="s.id" :label="s.name" :value="s.id" />
-      </el-select>
-      <el-select v-model="interfaceId" clearable filterable placeholder="全部接口" style="width: 200px">
-        <el-option v-for="i in ifaceOptions" :key="i.id" :label="i.name" :value="i.id" />
-      </el-select>
-      <el-tag v-if="scopeTitle" size="small" effect="plain" closable @close="resetScope">{{ scopeTitle }}</el-tag>
-      <div class="scope-bar__actions">
-        <el-button text size="small" @click="resetScope">重置</el-button>
-        <!-- S4：分析快照导出 -->
-        <el-button type="primary" plain size="small" :icon="Download" @click="exportSnapshot">导出分析快照</el-button>
-      </div>
-    </div>
-
-    <!-- 关键指标（点击下钻跳转） -->
-    <div class="kpi-grid">
-      <button v-for="kpi in kpiList" :key="kpi.label" type="button" class="kpi-card" :class="`kpi-card--${kpi.tone}`" @click="$emit('navigate', kpi.target)">
-        <span class="kpi-card__label">{{ kpi.label }}</span>
-        <b class="kpi-card__value">{{ kpi.value }}</b>
-        <small class="kpi-card__hint">{{ kpi.hint }}</small>
-      </button>
-    </div>
-
     <el-card shadow="never" class="smart-card">
       <el-tabs v-model="activePanel">
         <!-- ======== 数据分析（智能分析核心） ======== -->
         <el-tab-pane label="数据分析" name="analysis">
           <div class="analysis-scroll">
+            <!-- S1：分析范围筛选（仅「数据分析」视图展示） -->
+            <div class="scope-bar">
+              <span class="scope-bar__label">分析范围</span>
+              <el-select v-show="false" v-model="systemId" clearable placeholder="全部系统" style="width: 150px" @change="onSystemChange">
+                <el-option v-for="s in systemStore.systems" :key="s.id" :label="s.name" :value="s.id" />
+              </el-select>
+              <el-select v-model="interfaceId" clearable filterable placeholder="全部接口" style="width: 240px">
+                <el-option v-for="i in ifaceOptions" :key="i.id" :label="i.name" :value="i.id" />
+              </el-select>
+              <el-tag v-if="scopeTitle" size="small" effect="plain" closable @close="resetScope">{{ scopeTitle }}</el-tag>
+              <div class="scope-bar__actions">
+                <el-button text size="small" @click="resetScope">重置</el-button>
+                <!-- S4：分析快照导出 -->
+                <el-button type="primary" plain size="small" :icon="Download" @click="exportSnapshot">导出分析快照</el-button>
+              </div>
+            </div>
+
+            <!-- 关键指标（点击下钻跳转，仅「数据分析」视图展示） -->
+            <div class="kpi-grid">
+              <button v-for="kpi in kpiList" :key="kpi.label" type="button" class="kpi-card" :class="`kpi-card--${kpi.tone}`" @click="$emit('navigate', kpi.target)">
+                <span class="kpi-card__label">{{ kpi.label }}</span>
+                <b class="kpi-card__value">{{ kpi.value }}</b>
+                <small class="kpi-card__hint">{{ kpi.hint }}</small>
+              </button>
+            </div>
             <!-- 第一行：三列（异常测试覆盖度 / 异常数据集 Top / 异常场景分类） -->
             <div class="row-3">
               <ChartCard title="异常测试覆盖度">
@@ -172,8 +171,14 @@ const scopeTitle = computed(() => {
 })
 
 /* ---------- 范围数据 ---------- */
-const scopeDatasets = computed(() => tdStore.datasets.filter((ds) => !systemId.value || ds.systemId === systemId.value))
-const scopeFiles = computed(() => tdStore.files.filter((file) => !systemId.value || file.systemId === systemId.value))
+// 数据集 / 文件按接口过滤：数据集无 interfaceId 字段，需经 messageId 反查报文的 ownerIfaceId
+const inScopeByIface = (ds) => !interfaceId.value || String(datasetIfaceId(ds)) === String(interfaceId.value)
+const scopeDatasets = computed(() => tdStore.datasets.filter((ds) => (!systemId.value || ds.systemId === systemId.value) && inScopeByIface(ds)))
+const scopeFiles = computed(() => tdStore.files.filter((file) => {
+  if (systemId.value && file.systemId !== systemId.value) return false
+  if (interfaceId.value && !(file.interfaceIds || []).some((id) => String(id) === String(interfaceId.value))) return false
+  return true
+}))
 const scopeHistory = computed(() => tdStore.allHistoryData.filter((row) => {
   if (systemId.value && String(row._systemId) !== String(systemId.value)) return false
   if (interfaceId.value && String(row.interfaceId) !== String(interfaceId.value)) return false
@@ -350,6 +355,7 @@ const orphanDatasets = computed(() => {
 const inPlanIfaceIds = computed(() => new Set(execStore.planItems.map((p) => p.iface?.id).filter(Boolean).map(String)))
 const orphanMessages = computed(() => protoStore.interfaces
   .filter((m) => {
+    if (interfaceId.value && String(m.ownerIfaceId) !== String(interfaceId.value)) return false
     if (tdStore.datasets.some((ds) => String(ds.messageId) === String(m.id))) return false
     if (inPlanIfaceIds.value.has(String(m.ownerIfaceId))) return false
     if (taskStore.tasks.some((t) => String(t.bindings?.interfaceId) === String(m.ownerIfaceId))) return false
@@ -431,6 +437,7 @@ const exportSnapshot = () => {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
+  margin-bottom: 12px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 9px;
   background: linear-gradient(90deg, rgba(47, 107, 255, .06), transparent 38%), var(--el-bg-color);
@@ -442,6 +449,7 @@ const exportSnapshot = () => {
   display: grid;
   grid-template-columns: repeat(5, minmax(135px, 1fr));
   gap: 10px;
+  margin-bottom: 12px;
 }
 .kpi-card {
   padding: 13px 16px;

@@ -759,6 +759,7 @@ export const useTestDataStore = defineStore('testData', {
       if (!ds) return []
       const selectedReferences = Array.isArray(options.referenceRows) ? options.referenceRows : []
       const fieldOverrides = options.fieldOverrides || {}
+      const recipe = options.recipe || null
       const sourceRows = selectedReferences.length
         ? [...ds.rows, ...selectedReferences]
         : [...ds.rows, ...(ds.historyRows || [])]
@@ -861,6 +862,13 @@ export const useTestDataStore = defineStore('testData', {
         if (c.mode === 'range') return index % 2 === 0 ? c.min : c.max
         return makeNormal(c, info)
       }
+      // 格式异常：向有约束字段注入类型错配值（数值字段填字符串 / 枚举字段填数字），触发字段校验不通过
+      const makeFormatError = (c) => {
+        if (c.mode === 'range') return 'αβ格式异常'
+        if (c.mode === 'fixed') return typeof c.value === 'number' ? 'FMT_ERR' : 77777
+        if (c.mode === 'enum') return 12345
+        return 'format_err'
+      }
 
       const generated = []
       const existingValueSets = sourceRows.map(r => JSON.stringify(r.values))
@@ -872,8 +880,20 @@ export const useTestDataStore = defineStore('testData', {
         const wantAbnormal = mode === 'abnormal' ? true : mode === 'mixed' ? (i % 3 === 2) : false
         const wantBoundary = mode === 'boundary' || (mode === 'mixed' && i % 3 === 1)
         const values = {}
-        const violIdx = violatable.length ? Math.floor(Math.random() * violatable.length) : -1
         let abnormalDone = false
+        let abnormalField = null
+        let abnormalType = null
+        const recipeTags = []
+        if (wantAbnormal && violatable.length) {
+          const vf = violatable[Math.floor(Math.random() * violatable.length)]
+          abnormalField = vf.name
+          const en = recipe || { exceedRange: true, illegalEnum: true, formatError: false }
+          const choices = []
+          if (en.exceedRange && (vf.constraint.mode === 'range' || vf.constraint.mode === 'fixed')) choices.push('exceedRange')
+          if (en.illegalEnum && vf.constraint.mode === 'enum') choices.push('illegalEnum')
+          if (en.formatError) choices.push('formatError')
+          if (choices.length) abnormalType = choices[Math.floor(Math.random() * choices.length)]
+        }
         const variationStrategy = i % 4
 
         fieldNames.forEach((field) => {
@@ -894,9 +914,19 @@ export const useTestDataStore = defineStore('testData', {
             if (override === 'max') { values[field] = c?.max ?? values[field]; return }
           }
           if (c && ['fixed', 'enum', 'range'].includes(c.mode)) {
-            const isViol = wantAbnormal && !abnormalDone && violatable[violIdx] === def
-            if (isViol) { values[field] = makeAbnormal(c, analysis[field]); abnormalDone = true }
-            else if (wantBoundary) values[field] = makeBoundary(c, analysis[field], i)
+            if (field === abnormalField && abnormalType) {
+              if (abnormalType === 'exceedRange') values[field] = makeAbnormal(c, analysis[field])
+              else if (abnormalType === 'illegalEnum') {
+                const vals = new Set((c.entries || []).map((e) => String(e.value ?? e)))
+                let cand = 9000
+                while (vals.has(String(cand))) cand += 1
+                values[field] = cand
+              } else if (abnormalType === 'formatError') {
+                values[field] = makeFormatError(c)
+              }
+              abnormalDone = true
+              recipeTags.push({ exceedRange: '数值越界', illegalEnum: '非法枚举', formatError: '格式异常' }[abnormalType])
+            } else if (wantBoundary) values[field] = makeBoundary(c, analysis[field], i)
             else { values[field] = makeNormal(c, analysis[field]) }
             return
           }
@@ -943,6 +973,7 @@ export const useTestDataStore = defineStore('testData', {
             strategy,
             referenceIds: options.referenceIds || [],
             coverageTags: [wantAbnormal ? '异常路径' : wantBoundary ? '边界值' : '正常路径'],
+            recipeTags,
             expectedResult: wantAbnormal ? '预期校验不通过' : '预期校验通过',
           })
         }
@@ -985,7 +1016,7 @@ export const useTestDataStore = defineStore('testData', {
     runGeneration(datasetId, opts = {}) {
       const ds = this.datasets.find((d) => d.id === datasetId)
       if (!ds) return { ok: false, reason: '数据集不存在', rows: [], coverage: null }
-      const { count = 8, mode = 'mixed', method = 'constraint', referenceRows = [], fieldOverrides = {} } = opts
+      const { count = 8, mode = 'mixed', method = 'constraint', referenceRows = [], fieldOverrides = {}, recipe = null } = opts
       let rows = []
       if (method === 'distribution') {
         const samples = referenceRows.length
@@ -1002,6 +1033,7 @@ export const useTestDataStore = defineStore('testData', {
           referenceIds: referenceRows.map((row) => `${row._datasetId}-${row.id}`),
           preferExcellent: referenceRows.some((row) => row.excellent),
           fieldOverrides,
+          recipe,
         })
       }
       const protocolStore = useProtocolStore()
