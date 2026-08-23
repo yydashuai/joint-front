@@ -10,11 +10,13 @@
         />
         <text v-for="(g, i) in gridY" :key="'t' + i" :x="padL - 6" :y="g.y + 3" text-anchor="end" class="lc-axis">{{ g.label }}</text>
       </g>
-      <!-- X 轴标签 -->
+      <!-- X 轴标签（斜向，避免密集日期重叠） -->
       <text
-        v-for="(c, i) in categories" :key="'x' + i"
-        :x="xOf(i)" :y="H - 6" text-anchor="middle" class="lc-axis"
-      >{{ c }}</text>
+        v-for="(item, idx) in visibleXLabels" :key="'x' + item.i"
+        :x="xOf(item.i) + 20" :y="H -20" text-anchor="end"
+        :transform="`rotate(45 ${xOf(item.i)} ${H - 30})`"
+        class="lc-axis"
+      >{{ item.c }}</text>
       <!-- 系列 -->
       <g v-for="(s, si) in series" :key="'s' + si">
         <polygon v-if="area && s.points.length > 1" :points="areaPoints(s)" :fill="s.color" opacity="0.12" />
@@ -46,14 +48,23 @@ const props = defineProps({
 })
 
 const W = 520
-const H = 200
+const H = 210
 const padL = 38
 const padR = 12
 const padT = 12
-const padB = 24
+const padB = 40
 
 const categories = computed(() => props.series[0]?.points.map((p) => p.x) || [])
 const hasData = computed(() => props.series.some((s) => s.points.some((p) => p.y > 0)))
+
+// X 轴标签抽稀：密集日期时只保留约 10 个刻度，避免斜向标签仍重叠（折线点不抽稀）
+const xLabelItems = computed(() => {
+  const cats = categories.value
+  const len = cats.length
+  const step = len > 10 ? Math.ceil(len / 10) : 1
+  return cats.map((c, i) => ({ c, i, show: i % step === 0 || i === len - 1 }))
+})
+const visibleXLabels = computed(() => xLabelItems.value.filter((it) => it.show))
 
 const maxY = computed(() => {
   if (props.yMax) return props.yMax
@@ -87,8 +98,8 @@ const areaPoints = (s) => {
 </script>
 
 <style scoped lang="scss">
-.linechart { width: 100%; position: relative; }
-.lc-svg { width: 100%; height: auto; }
+.linechart { width: 100%; min-width: 0; position: relative; }
+.lc-svg { width: 100%; height: auto; max-height: 200px; }
 .lc-grid { stroke: var(--el-border-color-lighter); stroke-width: 1; }
 .lc-axis { font-size: 9px; fill: var(--el-text-color-secondary); }
 .lc-legend {

@@ -31,37 +31,35 @@
         <!-- ======== 数据分析（智能分析核心） ======== -->
         <el-tab-pane label="数据分析" name="analysis">
           <div class="analysis-scroll">
-            <!-- B'：异常测试覆盖度（刻意设计的压力测试资产） -->
-            <ChartCard title="异常测试覆盖度（刻意设计的压力测试资产）" full>
-              <div class="b-grid">
+            <!-- 第一行：三列（异常测试覆盖度 / 异常数据集 Top / 异常场景分类） -->
+            <div class="row-3">
+              <ChartCard title="异常测试覆盖度">
                 <div class="b-left">
-                  <DonutChart :data="abnormalDonut" center-label="历史数据" :size="140" />
+                  <DonutChart :data="abnormalDonut" center-label="历史数据" :size="130" />
                   <div class="b-ratio">
                     <div>异常 <b>{{ abnormalCount }}</b> 条（占 <b>{{ abnormalRatio }}%</b>）</div>
-                    <div class="b-tip">异常是刻意构造的非正常数据，用于压测对方系统、挖掘潜在漏洞，属宝贵测试资产，并非质量错误。</div>
                   </div>
                 </div>
-                <div class="b-right">
-                  <div class="sub-title">异常数据集 Top（承载异常/边界测试最集中的资产）</div>
-                  <BarChart :data="topAbnormalDatasets" horizontal />
-                </div>
-              </div>
-              <div class="b-grid2">
-                <div>
-                  <div class="sub-title">异常场景分类（按测试员自定义标签，非协议字段）</div>
-                  <BarChart :data="abnormalSceneDist" horizontal />
-                </div>
-                <div>
-                  <div class="sub-title">异常数据趋势（近 30 日）</div>
-                  <LineChart :series="abnormalTrendSeries" unit="条" />
-                </div>
-              </div>
-            </ChartCard>
+              </ChartCard>
 
-            <!-- C' + D 同行 -->
+              <ChartCard title="异常数据集 Top">
+                <BarChart :data="topAbnormalDatasets" horizontal />
+              </ChartCard>
+
+              <ChartCard title="异常场景分类">
+                <div class="scene-cell">
+                  <DonutChart :data="abnormalSceneDist" center-label="异常场景" :size="120" />
+                </div>
+              </ChartCard>
+            </div>
+
+            <!-- 第二行：两列（异常数据趋势 / 报文实测覆盖） -->
             <div class="row-2">
-              <!-- C'：报文实测覆盖（数据视角） -->
-              <ChartCard title="报文实测覆盖（数据视角）">
+              <ChartCard title="异常数据趋势" class="fill-card">
+                <LineChart :series="abnormalTrendSeries" unit="条" />
+              </ChartCard>
+
+              <ChartCard title="报文实测覆盖">
                 <DonutChart :data="coverageDonut" center-label="已准备数据集" :size="130" />
                 <div class="cov-note">
                   已准备 <b>{{ preparedCount }}</b> 个数据集，其中 <b>{{ testedCount }}</b> 个已在实测中真正发送过。
@@ -75,41 +73,53 @@
                   <div v-if="!blindSpot.length" class="muted">无盲区，准备的测试数据均已实测覆盖。</div>
                 </div>
               </ChartCard>
+            </div>
 
-              <!-- D：数据复用热力 -->
-              <ChartCard title="数据复用热力（Top 复用数据集）">
+            <!-- 第三行：两列（数据复用热力 / 待清理提醒） -->
+            <div class="row-2">
+              <ChartCard title="数据复用热力">
                 <BarChart :data="reuseBars" horizontal />
-                <div class="b-tip">橙色条 = 含异常资产的数据集（压力测试资产被复用，正向）。复用越高说明该数据集越值得沉淀。</div>
+                <div class="sub-title">数据来源构成</div>
+                <BarChart :data="sourceBars" horizontal />
+              </ChartCard>
+
+              <ChartCard title="待清理提醒">
+                <div class="e-bar">
+                  <span class="sub-title">闲置阈值</span>
+                  <el-radio-group v-model="staleDays" size="small">
+                    <el-radio-button :value="7">7 天</el-radio-button>
+                    <el-radio-button :value="30">30 天</el-radio-button>
+                    <el-radio-button :value="90">90 天</el-radio-button>
+                  </el-radio-group>
+                  <span class="muted">仅提示，不自动删除。</span>
+                </div>
+                <el-table :data="cleanupList" size="small" max-height="260" empty-text="无待清理项">
+                  <el-table-column prop="type" label="类型" width="80" />
+                  <el-table-column prop="name" label="名称" min-width="180" show-overflow-tooltip />
+                  <el-table-column prop="lastActive" label="最近活动" width="120" />
+                  <el-table-column prop="reason" label="说明" min-width="220" show-overflow-tooltip />
+                </el-table>
               </ChartCard>
             </div>
 
-            <!-- E：待清理提醒 -->
-            <ChartCard title="待清理提醒（零引用且长期未动）" full>
-              <div class="e-bar">
-                <span class="sub-title">闲置阈值</span>
-                <el-radio-group v-model="staleDays" size="small">
-                  <el-radio-button :value="7">7 天</el-radio-button>
-                  <el-radio-button :value="30">30 天</el-radio-button>
-                  <el-radio-button :value="90">90 天</el-radio-button>
-                </el-radio-group>
-                <span class="muted">仅提示，不自动删除；异常数据集属宝贵资产，不因“异常”被建议清理。</span>
-              </div>
-              <el-table :data="cleanupList" size="small" max-height="260" empty-text="无待清理项">
-                <el-table-column prop="type" label="类型" width="80" />
-                <el-table-column prop="name" label="名称" min-width="180" show-overflow-tooltip />
-                <el-table-column prop="lastActive" label="最近活动" width="120" />
-                <el-table-column prop="reason" label="说明" min-width="220" show-overflow-tooltip />
-              </el-table>
-            </ChartCard>
+            <!-- 第四行：两列（报文配套完整性 / 最近操作记录） -->
+            <div class="row-2">
+              <ChartCard title="报文配套完整性">
+                <el-table :data="completenessList" size="small" max-height="260" empty-text="配置完整，无缺口">
+                  <el-table-column prop="type" label="类型" width="80" />
+                  <el-table-column prop="name" label="名称" min-width="200" show-overflow-tooltip />
+                  <el-table-column prop="reason" label="说明" min-width="220" show-overflow-tooltip />
+                </el-table>
+              </ChartCard>
 
-            <!-- 最近操作记录（去操作人，不作工作量分析） -->
-            <ChartCard title="最近操作记录" full>
-              <el-table :data="recentOps" size="small" max-height="180" empty-text="暂无操作记录">
-                <el-table-column prop="time" label="时间" width="160" />
-                <el-table-column prop="type" label="类型" width="120" />
-                <el-table-column prop="target" label="目标" min-width="200" show-overflow-tooltip />
-              </el-table>
-            </ChartCard>
+              <ChartCard title="最近操作记录">
+                <el-table :data="recentOps" size="small" max-height="180" empty-text="暂无操作记录">
+                  <el-table-column prop="time" label="时间" width="160" />
+                  <el-table-column prop="type" label="类型" width="120" />
+                  <el-table-column prop="target" label="目标" min-width="200" show-overflow-tooltip />
+                </el-table>
+              </ChartCard>
+            </div>
           </div>
         </el-tab-pane>
 
@@ -242,6 +252,19 @@ const abnormalTrendSeries = computed(() => [
 ])
 
 /* ============================================================
+ * 辅助：数据来源构成（手动/导入/生成等，按历史数据行 source 统计）
+ * ============================================================ */
+const SOURCE_COLORS = { 手动创建: '#2f6bff', 文件导入: '#0f8b8d', 智能生成: '#d97706', 接收: '#7c3aed', 未标注: '#cbd5e1' }
+const sourceBars = computed(() => {
+  const map = new Map()
+  scopeHistory.value.forEach((r) => {
+    const s = r.source || '未标注'
+    map.set(s, (map.get(s) || 0) + 1)
+  })
+  return [...map.entries()].map(([label, value]) => ({ label, value, color: SOURCE_COLORS[label] || '#cbd5e1' }))
+})
+
+/* ============================================================
  * C'：报文实测覆盖（数据视角）—— 已准备的数据集中，真正在实测中发送过的占比
  * ============================================================ */
 const planDatasetIds = computed(() => new Set(execStore.planItems.flatMap((p) => (p.datasets || []).map((d) => String(d.id)))))
@@ -315,12 +338,13 @@ const referencedAnywhere = (dsId) => {
   if (taskStore.tasks.some((t) => (t.bindings?.datasetIds || []).some((d) => String(d) === id))) return true
   return false
 }
+const isAbnormalDataset = (ds) => (ds.historyRows || []).some((r) => r.abnormal)
 const orphanDatasets = computed(() => {
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - staleDays.value)
   const cutoffStr = cutoff.toISOString().slice(0, 10)
   return scopeDatasets.value
-    .filter((ds) => !referencedAnywhere(ds.id) && String(lastActiveOf(ds)) < cutoffStr)
+    .filter((ds) => !isAbnormalDataset(ds) && !referencedAnywhere(ds.id) && String(lastActiveOf(ds)) < cutoffStr)
     .map((ds) => ({ type: '数据集', name: ds.name, lastActive: lastActiveOf(ds), reason: `零引用且超过 ${staleDays.value} 天未变动` }))
 })
 const inPlanIfaceIds = computed(() => new Set(execStore.planItems.map((p) => p.iface?.id).filter(Boolean).map(String)))
@@ -333,6 +357,29 @@ const orphanMessages = computed(() => protoStore.interfaces
   })
   .map((m) => ({ type: '报文', name: m.name, lastActive: '—', reason: '未关联数据集、未排入计划（建议确认是否保留）' })))
 const cleanupList = computed(() => [...orphanDatasets.value, ...orphanMessages.value])
+
+/* ============================================================
+ * F：报文配套完整性（报文缺配套数据集 / 数据集游离无归属报文）
+ * ============================================================ */
+const messageHasDataset = computed(() => {
+  const set = new Set()
+  scopeDatasets.value.forEach((ds) => { if (ds.messageId) set.add(String(ds.messageId)) })
+  return set
+})
+const messagesInScope = computed(() => protoStore.interfaces.filter((m) => {
+  if (systemId.value && String(m.systemId) !== String(systemId.value)) return false
+  if (interfaceId.value && String(m.ownerIfaceId) !== String(interfaceId.value)) return false
+  return true
+}))
+const completenessList = computed(() => {
+  const msgGaps = messagesInScope.value
+    .filter((m) => !messageHasDataset.value.has(String(m.id)))
+    .map((m) => ({ type: '报文', name: m.name, reason: '尚无配套测试数据集' }))
+  const frees = scopeDatasets.value
+    .filter((ds) => !ds.messageId || !protoStore.interfaces.some((mm) => String(mm.id) === String(ds.messageId)))
+    .map((ds) => ({ type: '数据集', name: ds.name, reason: '游离，未关联任一报文' }))
+  return [...msgGaps, ...frees]
+})
 
 /* ---------- 最近操作记录（去操作人，不作工作量分析） ---------- */
 const recentOps = computed(() => analysisStore.logsOfType('智能生成').slice(0, 8)
@@ -354,6 +401,10 @@ const exportSnapshot = () => {
   parts.push(toCsv(['类型', '名称', '最近活动', '说明'], cleanupList.value.map((r) => ({
     类型: r.type, 名称: r.name, 最近活动: r.lastActive, 说明: r.reason,
   }))))
+  parts.push('报文配套完整性：' + JSON.stringify({
+    报文缺数据集: completenessList.value.filter((r) => r.type === '报文').length,
+    游离数据集: completenessList.value.filter((r) => r.type === '数据集').length,
+  }))
   const blob = new Blob([`\uFEFF${parts.join('\n\n')}`], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -367,7 +418,7 @@ const exportSnapshot = () => {
 <style scoped lang="scss">
 .smart-tab {
   --stats-slate: #64748b;
-  height: 100%;
+  flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -424,29 +475,41 @@ const exportSnapshot = () => {
     overflow: hidden;
   }
   :deep(.el-tabs) { display: flex; min-height: 0; flex: 1; flex-direction: column; }
-  :deep(.el-tabs__content) { min-height: 0; flex: 1; padding-top: 10px; overflow: hidden; }
+  :deep(.el-tabs__content) { min-height: 0; flex: 1; padding-top: 10px; overflow: hidden; display: flex; flex-direction: column; }
+  :deep(.el-tab-pane) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   :deep(.el-tabs__item) { height: 44px; padding: 0 22px; font-weight: 650; }
 }
 .analysis-scroll {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding-right: 2px;
 }
-.row-2 {
+.row-3 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
-/* B' 布局 */
-.b-grid { display: grid; grid-template-columns: 280px 1fr; gap: 18px; align-items: center; }
+.row-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+/* 异常数据趋势：折线图撑满卡片，与同排"报文实测覆盖"等高 */
+.fill-card :deep(.chart-card__body) { justify-content: stretch; }
+.fill-card :deep(.linechart) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fill-card :deep(.lc-svg) { flex: 1; min-height: 0; width: 100%; height: 100%; max-height: none; }
+.fill-card :deep(.lc-legend) { flex-shrink: 0; }
+/* 异常测试覆盖度主卡 */
 .b-left { display: flex; flex-direction: column; gap: 10px; align-items: center; }
 .b-ratio { font-size: 12px; color: var(--el-text-color-regular); }
-.b-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 14px; border-top: 1px dashed var(--el-border-color-lighter); padding-top: 12px; }
+.scene-cell { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; overflow: hidden; }
+.scene-cell :deep(.donut) { flex-direction: column; align-items: center; }
+.scene-cell :deep(.donut__legend) { width: 100%; }
 .sub-title { font-size: 12px; font-weight: 600; color: var(--el-text-color-primary); margin-bottom: 8px; }
-.b-tip { font-size: 11px; color: var(--el-text-color-secondary); margin-top: 8px; line-height: 1.5; }
 .cov-note { font-size: 12px; color: var(--el-text-color-regular); margin: 8px 0 4px; }
 /* C' 盲区列表 */
 .blind-list { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow: auto; }
@@ -457,7 +520,7 @@ const exportSnapshot = () => {
 .muted { color: var(--el-text-color-secondary); font-size: 12px; }
 @container (max-width: 1100px) {
   .kpi-grid { grid-template-columns: repeat(3, minmax(130px, 1fr)); }
+  .row-3 { grid-template-columns: 1fr; }
   .row-2 { grid-template-columns: 1fr; }
-  .b-grid, .b-grid2 { grid-template-columns: 1fr; }
 }
 </style>
