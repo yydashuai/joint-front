@@ -68,7 +68,7 @@ const form = reactive({ name: '', datasetIds: [], remark: '' })
 const isEdit = computed(() => !!props.scheme)
 
 const systemLabel = computed(() => {
-  if (!props.systemId) return '全部系统（通用）'
+  if (!props.systemId) return '全部联试对象（通用）'
   return systemStore.systems.find(s => s.id === props.systemId)?.name || String(props.systemId)
 })
 

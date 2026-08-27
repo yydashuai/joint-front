@@ -8,7 +8,7 @@
             <!-- S1：分析范围筛选（仅「数据分析」视图展示） -->
             <div class="scope-bar">
               <span class="scope-bar__label">分析范围</span>
-              <el-select v-show="false" v-model="systemId" clearable placeholder="全部系统" style="width: 150px" @change="onSystemChange">
+              <el-select v-show="false" v-model="systemId" clearable placeholder="全部联试对象" style="width: 150px" @change="onSystemChange">
                 <el-option v-for="s in systemStore.systems" :key="s.id" :label="s.name" :value="s.id" />
               </el-select>
               <el-select v-model="interfaceId" clearable filterable placeholder="全部接口" style="width: 240px">

@@ -7,7 +7,7 @@
       <el-form-item label="描述">
         <el-input v-model="form.desc" type="textarea" :rows="2" placeholder="可选" />
       </el-form-item>
-      <el-form-item label="所属模块">
+      <el-form-item label="所属链路节点">
         <el-input :model-value="`${form.moduleName}（${form.systemId}）`" disabled />
       </el-form-item>
 
@@ -20,7 +20,7 @@
         >
           <el-option v-for="i in moduleInterfaces" :key="i.id" :label="i.name" :value="i.name" />
         </el-select>
-        <span v-if="moduleInterfaces.length === 0" class="form-hint">当前模块暂无报文，请先在报文字段管理中创建报文</span>
+        <span v-if="moduleInterfaces.length === 0" class="form-hint">当前链路节点暂无报文，请先在报文字段管理中创建报文</span>
       </el-form-item>
     </el-form>
     <template #footer>

@@ -365,9 +365,9 @@ watch(() => route.query.mode, (mode) => {
   activeMode.value = mode === 'receive' ? 'receive' : 'send'
 })
 
-/* ---- 选中：系统接口 / 报文 / 自定义接口 ---- */
+/* ---- 选中：系统接口 / 报文 / 自定义接口（方案内接口 sin- 同样视为接口） ---- */
 const selectedIface = computed(() => {
-  const match = selectedKey.value.match(/^iface-(.+)$/)
+  const match = selectedKey.value.match(/^(?:iface|sin)-(.+)$/)
   if (!match) return null
   return protocolStore.testInterfaces.find((iface) => String(iface.id) === String(match[1])) || null
 })
@@ -435,7 +435,7 @@ const customBadge = (custom) =>
 
 /* ---- 树事件 ---- */
 const onTreeSelect = (data) => {
-  if (['iface', 'custom', 'message'].includes(data.kind) && data.ref) {
+  if (['iface', 'custom', 'message', 'schemeItem'].includes(data.kind) && data.ref) {
     selectedKey.value = data.key
     return
   }

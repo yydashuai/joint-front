@@ -53,6 +53,7 @@ export const defaultRuleSet = (patch = {}) => ({
   name: '新建规则集',
   systemId: null,
   moduleId: null,
+  messageId: null, // 归属报文（接口-报文层级）；旧数据从 rules[].target.interfaceId 推导
   status: 'draft',
   desc: '',
   rules: [],
@@ -82,6 +83,18 @@ export const useRuleStore = defineStore('rule', {
 
   getters: {
     selectedRuleSet: (state) => state.ruleSets.find((item) => item.id === state.selectedRuleSetId) || null,
+    /** 规则集归属报文 id：显式 messageId 优先，否则取规则中第一条 target.interfaceId（兼容旧数据） */
+    messageIdOf: (state) => (ruleSet) => {
+      if (!ruleSet) return null
+      if (ruleSet.messageId) return ruleSet.messageId
+      const first = (ruleSet.rules || []).find((rule) => rule.target?.interfaceId)
+      return first?.target?.interfaceId || null
+    },
+    ruleSetsOfMessage: (state) => (messageId) => state.ruleSets.filter((ruleSet) => {
+      if (!messageId) return false
+      if (ruleSet.messageId) return String(ruleSet.messageId) === String(messageId)
+      return (ruleSet.rules || []).some((rule) => String(rule.target?.interfaceId) === String(messageId))
+    }),
     ruleSetsOfModule: (state) => (moduleId) => state.ruleSets.filter((item) => item.moduleId === moduleId),
     ruleSetsOfSystem: (state) => (systemId) => state.ruleSets.filter((item) => item.systemId === systemId),
     enabledRuleSets: (state) => state.ruleSets.filter((item) => item.status === 'enabled'),

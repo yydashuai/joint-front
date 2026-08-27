@@ -66,7 +66,7 @@
 <script setup>
 /**
  * 接口收发监控专用树：三个固定顶级分组（系统接口 / 方案 / 自定义接口）。
- * - 不再展示与管理系统、模块层级。
+ * - 不再展示与管理联试对象、链路节点层级。
  * - 系统接口：接口直挂报文（1:N，排他归属）；接口展开显示其报文，报文徽标 = 传输类型·字段数。
  * - 方案：叶子 = 接口方案，展开显示方案内接口（系统接口可继续展开报文；自定义接口为密文叶子）。
  * - 自定义接口：密文接口为叶子，无报文/字段（点击不打开界面，仅右键/拖拽可用）。
@@ -87,6 +87,8 @@ const props = defineProps({
   schemeBadge: { type: Function, default: () => '' },
   customBadge: { type: Function, default: () => '' },
   messageBadge: { type: Function, default: null }, // 缺省按「传输类型·N字段」计算
+  messageLeafGroups: { type: Function, default: null }, // (message) => 报文下的业务末端节点（如规则集）：[{key,kind,label,badge,ref}]
+  expandMessages: { type: Boolean, default: true },     // 接口节点是否展开报文（入口型界面可关闭，仅显示接口徽标）
   editorMode: { type: Boolean, default: false },    // 编辑器模式（报文字段管理页）：精简右键菜单、仅系统接口分组显示添加按钮
   readonly: { type: Boolean, default: false },      // 资产筛选模式：禁用拖拽、右键菜单和新增入口
   visibleGroups: { type: Array, default: () => ['system', 'scheme', 'custom'] },
@@ -121,26 +123,46 @@ const defaultMessageBadge = (m) => m.fileId
   ? `文件·${m.transportType || '—'}`
   : `${m.transportType || '—'}·${(m.protocolRefs || []).length} 字段`
 const messageBadgeOf = (m) => (props.messageBadge ? props.messageBadge(m) : defaultMessageBadge(m))
-const messageNode = (m) => ({
-  key: `msg-${m.id}`,
-  kind: 'message',
-  icon: 'Document',
-  label: m.name,
-  badge: messageBadgeOf(m),
-  ref: m,
-})
+const messageNode = (m) => {
+  const node = {
+    key: `msg-${m.id}`,
+    kind: 'message',
+    icon: 'Document',
+    label: m.name,
+    badge: messageBadgeOf(m),
+    ref: m,
+  }
+  const leaves = props.messageLeafGroups ? (props.messageLeafGroups(m) || []) : []
+  if (leaves.length) node.children = leaves
+  return node
+}
+const ifaceNode = (i) => {
+  const node = {
+    key: `iface-${i.id}`,
+    kind: 'iface',
+    icon: 'Link',
+    label: i.name,
+    badge: props.ifaceBadge(i),
+    ref: i,
+  }
+  if (props.expandMessages) node.children = ifaceMessages(i).map(messageNode)
+  return node
+}
 
 const schemeChildren = (scheme) => (scheme.interfaceIds || [])
   .map((id) => {
     const sys = protocolStore.testInterfaces.find((i) => String(i.id) === String(id))
-    if (sys) return {
-      key: `sin-${id}`,
-      kind: 'schemeItem',
-      icon: 'Link',
-      label: sys.name,
-      badge: props.ifaceBadge(sys) || '系统',
-      ref: sys,
-      children: ifaceMessages(sys).map(messageNode),
+    if (sys) {
+      const node = {
+        key: `sin-${id}`,
+        kind: 'schemeItem',
+        icon: 'Link',
+        label: sys.name,
+        badge: props.ifaceBadge(sys) || '系统',
+        ref: sys,
+      }
+      if (props.expandMessages) node.children = ifaceMessages(sys).map(messageNode)
+      return node
     }
     const custom = customStore.byId(id)
     if (custom) return { key: `cin-${id}`, kind: 'schemeItem', icon: 'Lock', label: custom.name, badge: '自定义', ref: custom }
@@ -180,15 +202,7 @@ const treeData = computed(() => {
       count: sysIfaces.length,
       groupName: 'system',
       addActions: props.readonly ? [] : [{ groupKind: 'iface', label: '+接口', type: 'success' }],
-      children: sysIfaces.map((i) => ({
-        key: `iface-${i.id}`,
-        kind: 'iface',
-        icon: 'Link',
-        label: i.name,
-        badge: props.ifaceBadge(i),
-        ref: i,
-        children: ifaceMessages(i).map(messageNode),
-      })),
+      children: sysIfaces.map(ifaceNode),
     },
     {
       key: 'grp-scheme',
@@ -268,7 +282,7 @@ const collapseAll = () => {
 const toggleAll = () => (treeFullyExpanded.value ? collapseAll() : expandAll())
 
 /* ---- 选中与拖拽 ---- */
-const isSelectableLeaf = (d) => ['iface', 'custom', 'scheme', 'message'].includes(d.kind) && !!d.ref
+const isSelectableLeaf = (d) => ['iface', 'custom', 'scheme', 'schemeItem', 'message', 'rule-set'].includes(d.kind) && !!d.ref
 const isDraggableLeaf = (d) => !props.readonly && ['iface', 'custom', 'scheme', 'message'].includes(d.kind) && !!d.ref
 
 const visibleCurrentNodeKey = computed(() => props.modelValue || null)
@@ -297,7 +311,7 @@ const emitAdd = (groupKind) => emit('add-leaf', { groupKind })
 const ctx = ref({ visible: false, x: 0, y: 0, data: null })
 const onContextMenu = (event, data) => {
   if (props.readonly) return
-  if (!data?.ref || !['iface', 'custom', 'scheme', 'message'].includes(data.kind)) return
+  if (!data?.ref || !['iface', 'custom', 'scheme', 'message', 'rule-set'].includes(data.kind)) return
   event.preventDefault()
   ctx.value = { visible: true, x: event.clientX, y: event.clientY, data }
 }
@@ -333,6 +347,9 @@ const ctxActions = computed(() => {
           { label: '立即发送', action: 'message-test' },
         ]
     return [...base, ...extra, { label: '删除', action: 'delete-message', danger: true }]
+  }
+  if (d.kind === 'rule-set') {
+    return [...extra, { label: '删除', action: 'delete-rule-set', danger: true }]
   }
   const base = [
     { label: '配置接口', action: 'config-iface' },
@@ -402,6 +419,9 @@ const emitAction = (action) => {
   &--message .tnode__icon { color: var(--el-text-color-secondary); }
   &--message { font-size: 12px; }
   &--message .tnode__badge { font-size: 10px; }
+  &--rule-set .tnode__icon { color: var(--el-color-warning); }
+  &--rule-set { font-size: 12px; }
+  &--rule-set .tnode__badge { font-size: 10px; }
   &--schemeItem .tnode__icon { color: var(--el-text-color-secondary); }
   &--schemeItem { font-size: 12px; }
   &--schemeItem .tnode__badge { font-size: 10px; }

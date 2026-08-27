@@ -28,7 +28,7 @@ export const useSystemStore = defineStore('system', {
     options(state) {
       const visible = this.visibleSystems
       return [
-        { label: `全部系统（${visible.length}）`, value: null },
+        { label: `全部联试对象（${visible.length}）`, value: null },
         ...visible.map((system) => ({ label: system.name, value: system.id }))
       ]
     }
@@ -45,7 +45,7 @@ export const useSystemStore = defineStore('system', {
         desc: '',
         owner: '',
         ...system,
-        name: makeUniqueName(this.systems, system.name || '新建系统'),
+        name: makeUniqueName(this.systems, system.name || '新建联试对象'),
       }
       this.systems.push(next)
       return next

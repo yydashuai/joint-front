@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    title="被测系统管理"
+    title="联试对象管理"
     width="960px"
     class="system-manager"
     @update:model-value="emit('update:modelValue', $event)"
@@ -10,22 +10,22 @@
     <div class="system-manager__body">
       <div class="system-manager__list">
         <div class="system-manager__toolbar">
-          <span>系统列表</span>
+          <span>联试对象列表</span>
         </div>
 
         <el-table :data="systemStore.systems" height="360" stripe>
-          <el-table-column prop="name" label="系统名称" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="name" label="联试对象名称" min-width="150" show-overflow-tooltip />
           <el-table-column prop="owner" label="负责人" width="120" show-overflow-tooltip />
           <el-table-column label="模块数" width="80" align="center">
             <template #default="{ row }">{{ moduleCount(row.id) }}</template>
           </el-table-column>
           <el-table-column label="操作" width="220" align="center">
             <template #default="{ row }">
-              <el-tooltip content="管理该系统下的模块"><el-button :icon="ConnectionIcon" size="small" link type="success" @click="manageModules(row)">模块管理</el-button></el-tooltip>
-              <el-tooltip content="编辑该系统信息"><el-button :icon="Edit" size="small" link type="primary" @click="startEdit(row)">编辑</el-button></el-tooltip>
+              <el-tooltip content="管理该联试对象下的链路节点"><el-button :icon="ConnectionIcon" size="small" link type="success" @click="manageModules(row)">节点管理</el-button></el-tooltip>
+              <el-tooltip content="编辑该联试对象信息"><el-button :icon="Edit" size="small" link type="primary" @click="startEdit(row)">编辑</el-button></el-tooltip>
               <el-popconfirm
                 width="260"
-                title="删除后，该系统下模块将归入未分配，不会删除模块。确认删除？"
+                title="删除后，该联试对象下链路节点将归入未分配，不会删除链路节点。确认删除？"
                 @confirm="removeSystem(row)"
               >
                 <template #reference>
@@ -38,19 +38,19 @@
       </div>
 
       <el-form ref="formRef" :model="draft" :rules="rules" label-position="left" label-width="76px" hide-required-asterisk class="system-manager__form">
-        <div class="system-manager__form-title">{{ editingId ? '编辑系统' : '新增系统' }}</div>
+        <div class="system-manager__form-title">{{ editingId ? '编辑联试对象' : '新增联试对象' }}</div>
         <el-form-item label="名称" prop="name" class="system-manager__required">
-          <el-input v-model="draft.name" placeholder="如 综合武器管理系统" />
+          <el-input v-model="draft.name" placeholder="如 综合武器管理对象" />
         </el-form-item>
         <el-form-item label="负责人" prop="owner">
           <el-input v-model="draft.owner" placeholder="如 装备联试组" />
         </el-form-item>
         <el-form-item label="描述" prop="desc">
-          <el-input v-model="draft.desc" type="textarea" :rows="4" placeholder="说明该系统覆盖的接口范围" />
+          <el-input v-model="draft.desc" type="textarea" :rows="4" placeholder="说明该联试对象覆盖的接口范围" />
         </el-form-item>
         <div class="system-manager__form-actions">
           <el-tooltip content="清空表单内容"><el-button @click="resetForm">清空</el-button></el-tooltip>
-          <el-tooltip :content="editingId ? '保存对系统的修改' : '创建新的被测系统'"><el-button type="primary" @click="saveSystem">{{ editingId ? '保存修改' : '创建系统' }}</el-button></el-tooltip>
+          <el-tooltip :content="editingId ? '保存对联试对象的修改' : '创建新的联试对象'"><el-button type="primary" @click="saveSystem">{{ editingId ? '保存修改' : '创建联试对象' }}</el-button></el-tooltip>
         </div>
       </el-form>
     </div>
@@ -86,7 +86,7 @@ const blankDraft = () => ({ name: '', desc: '', owner: '' })
 const draft = reactive(blankDraft())
 
 const rules = {
-  name: [{ required: true, message: '请输入系统名称', trigger: 'blur' }]
+  name: [{ required: true, message: '请输入联试对象名称', trigger: 'blur' }]
 }
 
 const moduleCount = (systemId) => connectionStore.nodes.filter((module) => module.systemId === systemId).length
@@ -123,11 +123,11 @@ const saveSystem = async () => {
     const payload = { ...draft, name: validName }
     if (editingId.value) {
       systemStore.update(editingId.value, payload)
-      ElMessage.success('系统信息已更新')
+      ElMessage.success('联试对象信息已更新')
     } else {
       const created = systemStore.add(payload)
       systemStore.setCurrent(created.id)
-      ElMessage.success('系统已创建')
+      ElMessage.success('联试对象已创建')
     }
     resetForm()
   })
@@ -144,7 +144,7 @@ const removeSystem = (system) => {
   const count = moduleCount(system.id)
   connectionStore.unassignSystem(system.id)
   systemStore.remove(system.id)
-  ElMessage.success(count ? `已删除系统，${count} 个模块已归入未分配` : '系统已删除')
+  ElMessage.success(count ? `已删除联试对象，${count} 个链路节点已归入未分配` : '联试对象已删除')
 }
 </script>
 

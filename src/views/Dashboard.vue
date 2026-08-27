@@ -2,24 +2,16 @@
   <div class="page dashboard">
     <header class="dashboard-head">
       <div>
-        <h2>{{ isAll ? '联试系统首页' : currentSystem?.name }}</h2>
+        <h2>联试系统首页</h2>
       </div>
-      <el-button
-        v-if="!isAll"
-        :icon="Back"
-        plain
-        @click="clearSystemFilter"
-      >
-        返回全部系统
-      </el-button>
     </header>
 
     <section class="system-section">
       <div class="section-head">
         <div>
-          <h3>系统联试状态</h3>
+          <h3>接口与方案</h3>
         </div>
-
+        <span class="section-head__summary">点击卡片快速进入收发测试</span>
       </div>
 
       <el-scrollbar
@@ -29,40 +21,41 @@
       >
         <div class="system-track">
           <button
-            v-for="card in systemCards"
+            v-for="card in overviewCards"
             :key="card.id"
             type="button"
             class="system-card"
             :class="{
-              'is-active': activeCardId === card.id,
-              'is-unavailable': card.onlineModules === 0,
+              'is-active': selectedKey === card.key,
+              'is-unavailable': !card.ready,
+              'is-scheme-card': card.kind === 'scheme',
             }"
-            @click="selectSystem(card.id)"
+            @click="onCardSelect(card)"
           >
             <div class="system-card__top">
-              <span class="system-card__indicator" :class="{ 'is-online': card.onlineModules > 0 }" />
+              <span class="system-card__indicator" :class="{ 'is-online': card.ok }" />
               <strong>{{ card.name }}</strong>
               <el-tag
-                :type="card.readyInterfaces > 0 ? 'success' : 'info'"
+                :type="card.ready ? 'success' : 'info'"
                 effect="plain"
                 size="small"
               >
-                {{ card.readyInterfaces > 0 ? '可联试' : '待配置' }}
+                {{ card.ready ? '可联试' : '待配置' }}
               </el-tag>
             </div>
-            <p>{{ card.owner || '未设置负责人' }}</p>
+            <p>{{ card.desc || '—' }}</p>
             <div class="system-card__metrics">
               <span>
-                <b>{{ card.onlineModules }}/{{ card.moduleCount }}</b>
-                <em>在线模块</em>
+                <b>{{ card.metric1 }}</b>
+                <em>{{ card.metric1Label }}</em>
               </span>
               <span>
-                <b>{{ card.readyInterfaces }}/{{ card.interfaceCount }}</b>
-                <em>可测接口</em>
+                <b>{{ card.metric2 }}</b>
+                <em>{{ card.metric2Label }}</em>
               </span>
-              <span :class="{ 'has-alert': card.exceptionCount > 0 }">
-                <b>{{ card.exceptionCount }}</b>
-                <em>异常</em>
+              <span :class="{ 'has-alert': card.alert }">
+                <b>{{ card.metric3 }}</b>
+                <em>{{ card.metric3Label }}</em>
               </span>
             </div>
           </button>
@@ -79,15 +72,17 @@
           size="small"
           clearable
         />
-        <SystemModuleTree
+        <MonitorTree
           v-model="selectedKey"
-          title="系统 · 模块 · 接口 / 方案"
+          title="接口 · 方案"
           readonly
-          :leaf-groups="leafGroups"
-          :extra-system-children="extraSystemChildren"
-          empty-text="暂无可选择的系统、模块或接口"
+          :search="targetSearch"
+          :iface-badge="ifaceBadge"
+          :scheme-badge="schemeBadge"
+          :custom-badge="() => ''"
+          :expand-messages="false"
+          empty-text="暂无可选择的接口或方案"
           @select="selectTarget"
-          @clear="clearTarget"
         />
       </aside>
 
@@ -120,7 +115,7 @@
                   >
                     {{ selectedTarget.kind === 'scheme' ? '接口方案' : '测试接口' }}
                   </el-tag>
-                  <span>{{ targetSystem?.name || '未归属系统' }}</span>
+                  <span>{{ targetSystem?.name || '未归属联试对象' }}</span>
                 </div>
                 <h4>{{ selectedTarget.name }}</h4>
                 <p>{{ selectedTarget.desc || '暂无说明' }}</p>
@@ -135,8 +130,13 @@
                 <span>共 {{ targetInterfaces.length }} 个</span>
               </div>
               <div class="scheme-interfaces__list">
-                <span v-for="iface in targetInterfaces" :key="iface.id">
-                  <i :class="{ 'is-online': moduleOf(iface)?.status === 'online' }" />
+                <span
+                  v-for="iface in targetInterfaces"
+                  :key="iface.id"
+                  :class="{ 'is-selected': selectedKey === `iface-${iface.id}` }"
+                  @click="selectTarget({ kind: 'iface', key: `iface-${iface.id}`, ref: iface })"
+                >
+                  <i :class="{ 'is-online': ifaceReady(iface) }" />
                   {{ iface.name }}
                 </span>
               </div>
@@ -207,7 +207,6 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowRight,
-  Back,
   BottomLeft,
   CircleCheck,
   Collection,
@@ -219,9 +218,8 @@ import {
   TopRight,
   Warning,
 } from '@element-plus/icons-vue'
-import SystemModuleTree from '@/components/SystemModuleTree.vue'
+import MonitorTree from '@/components/execution/MonitorTree.vue'
 import { useSystemStore } from '@/stores/system'
-import { useConnectionStore } from '@/stores/connection'
 import { useProtocolStore, collectTestInterfaceFields } from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
 import { usePlanSchemeStore } from '@/stores/planScheme'
@@ -229,7 +227,6 @@ import { useExceptionStore } from '@/stores/exception'
 
 const router = useRouter()
 const systemStore = useSystemStore()
-const connectionStore = useConnectionStore()
 const protocolStore = useProtocolStore()
 const testDataStore = useTestDataStore()
 const schemeStore = usePlanSchemeStore()
@@ -242,17 +239,10 @@ const selectedNode = ref(null)
 const targetSearch = ref('')
 const systemScrollRef = ref(null)
 
-const isAll = computed(() => systemStore.isAll)
-const currentSystem = computed(() => systemStore.current)
-const totalOnlineModules = computed(() =>
-  connectionStore.nodes.filter((item) => item.status === 'online').length
-)
-const activeCardId = computed(() =>
-  systemStore.currentId || selectedTarget.value?.systemId || null
-)
-
-const moduleOf = (iface) =>
-  connectionStore.nodes.find((item) => item.id === iface?.moduleId) || null
+/* ---- 接口就绪判断（接口 → 报文 → 字段，不依赖链路节点状态） ---- */
+const ifaceMessages = (iface) => (iface?.messageIds || [])
+  .map((id) => protocolStore.interfaces.find((m) => String(m.id) === String(id)))
+  .filter(Boolean)
 
 const datasetsOf = (iface) => {
   const ids = new Set((iface?.datasetIds || []).map(String))
@@ -268,102 +258,103 @@ const fieldsOf = (iface, role = null) =>
     role,
   )
 
-const roleReady = (iface, role) =>
-  moduleOf(iface)?.status === 'online' &&
-  datasetsOf(iface).length > 0 &&
-  fieldsOf(iface, role).length > 0
-
+/** 接口就绪：名下至少一个报文，且报文有可用字段（或为文件报文） */
+const ifaceReady = (iface) => {
+  const messages = ifaceMessages(iface)
+  if (!messages.length) return false
+  return messages.some((m) => m.fileId || fieldsOf(iface, null).length > 0)
+}
+const roleReady = (iface, role) => {
+  if (!ifaceMessages(iface).length) return false
+  return fieldsOf(iface, role).length > 0
+}
 const interfaceReady = (iface) => roleReady(iface, 'send') || roleReady(iface, 'receive')
 
-const systemCards = computed(() =>
-  systemStore.visibleSystems.map((system) => {
-    const modules = connectionStore.nodes.filter((item) => item.systemId === system.id)
-    const interfaces = protocolStore.testInterfaces.filter((item) => item.systemId === system.id)
+/** 接口名下报文的异常样本数（异常按接口/报文名匹配） */
+const exceptionsOfIface = (iface) => {
+  const names = new Set(ifaceMessages(iface).map((m) => m.name))
+  return exceptionStore.exceptions.filter((item) =>
+    String(item.interfaceId) === String(iface.id) || names.has(item.iface)
+  )
+}
+const systemNameOf = (id) => systemStore.systems.find((s) => s.id === id)?.name || '—'
+
+/** 首页卡片：接口卡 + 方案卡（替代原系统卡片） */
+const overviewCards = computed(() => {
+  const ifaces = protocolStore.testInterfaces
+  const schemes = schemeStore.schemes
+  const ifaceCards = ifaces.map((iface) => {
+    const ready = interfaceReady(iface)
+    const exceptions = exceptionsOfIface(iface)
     return {
-      ...system,
-      moduleCount: modules.length,
-      onlineModules: modules.filter((item) => item.status === 'online').length,
-      interfaceCount: interfaces.length,
-      readyInterfaces: interfaces.filter(interfaceReady).length,
-      exceptionCount: exceptionStore.exceptions.filter((item) => item.systemId === system.id).length,
+      kind: 'iface',
+      key: `iface-${iface.id}`,
+      id: iface.id,
+      name: iface.name,
+      desc: systemNameOf(iface.systemId),
+      ref: iface,
+      ok: ready,
+      ready,
+      alert: exceptions.length > 0,
+      metric1: (iface.messageIds || []).length,
+      metric1Label: '报文',
+      metric2: fieldsOf(iface, null).length,
+      metric2Label: '字段',
+      metric3: exceptions.length,
+      metric3Label: '异常',
     }
   })
-)
-
-const interfaceBadge = (iface) => {
-  const send = roleReady(iface, 'send')
-  const receive = roleReady(iface, 'receive')
-  if (send && receive) return '收发就绪'
-  if (send) return '发送就绪'
-  if (receive) return '接收就绪'
-  return '待配置'
-}
-
-const leafGroups = (module) => {
-  const keyword = targetSearch.value.trim().toLowerCase()
-  let interfaces = protocolStore.testInterfaces.filter((iface) => iface.moduleId === module.id)
-  if (keyword) {
-    interfaces = interfaces.filter((iface) =>
-      iface.name.toLowerCase().includes(keyword) ||
-      (iface.desc || '').toLowerCase().includes(keyword)
-    )
-  }
-  return [{
-    flat: true,
-    kind: 'iface',
-    items: interfaces.map((iface) => ({
-      key: `iface-${iface.id}`,
-      kind: 'iface',
-      icon: 'Link',
-      label: iface.name,
-      badge: interfaceBadge(iface),
-      ref: iface,
-    })),
-  }]
-}
-
-const extraSystemChildren = (system) => {
-  const keyword = targetSearch.value.trim().toLowerCase()
-  const schemes = schemeStore.schemesOfSystem(system.id).filter((scheme) =>
-    !keyword ||
-    scheme.name.toLowerCase().includes(keyword) ||
-    (scheme.remark || '').toLowerCase().includes(keyword)
-  )
-  return [{
-    key: `schemes-${system.id}`,
-    kind: 'schemeGroup',
-    icon: 'FolderOpened',
-    label: '接口方案',
-    children: schemes.map((scheme) => ({
-      key: `scheme-${scheme.id}`,
+  const schemeCards = schemes.map((scheme) => {
+    const ids = new Set((scheme.interfaceIds || []).map(String))
+    const items = ifaces.filter((i) => ids.has(String(i.id)))
+    const readyCount = items.filter(interfaceReady).length
+    const messageCount = items.reduce((sum, i) => sum + (i.messageIds || []).length, 0)
+    return {
       kind: 'scheme',
-      icon: 'Collection',
-      label: scheme.name,
-      badge: `${scheme.interfaceIds.length} 接口`,
+      key: `scheme-${scheme.id}`,
+      id: scheme.id,
+      name: scheme.name,
+      desc: scheme.remark || '接口方案',
       ref: scheme,
-    })),
-  }]
+      ok: readyCount > 0,
+      ready: readyCount > 0,
+      alert: false,
+      metric1: items.length,
+      metric1Label: '接口',
+      metric2: readyCount,
+      metric2Label: '就绪',
+      metric3: messageCount,
+      metric3Label: '报文',
+    }
+  })
+  return [...ifaceCards, ...schemeCards]
+})
+
+const onCardSelect = (card) => {
+  selectedKey.value = card.key
+  selectedNode.value = card.ref ? { kind: card.kind, ref: card.ref } : null
+  if (card.kind === 'scheme') schemeStore.select(card.id)
 }
+
+const ifaceBadge = (iface) => {
+  const count = (iface?.messageIds || []).length
+  if (!count) return '未配置报文'
+  return `${count} 报文`
+}
+const schemeBadge = (scheme) => `${(scheme.interfaceIds || []).length} 接口`
 
 const selectTarget = (node) => {
-  if (!['iface', 'scheme'].includes(node.kind)) return
-  selectedNode.value = node
-  if (node.kind === 'scheme') schemeStore.select(node.ref.id)
+  if (!node?.ref) return
+  // 方案内接口（schemeItem）按接口处理
+  const kind = node.kind === 'schemeItem' ? 'iface' : node.kind
+  if (!['iface', 'scheme'].includes(kind)) return
+  selectedNode.value = { ...node, kind }
+  if (kind === 'scheme') schemeStore.select(node.ref.id)
 }
 
 const clearTarget = () => {
   selectedKey.value = ''
   selectedNode.value = null
-}
-
-const selectSystem = (systemId) => {
-  systemStore.setCurrent(systemId)
-  clearTarget()
-}
-
-const clearSystemFilter = () => {
-  systemStore.setCurrent(null)
-  clearTarget()
 }
 
 const onSystemWheel = (event) => {
@@ -404,20 +395,10 @@ const targetInterfaces = computed(() => {
 const targetSystem = computed(() =>
   systemStore.systems.find((item) => item.id === selectedTarget.value?.systemId) || null
 )
-const targetModules = computed(() => {
-  const ids = new Set(targetInterfaces.value.map((item) => item.moduleId))
-  return connectionStore.nodes.filter((item) => ids.has(item.id))
-})
-const targetModuleText = computed(() => {
-  const names = targetModules.value.map((item) => item.name)
-  if (!names.length) return '未归属模块'
-  if (names.length === 1) return names[0]
-  return `${names[0]}等 ${names.length} 个`
-})
 const targetTypeText = computed(() => selectedTarget.value?.kind === 'scheme' ? '方案' : '接口')
 
-const onlineTargetModules = computed(() =>
-  targetModules.value.filter((item) => item.status === 'online').length
+const messageReadyCount = computed(() =>
+  targetInterfaces.value.filter((iface) => ifaceMessages(iface).length > 0).length
 )
 const datasetReadyCount = computed(() =>
   targetInterfaces.value.filter((iface) => datasetsOf(iface).length > 0).length
@@ -438,12 +419,11 @@ const targetFullyReady = computed(() => canEnterSend.value && canEnterReceive.va
 
 const readinessItems = computed(() => {
   const interfaceCount = targetInterfaces.value.length
-  const moduleCount = targetModules.value.length
   return [
     {
-      label: '目标链路',
-      value: `${onlineTargetModules.value}/${moduleCount} 模块在线`,
-      ok: moduleCount > 0 && onlineTargetModules.value === moduleCount,
+      label: '报文配置',
+      value: `${messageReadyCount.value}/${interfaceCount} 接口已配置`,
+      ok: interfaceCount > 0 && messageReadyCount.value === interfaceCount,
     },
     {
       label: '测试数据',
@@ -471,10 +451,9 @@ const selectedReceiveFields = computed(() =>
   targetInterfaces.value[0] ? fieldsOf(targetInterfaces.value[0], 'receive') : []
 )
 const selectedMessage = computed(() => {
-  const messageRef = selectedDatasets.value.find((item) => item.linkedInterface)?.linkedInterface
-  return protocolStore.interfaces.find((item) =>
-    String(item.id) === String(messageRef) || item.name === messageRef
-  ) || null
+  const iface = targetInterfaces.value[0]
+  if (!iface) return null
+  return ifaceMessages(iface)[0] || null
 })
 const selectedTransport = computed(() => selectedMessage.value?.transportType || '未标注')
 
@@ -493,19 +472,15 @@ const enterMonitor = (mode) => {
 
 const openTargetConfiguration = () => {
   if (!selectedTarget.value) return
-  const offline = targetModules.value.find((item) => item.status !== 'online')
-  systemStore.setCurrent(selectedTarget.value.systemId || null)
-  if (offline) {
-    connectionStore.select(offline.id)
-    router.push('/connection')
+  if (selectedTarget.value.kind === 'iface') {
+    // 接口未配置报文/字段：跳转到报文字段管理定位该接口
+    router.push({
+      path: '/protocol',
+      query: { iface: String(selectedTarget.value.id), kind: 'interface' },
+    })
     return
   }
-  router.push({
-    path: '/execution',
-    query: selectedTarget.value.kind === 'iface'
-      ? { interfaceId: selectedTarget.value.id }
-      : {},
-  })
+  router.push({ path: '/execution', query: { schemeId: String(selectedTarget.value.id) } })
 }
 </script>
 
@@ -593,6 +568,10 @@ const openTargetConfiguration = () => {
     border-color: #2f6feb;
     background: linear-gradient(150deg, #fff 30%, #f2f7ff);
     box-shadow: inset 0 -2px 0 #2f6feb;
+  }
+
+  &.is-scheme-card {
+    border-left: 3px solid var(--el-color-warning);
   }
 
   &.is-unavailable { opacity: .72; }
@@ -892,10 +871,16 @@ const openTargetConfiguration = () => {
       align-items: center;
       gap: 5px;
       padding: 4px 8px;
+      border: 1px solid transparent;
       border-radius: 5px;
       background: #f3f5f8;
       color: #516174;
       font-size: 14px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s, color .15s;
+
+      &:hover { border-color: var(--el-color-primary-light-5); background: #edf4ff; }
+      &.is-selected { border-color: var(--el-color-primary); background: #e6f0ff; color: var(--el-color-primary); }
     }
 
     i {

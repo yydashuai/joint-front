@@ -150,6 +150,8 @@ export const useExceptionStore = defineStore('exception', {
     filtered: (state) => (filters = {}) => state.exceptions.filter((item) => {
       if (filters.systemId && item.systemId !== filters.systemId) return false
       if (filters.moduleId && item.moduleId !== filters.moduleId) return false
+      if (filters.interfaceId && String(item.interfaceId) !== String(filters.interfaceId) && item.iface !== filters.interfaceName) return false
+      if (filters.interfaceNames?.length && !filters.interfaceNames.includes(item.iface)) return false
       if (filters.type && item.type !== filters.type) return false
       if (filters.savedStatus && sampleStatusOf(item) !== filters.savedStatus) return false
       if (filters.tag && !(item.tags || []).includes(filters.tag)) return false

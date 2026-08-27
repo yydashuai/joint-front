@@ -334,7 +334,7 @@ const goConfigureMessage = (message = null) => {
 /* ---- 保存 ---- */
 const save = (silent = false) => {
   if (!ownerSystemId.value || !ownerModuleId.value) {
-    ElMessage.warning('请选择所属系统和模块')
+    ElMessage.warning('请选择所属联试对象和模块')
     return null
   }
   let iface = editingIface.value

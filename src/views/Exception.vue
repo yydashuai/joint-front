@@ -8,11 +8,16 @@
 
     <div class="split">
       <div class="tree-panel">
-        <SystemModuleTree
+        <MonitorTree
           v-model="selectedKey"
           title="接收数据范围"
+          readonly
+          :visible-groups="['system']"
+          :iface-badge="ifaceBadge"
+          :scheme-badge="() => ''"
+          :custom-badge="() => ''"
+          empty-text="暂无接口，请先在报文字段管理中定义"
           @select="onTreeSelect"
-          @clear="resetToAllSystems"
         />
       </div>
 
@@ -21,7 +26,7 @@
           <div>
             <strong>{{ scopeTitle }}</strong>
           </div>
-          <el-button v-if="selectedModuleId" text type="primary" @click="clearModule">查看全部模块</el-button>
+          <el-button v-if="selectedKey" text type="primary" @click="clearScope">查看全部接口</el-button>
         </div>
 
         <div class="metrics">
@@ -89,21 +94,18 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import SystemModuleTree from '@/components/SystemModuleTree.vue'
+import MonitorTree from '@/components/execution/MonitorTree.vue'
 import ExceptionTable from '@/components/exception/ExceptionTable.vue'
 import ExceptionDetailDrawer from '@/components/exception/ExceptionDetailDrawer.vue'
 import ExceptionDatasetDialog from '@/components/exception/ExceptionDatasetDialog.vue'
-import { useConnectionStore } from '@/stores/connection'
 import { useExceptionStore } from '@/stores/exception'
-import { useSystemStore } from '@/stores/system'
+import { useProtocolStore } from '@/stores/protocol'
 
 const route = useRoute()
 const exceptionStore = useExceptionStore()
-const systemStore = useSystemStore()
-const connStore = useConnectionStore()
+const protocolStore = useProtocolStore()
 
 const selectedKey = ref('')
-const selectedModuleId = ref('')
 const tableFilters = ref({ keyword: '', type: '', savedStatus: '', tag: '' })
 const detailVisible = ref(false)
 const activeException = ref(null)
@@ -111,18 +113,47 @@ const datasetDialogVisible = ref(false)
 const datasetDialogSamples = ref([])
 const datasetDialogMode = ref('save')
 
-const visibleExceptions = computed(() => exceptionStore.filtered({
-  systemId: systemStore.currentId || '',
-  moduleId: selectedModuleId.value,
-  ...tableFilters.value,
-}))
-const metrics = computed(() => exceptionStore.stats(visibleExceptions.value))
-const selectedModule = computed(() => connStore.nodes.find((item) => item.id === selectedModuleId.value))
-const scopeTitle = computed(() => {
-  if (selectedModule.value) return selectedModule.value.name
-  if (systemStore.currentId) return `${systemStore.current?.name || '当前系统'} · 全部模块`
-  return '全部系统 · 接收异常数据'
+/* ---- 接口/报文筛选 ---- */
+const selectedIface = computed(() => {
+  const match = selectedKey.value.match(/^iface-(.+)$/)
+  if (!match) return null
+  return protocolStore.testInterfaces.find((i) => String(i.id) === String(match[1])) || null
 })
+const selectedMessage = computed(() => {
+  const match = selectedKey.value.match(/^msg-(.+)$/)
+  if (!match) return null
+  return protocolStore.interfaces.find((m) => String(m.id) === String(match[1])) || null
+})
+const ifaceMessages = (iface) => (iface?.messageIds || [])
+  .map((id) => protocolStore.interfaces.find((m) => String(m.id) === String(id)))
+  .filter(Boolean)
+const ifaceBadge = (iface) => `${(iface?.messageIds || []).length} 报文`
+
+const visibleExceptions = computed(() => {
+  const base = { ...tableFilters.value }
+  if (selectedMessage.value) {
+    base.interfaceId = selectedMessage.value.id
+    base.interfaceName = selectedMessage.value.name
+  } else if (selectedIface.value) {
+    base.interfaceNames = ifaceMessages(selectedIface.value).map((m) => m.name)
+  }
+  return exceptionStore.filtered(base)
+})
+const metrics = computed(() => exceptionStore.stats(visibleExceptions.value))
+const scopeTitle = computed(() => {
+  if (selectedMessage.value) return `${selectedMessage.value.name}`
+  if (selectedIface.value) return `${selectedIface.value.name} · 全部报文`
+  return '全部接口 · 接收异常数据'
+})
+
+const onTreeSelect = (data) => {
+  if (['iface', 'message'].includes(data.kind) && data.ref) {
+    selectedKey.value = data.key
+  }
+}
+function clearScope() {
+  selectedKey.value = ''
+}
 
 const queryValue = (value) => Array.isArray(value) ? value[0] : value
 const resetTableFilters = () => {
@@ -149,9 +180,13 @@ function openVariantDialog(row) {
 function locateException(item, { open = false } = {}) {
   if (!item) return
   resetTableFilters()
-  systemStore.setCurrent(item.systemId || null)
-  selectedModuleId.value = item.moduleId || ''
-  selectedKey.value = item.moduleId ? `mod-${item.moduleId}` : ''
+  // 按异常所属报文名定位接口/报文
+  const message = protocolStore.interfaces.find((m) => String(m.name) === String(item.iface))
+  if (message) selectedKey.value = `msg-${message.id}`
+  else {
+    const iface = protocolStore.testInterfaces.find((i) => String(i.name) === String(item.iface))
+    if (iface) selectedKey.value = `iface-${iface.id}`
+  }
   if (open) openDetail(item)
 }
 
@@ -162,31 +197,15 @@ watch(() => route.query.id, (id) => {
   locateException(item, { open: true })
 }, { immediate: true })
 
-watch(() => [route.query.systemId, route.query.moduleId], ([systemId, moduleId]) => {
-  const targetSystemId = queryValue(systemId)
-  const targetModuleId = queryValue(moduleId)
-  if (!targetSystemId && !targetModuleId) return
-  const targetModule = connStore.nodes.find((item) => String(item.id) === String(targetModuleId))
-  const normalizedModuleId = targetModule?.id || ''
-  systemStore.setCurrent(targetSystemId || null)
-  selectedModuleId.value = normalizedModuleId
-  selectedKey.value = normalizedModuleId ? `mod-${normalizedModuleId}` : ''
+watch(() => route.query.interfaceId, (interfaceId) => {
+  const targetId = queryValue(interfaceId)
+  if (!targetId) return
+  const message = protocolStore.interfaces.find((m) => String(m.id) === String(targetId))
+  if (message) {
+    resetTableFilters()
+    selectedKey.value = `msg-${message.id}`
+  }
 }, { immediate: true })
-
-const onTreeSelect = (data) => {
-  if (data.kind !== 'module' || !data.ref) return
-  selectedModuleId.value = data.ref.id
-  selectedKey.value = data.key
-}
-function clearModule() {
-  selectedModuleId.value = ''
-  selectedKey.value = ''
-}
-function resetToAllSystems() {
-  systemStore.setCurrent(null)
-  clearModule()
-  resetTableFilters()
-}
 </script>
 
 <style scoped lang="scss">
@@ -214,7 +233,7 @@ function resetToAllSystems() {
   flex-shrink: 0;
   overflow: hidden;
 }
-:deep(.smt) {
+:deep(.mtree) {
   display: flex;
   width: 100%;
   min-width: 0;
@@ -222,6 +241,10 @@ function resetToAllSystems() {
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  overflow: hidden;
+}
+:deep(.mtree > .el-card__body) {
+  min-height: 0;
   overflow: hidden;
 }
 .main-panel {

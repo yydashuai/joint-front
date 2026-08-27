@@ -28,9 +28,6 @@
         <strong>{{ scopeTitle }}</strong>
       </div>
       <div class="scope-filter">
-        <el-select v-model="moduleId" placeholder="全部模块" clearable @change="interfaceId = ''">
-          <el-option v-for="module in moduleOptions" :key="module.id" :label="module.name" :value="module.id" />
-        </el-select>
         <el-select v-model="interfaceId" placeholder="全部接口" clearable filterable>
           <el-option v-for="iface in interfaceOptions" :key="iface.id" :label="iface.name" :value="iface.id" />
         </el-select>
@@ -103,9 +100,9 @@
               <small>当前范围</small>
             </div>
             <div>
-              <span>在线模块</span>
-              <strong>{{ ov.assets.onlineModules }}<em>/{{ ov.assets.moduleTotal }}</em></strong>
-              <small>Ping 当前快照</small>
+              <span>已配置报文接口</span>
+              <strong>{{ ov.assets.readyInterfaces }}<em>/{{ ov.assets.definedInterfaces }}</em></strong>
+              <small>当前范围</small>
             </div>
           </section>
 
@@ -148,8 +145,8 @@
             <ChartCard title="接口发送量 Top">
               <BarChart :data="send.byInterface" horizontal />
             </ChartCard>
-            <ChartCard title="模块发送量">
-              <BarChart :data="send.byModule" horizontal />
+            <ChartCard title="按联试对象发送量">
+              <BarChart :data="send.bySystem" horizontal />
             </ChartCard>
           </div>
           <ChartCard title="最近执行批次" full>
@@ -202,8 +199,8 @@
               <el-table-column prop="seq" label="#" width="58" align="right" />
               <el-table-column prop="time" label="接收时间" width="110" />
               <el-table-column prop="iface" label="报文" min-width="160" show-overflow-tooltip />
-              <el-table-column label="模块" min-width="140" show-overflow-tooltip>
-                <template #default="{ row }">{{ moduleName(row.moduleId) }}</template>
+              <el-table-column label="接口" min-width="140" show-overflow-tooltip>
+                <template #default="{ row }">{{ interfaceNameOf(row.interfaceId, row.iface || '') }}</template>
               </el-table-column>
               <el-table-column prop="byteLength" label="字节数" width="82" align="right" />
               <el-table-column label="解析结果" width="112" align="center">
@@ -237,8 +234,8 @@
             <ChartCard title="数据集复用情况">
               <DonutChart :data="exception.bySaved" center-label="异常样本" />
             </ChartCard>
-            <ChartCard title="模块异常样本 Top">
-              <BarChart :data="exception.byModule" horizontal />
+            <ChartCard title="接口异常样本 Top">
+              <BarChart :data="exception.byInterface" horizontal />
             </ChartCard>
             <ChartCard title="异常样本捕获趋势">
               <LineChart :series="[{ name: '异常样本', color: exceptionColor, points: exception.trend }]" />
@@ -291,8 +288,8 @@
             <ChartCard title="历史数据来源">
               <DonutChart :data="assets.historyBySource" center-label="历史数据" />
             </ChartCard>
-            <ChartCard title="模块数据集数量">
-              <BarChart :data="assets.datasetsByModule" horizontal />
+            <ChartCard title="关联报文数据集数量">
+              <BarChart :data="assets.datasetsByInterface" horizontal />
             </ChartCard>
           </div>
           <ChartCard title="接口观测明细" full>
@@ -302,7 +299,7 @@
                   <el-link type="primary" :underline="false" @click="openInterface(row)">{{ row.iface }}</el-link>
                 </template>
               </el-table-column>
-              <el-table-column prop="module" label="所属模块" min-width="150" show-overflow-tooltip />
+              <el-table-column prop="messageCount" label="报文数" min-width="90" align="right" sortable />
               <el-table-column prop="executions" label="任务执行项" width="104" align="right" sortable />
               <el-table-column prop="sent" label="已发送报文" width="104" align="right" sortable />
               <el-table-column prop="received" label="本次接收" width="94" align="right" sortable />
@@ -325,10 +322,8 @@ import ChartCard from '@/components/stats/ChartCard.vue'
 import DonutChart from '@/components/stats/DonutChart.vue'
 import LineChart from '@/components/stats/LineChart.vue'
 import StatCard from '@/components/stats/StatCard.vue'
-import { useConnectionStore } from '@/stores/connection'
 import { useExceptionStore } from '@/stores/exception'
 import { useProtocolStore } from '@/stores/protocol'
-import { useSystemStore } from '@/stores/system'
 import {
   aggregateAssets,
   aggregateException,
@@ -341,14 +336,11 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const systemStore = useSystemStore()
-const connStore = useConnectionStore()
 const protocolStore = useProtocolStore()
 const exceptionStore = useExceptionStore()
 
 const sendColor = '#2f6bff'
 const exceptionColor = '#d97706'
-const moduleId = ref('')
 const interfaceId = ref('')
 const timeRange = ref('all')
 const runId = ref(route.query.runId || '')
@@ -360,28 +352,14 @@ const timeOptions = [
   { label: '今天', value: '1d' },
 ]
 
-watch(() => systemStore.currentId, () => {
-  moduleId.value = ''
-  interfaceId.value = ''
-})
-
-const moduleOptions = computed(() => connStore.modulesOf(systemStore.currentId))
-const interfaceOptions = computed(() => protocolStore.testInterfaces.filter((item) => {
-  if (systemStore.currentId && item.systemId !== systemStore.currentId) return false
-  if (moduleId.value && item.moduleId !== moduleId.value) return false
-  return true
-}))
+const interfaceOptions = computed(() => protocolStore.testInterfaces)
 const scopeTitle = computed(() => {
-  const systemName = systemStore.current?.name || '全部系统'
-  const moduleName = moduleId.value ? moduleNameOf(moduleId.value) : '全部模块'
   const interfaceName = interfaceId.value
     ? protocolStore.testInterfaces.find((item) => String(item.id) === String(interfaceId.value))?.name
     : ''
-  return [systemName, moduleName, interfaceName].filter(Boolean).join(' · ')
+  return interfaceName ? `接口 · ${interfaceName}` : '全部接口'
 })
 const filters = computed(() => ({
-  systemId: systemStore.currentId || '',
-  moduleId: moduleId.value || '',
   interfaceId: interfaceId.value || '',
   timeRange: timeRange.value,
   runId: runId.value || '',
@@ -400,8 +378,11 @@ const receiveStatus = computed(() => ({
   done: { label: '已完成', type: 'success' },
 }[receive.value.status] || { label: '待监听', type: 'info' }))
 
-const moduleNameOf = (id) => connStore.nodes.find((item) => item.id === id)?.name || '未归属模块'
-const moduleName = moduleNameOf
+const interfaceNameOf = (id, fallback = '') => {
+  if (id == null || id === '') return fallback
+  const iface = protocolStore.testInterfaces.find((item) => String(item.id) === String(id))
+  return iface?.name || fallback
+}
 const formatNumber = (value) => Number(value || 0).toLocaleString('zh-CN')
 const trendBars = (points, color) => points.map((point) => ({ label: point.x, value: point.y, color }))
 const verdictType = (status) => ({ ok: 'success', error: 'warning', unparsed: 'danger' }[status] || 'info')
@@ -415,7 +396,6 @@ const batchState = (state) => ({
 
 const clearRunId = () => { runId.value = '' }
 const resetFilters = () => {
-  moduleId.value = ''
   interfaceId.value = ''
   timeRange.value = 'all'
   runId.value = ''

@@ -23,7 +23,7 @@
 
     <el-table :data="resolvedDatasets" size="small" border empty-text="方案内暂未包含数据集" class="sd-table">
       <el-table-column prop="name" label="数据集名称" min-width="160" show-overflow-tooltip />
-      <el-table-column label="所属模块" width="140" show-overflow-tooltip>
+      <el-table-column label="所属链路节点" width="140" show-overflow-tooltip>
         <template #default="{ row }"><span class="text-secondary">{{ row.moduleName }}</span></template>
       </el-table-column>
       <el-table-column label="数据行" width="90" align="center">
@@ -65,7 +65,7 @@ const resolvedDatasets = computed(() =>
 )
 
 const systemLabel = computed(() => {
-  if (!props.scheme.systemId) return '全部系统（通用）'
+  if (!props.scheme.systemId) return '全部联试对象（通用）'
   return systemStore.systems.find((s) => s.id === props.scheme.systemId)?.name || String(props.scheme.systemId)
 })
 </script>

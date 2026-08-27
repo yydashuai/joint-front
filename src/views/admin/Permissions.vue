@@ -23,7 +23,7 @@
       </div>
       <div class="stat-item">
         <span class="stat-num" :class="{ 'stat-num--warn': unassignedCount > 0 }">{{ unassignedCount }}</span>
-        <span class="stat-label">未分配系统</span>
+        <span class="stat-label">未分配联试对象</span>
       </div>
     </div>
 
@@ -165,7 +165,7 @@ const togglePermission = (userId, systemId, checked) => {
 
   // 如果取消了所有系统权限，给出提示
   if (!checked && newIds.length === 0) {
-    ElMessage.warning(`${user?.realName} 当前没有任何系统权限，登录后将无法看到任何系统`)
+    ElMessage.warning(`${user?.realName} 当前没有任何联试对象权限，登录后将无法看到任何系统`)
   }
 }
 

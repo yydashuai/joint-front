@@ -76,7 +76,13 @@ function trendOf(items, dateOf, valueOf = () => 1) {
 }
 
 const moduleNameOf = (moduleId) => useConnectionStore().nodes.find((item) => item.id === moduleId)?.name || '未归属模块'
-const systemNameOf = (systemId) => useSystemStore().systems.find((item) => item.id === systemId)?.name || '未归属系统'
+const systemNameOf = (systemId) => useSystemStore().systems.find((item) => item.id === systemId)?.name || '未归属联试对象'
+/** 接口名（按接口 id 解析；未匹配时用报文/接口名字段兜底） */
+const interfaceNameOf = (id, fallback = '') => {
+  if (id == null || id === '') return fallback
+  const iface = useProtocolStore().testInterfaces.find((item) => String(item.id) === String(id))
+  return iface?.name || fallback
+}
 
 export function getRuns(filters = {}) {
   const cutoff = cutoffOf(filters.timeRange)
@@ -188,17 +194,11 @@ function interfaceScope(filters = {}) {
 }
 
 function scopeBars(runs, exceptions, filters) {
-  if (filters.systemId) {
-    return {
-      sendByScope: sumBars(runs, (item) => item.moduleId, (item) => item.total, moduleNameOf, SEND_COLOR),
-      exceptionByScope: countBars(exceptions, (item) => item.moduleId, moduleNameOf, EXCEPTION_COLOR),
-      axisName: '模块',
-    }
-  }
+  // 统一按接口维度分组（发送量/异常样本），不再按系统/模块分组
   return {
-    sendByScope: sumBars(runs, (item) => item.systemId, (item) => item.total, systemNameOf, SEND_COLOR),
-    exceptionByScope: countBars(exceptions, (item) => item.systemId, systemNameOf, EXCEPTION_COLOR),
-    axisName: '系统',
+    sendByScope: sumBars(runs, (item) => interfaceNameOf(item.interfaceId, item.iface || '未命名接口'), (item) => item.total, (key) => key, SEND_COLOR),
+    exceptionByScope: countBars(exceptions, (item) => interfaceNameOf(item.interfaceId, item.iface || '未命名报文'), (key) => key, EXCEPTION_COLOR),
+    axisName: '接口',
   }
 }
 
@@ -210,11 +210,8 @@ export function aggregateOverview(filters = {}) {
   const datasets = getDatasets(filters)
   const files = getFiles(filters)
   const interfaces = interfaceScope(filters)
-  const moduleIds = new Set(useConnectionStore().nodes
-    .filter((item) => !filters.systemId || item.systemId === filters.systemId)
-    .filter((item) => !filters.moduleId || item.id === filters.moduleId)
-    .map((item) => item.id))
-  const onlineModules = useConnectionStore().nodes.filter((item) => moduleIds.has(item.id) && item.status === 'online').length
+  const readyInterfaces = useProtocolStore().testInterfaces
+    .filter((item) => (item.messageIds || []).length > 0).length
   const dataRows = sum(datasets, (item) => (item.rows?.length || 0) + (item.historyRows?.length || 0))
 
   return {
@@ -231,8 +228,7 @@ export function aggregateOverview(filters = {}) {
       dataRows,
       files: files.length,
       definedInterfaces: interfaces.length,
-      onlineModules,
-      moduleTotal: moduleIds.size,
+      readyInterfaces,
     },
     sendTrend: trendOf(runs, (item) => item.dateKey || item.startedAt, (item) => item.total),
     exceptionTrend: trendOf(exceptions, (item) => item.capturedTime),
@@ -253,8 +249,8 @@ export function aggregateSend(filters = {}) {
     },
     messagesByDay: trendOf(runs, (item) => item.dateKey || item.startedAt, (item) => item.total),
     batchesByDay: trendOf(batches, (item) => item.dateKey || item.startedAt),
-    byInterface: sumBars(runs, (item) => item.iface || '未命名接口', (item) => item.total),
-    byModule: sumBars(runs, (item) => item.moduleId, (item) => item.total, moduleNameOf),
+    byInterface: sumBars(runs, (item) => interfaceNameOf(item.interfaceId, item.iface || '未命名接口'), (item) => item.total, (key) => key),
+    bySystem: sumBars(runs, (item) => item.systemId, (item) => item.total, systemNameOf),
     recentBatches: [...batches]
       .sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')))
       .slice(0, 20)
@@ -311,7 +307,7 @@ export function aggregateException(filters = {}) {
       { label: '已存入数据集', value: saved, color: '#16a34a' },
       { label: '尚未入库', value: exceptions.length - saved, color: EXCEPTION_COLOR },
     ],
-    byModule: countBars(exceptions, (item) => item.moduleId, moduleNameOf, EXCEPTION_COLOR),
+    byInterface: countBars(exceptions, (item) => interfaceNameOf(item.interfaceId, item.iface || '未命名报文'), (key) => key, EXCEPTION_COLOR),
     trend: trendOf(exceptions, (item) => item.capturedTime),
     latest: [...exceptions]
       .sort((a, b) => String(b.capturedTime || '').localeCompare(String(a.capturedTime || '')))
@@ -345,6 +341,7 @@ export function aggregateAssets(filters = {}) {
       interfaceId: iface.id,
       iface: iface.name,
       module: moduleNameOf(iface.moduleId),
+      messageCount: (iface.messageIds || []).length,
       executions: ifaceRuns.length,
       sent: sum(ifaceRuns, (item) => item.total),
       received: ifaceReceive.length,
@@ -368,7 +365,7 @@ export function aggregateAssets(filters = {}) {
       { label: '已有观测记录', value: activeCount, color: SEND_COLOR },
       { label: '暂无观测记录', value: Math.max(0, interfaces.length - activeCount), color: '#cbd5e1' },
     ],
-    datasetsByModule: countBars(datasets, (item) => item.moduleName || '未归属模块', (key) => key, ASSET_COLOR),
+    datasetsByInterface: countBars(datasets, (item) => item.linkedInterface || '未关联报文', (key) => key, ASSET_COLOR),
     historyBySource: [...sourceGroups.entries()]
       .map(([label, rows], index) => ({
         label,
@@ -385,8 +382,8 @@ export function exportRows(category, filters = {}) {
     return aggregateReceive(filters).latest.map((item) => ({
       序号: item.seq,
       时间: item.time,
-      系统: systemNameOf(item.systemId),
-      模块: moduleNameOf(item.moduleId),
+      联试对象: systemNameOf(item.systemId),
+      接口: interfaceNameOf(item.interfaceId, item.iface || ''),
       报文: item.iface,
       字节数: item.byteLength,
       解析结果: item.verdictLabel,
@@ -396,8 +393,8 @@ export function exportRows(category, filters = {}) {
   if (category === 'exception') {
     return aggregateException(filters).latest.map((item) => ({
       时间: item.capturedTime,
-      系统: systemNameOf(item.systemId),
-      模块: moduleNameOf(item.moduleId),
+      联试对象: systemNameOf(item.systemId),
+      接口: interfaceNameOf(item.interfaceId, item.iface || ''),
       报文: item.iface,
       类型: item.type,
       异常字段: item.issues?.[0]?.field || item.detail?.fieldPath || '',
@@ -408,7 +405,7 @@ export function exportRows(category, filters = {}) {
   if (category === 'interface') {
     return aggregateAssets(filters).interfaceRows.map((item) => ({
       接口: item.iface,
-      模块: item.module,
+      报文数: item.messageCount,
       任务执行项: item.executions,
       已发送报文: item.sent,
       本次接收: item.received,
@@ -419,8 +416,7 @@ export function exportRows(category, filters = {}) {
   if (category === 'asset') {
     return getDatasets(filters).map((dataset) => ({
       数据集: dataset.name,
-      系统: systemNameOf(dataset.systemId),
-      模块: dataset.moduleName,
+      联试对象: systemNameOf(dataset.systemId),
       关联报文: dataset.linkedInterface || '',
       当前数据行: dataset.rows?.length || 0,
       历史数据行: dataset.historyRows?.length || 0,

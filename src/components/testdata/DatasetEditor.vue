@@ -509,7 +509,7 @@ const sendTest = () => {
   )
   const moduleId = module?.id || message.moduleId
   if (!systemId || !moduleId) {
-    ElMessage.warning('当前数据集缺少所属系统或模块，无法创建发送接口')
+    ElMessage.warning('当前数据集缺少所属联试对象或模块，无法创建发送接口')
     return
   }
   const testInterface = protoStore.addTestInterface({

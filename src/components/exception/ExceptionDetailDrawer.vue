@@ -69,9 +69,8 @@
           <div class="panel-title"><span>样本信息</span></div>
           <el-descriptions :column="1" border size="small">
             <el-descriptions-item label="来源">{{ sourceLabel }}</el-descriptions-item>
-            <el-descriptions-item label="所属系统">{{ systemName }}</el-descriptions-item>
-            <el-descriptions-item label="所属模块">{{ moduleName }}</el-descriptions-item>
-            <el-descriptions-item label="关联接口">{{ exception.iface }}</el-descriptions-item>
+            <el-descriptions-item label="所属联试对象">{{ systemName }}</el-descriptions-item>
+            <el-descriptions-item label="所属报文">{{ exception.iface }}</el-descriptions-item>
             <el-descriptions-item v-if="exception.batchId || exception.runId" label="关联批次">{{ exception.batchId || exception.runId }}</el-descriptions-item>
             <el-descriptions-item label="数据集复用">
               <el-tag v-if="exception.savedDatasetIds?.length" type="success" size="small">
@@ -107,7 +106,6 @@
 import { computed, ref, watch } from 'vue'
 import { useExceptionStore, EXC_SOURCES } from '@/stores/exception'
 import { useSystemStore } from '@/stores/system'
-import { useConnectionStore } from '@/stores/connection'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -117,7 +115,6 @@ const emit = defineEmits(['update:modelValue', 'save-dataset', 'create-variant']
 
 const store = useExceptionStore()
 const systemStore = useSystemStore()
-const connStore = useConnectionStore()
 const tagDraft = ref([])
 
 const visible = computed({
@@ -150,7 +147,6 @@ const byteLength = computed(() => {
 })
 const sourceLabel = computed(() => EXC_SOURCES.find((item) => item.value === props.exception?.source)?.label || '接收数据自动捕获')
 const systemName = computed(() => systemStore.systems.find((item) => item.id === props.exception?.systemId)?.name || '未归属系统')
-const moduleName = computed(() => connStore.nodes.find((item) => item.id === props.exception?.moduleId)?.name || '未归属模块')
 
 watch(() => props.exception?.id, () => {
   tagDraft.value = [...(props.exception?.tags || [])]

@@ -69,7 +69,7 @@
               </el-form-item>
               <el-form-item label="离线告警通知">
                 <el-switch v-model="notifConfig.offlineNotify" />
-                <span class="form-hint">当模块离线时发送通知</span>
+                <span class="form-hint">当链路节点离线时发送通知</span>
               </el-form-item>
               <el-form-item>
                 <el-tooltip content="保存通知配置参数"><el-button type="primary" @click="onSaveConfig('notification')">保存</el-button></el-tooltip>

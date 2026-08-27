@@ -4,22 +4,25 @@
       <div>
         <h2>校验规则管理</h2>
       </div>
-      <el-button type="primary" :icon="Plus" @click="createRuleSetFromHeader">创建规则集</el-button>
+      <el-button type="primary" :icon="Plus" @click="createRuleSetFromCurrent">创建规则集</el-button>
     </div>
 
     <div class="split">
       <div class="tree-panel">
         <div class="tree-search">
-          <el-input v-model="keyword" placeholder="搜索规则集..." :prefix-icon="Search" size="small" clearable />
+          <el-input v-model="keyword" placeholder="搜索接口 / 报文 / 规则集..." :prefix-icon="Search" size="small" clearable />
         </div>
-        <SystemModuleTree
+        <MonitorTree
           v-model="selectedKey"
           title="规则集"
-          :leaf-groups="leafGroups"
-          :leaf-context-actions="leafContextActions"
+          :search="keyword"
+          :iface-badge="ifaceBadge"
+          :scheme-badge="schemeBadge"
+          :custom-badge="customBadge"
+          :message-leaf-groups="messageLeafGroups"
+          :extra-context-actions="leafContextActions"
+          empty-text="暂无接口，请先在报文字段管理中定义"
           @select="onTreeSelect"
-          @add-leaf="onAddLeaf"
-          @delete-leaf="onDeleteLeaf"
           @leaf-action="onLeafAction"
         />
       </div>
@@ -37,6 +40,7 @@
                   @blur="commitName"
                   @keyup.enter="$event.target.blur()"
                 />
+                <el-tag v-if="ownerMessage" size="small" type="info" effect="plain">{{ ownerMessage.name }}</el-tag>
               </div>
               <div class="rule-head__right">
                 <el-button type="danger" plain :icon="Delete" @click="removeCurrent">删除</el-button>
@@ -53,7 +57,7 @@
         </template>
 
         <el-card v-else shadow="never" class="empty-state">
-          <el-empty description="从左侧选择规则集，或在模块下新建规则集" :image-size="100" />
+          <el-empty description="从左侧选择规则集，或在报文上右键「生成校验规则」" :image-size="100" />
         </el-card>
       </div>
     </div>
@@ -68,20 +72,16 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus, Search } from '@element-plus/icons-vue'
-import SystemModuleTree from '@/components/SystemModuleTree.vue'
+import MonitorTree from '@/components/execution/MonitorTree.vue'
 import RuleList from '@/components/rule/RuleList.vue'
 import GenerateRulesDialog from '@/components/rule/GenerateRulesDialog.vue'
 import RuleEditDialog from '@/components/rule/RuleEditDialog.vue'
 import { useRuleStore } from '@/stores/rule'
-import { useSystemStore } from '@/stores/system'
 import { useProtocolStore } from '@/stores/protocol'
-import { useConnectionStore } from '@/stores/connection'
 import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const ruleStore = useRuleStore()
-const systemStore = useSystemStore()
 const protoStore = useProtocolStore()
-const connStore = useConnectionStore()
 const { nextUniqueName, validateName } = useEntityNameGuard()
 const router = useRouter()
 const route = useRoute()
@@ -91,7 +91,6 @@ ruleStore.normalizeRuleScope()
 onMounted(() => ruleStore.resolveInterfaceIds())
 
 const selectedKey = ref('')
-const selectedModuleId = ref('')
 const keyword = ref('')
 const editName = ref('')
 const editDesc = ref('')
@@ -101,95 +100,106 @@ const editingRule = ref(null)
 const targetInterfaceId = ref(null)
 
 const currentRuleSet = computed(() => ruleStore.selectedRuleSet)
+/** 当前规则集归属的报文（用于头部标识与同报文新建） */
+const ownerMessage = computed(() => {
+  if (!currentRuleSet.value) return null
+  const messageId = ruleStore.messageIdOf(currentRuleSet.value)
+  if (!messageId) return null
+  return protoStore.interfaces.find((m) => String(m.id) === String(messageId)) || null
+})
 
 watch(currentRuleSet, (ruleSet) => {
   if (!ruleSet) return
   selectedKey.value = `rule-${ruleSet.id}`
-  selectedModuleId.value = ruleSet.moduleId || ''
   editName.value = ruleSet.name
   editDesc.value = ruleSet.desc || ''
 }, { immediate: true })
 
-const leafGroups = (module) => {
-  let items = ruleStore.ruleSetsOfModule(module.id)
-  if (keyword.value) {
-    const kw = keyword.value.toLowerCase()
-    items = items.filter((ruleSet) => ruleSet.name.toLowerCase().includes(kw) || (ruleSet.desc || '').toLowerCase().includes(kw))
-  }
-  return [{
-    flat: true,
+/* ---- 接口-报文-规则集 树 ---- */
+const ifaceBadge = (iface) => `${(iface?.messageIds || []).length} 报文`
+const schemeBadge = (scheme) => `${(scheme.interfaceIds || []).length} 接口`
+const customBadge = () => ''
+const ruleSetBadge = (ruleSet) => `${ruleSet.status === 'enabled' ? '启用' : '草稿'} · ${(ruleSet.rules || []).length}`
+
+/** 报文下挂规则集（接口 → 报文 → 规则集） */
+const messageLeafGroups = (message) =>
+  ruleStore.ruleSetsOfMessage(message.id).map((ruleSet) => ({
+    key: `rule-${ruleSet.id}`,
     kind: 'rule-set',
-    addLabel: '+规则集',
-    addType: 'primary',
-    items: items.map((ruleSet) => ({
-      key: `rule-${ruleSet.id}`,
-      kind: 'rule-set',
-      icon: 'SetUp',
-      label: ruleSet.name,
-      badge: `${ruleSet.status === 'enabled' ? '启用' : '草稿'} · ${ruleSet.rules.length}`,
-      ref: ruleSet,
-    })),
-  }]
-}
+    icon: 'SetUp',
+    label: ruleSet.name,
+    badge: ruleSetBadge(ruleSet),
+    ref: ruleSet,
+  }))
 
 const leafContextActions = (nodeData) => {
-  if (nodeData?.kind !== 'rule-set') return []
-  return [
+  if (nodeData?.kind === 'message') return [{ label: '生成校验规则', action: 'generateRules' }]
+  if (nodeData?.kind === 'rule-set') return [
     { label: '复制规则集', action: 'duplicate' },
     { label: '导出 JSON', action: 'export' },
   ]
+  return []
 }
 
 const onTreeSelect = (data) => {
-  if (data.kind === 'module' && data.ref) {
-    selectedModuleId.value = data.ref.id
-    return
-  }
-  if (data.kind === 'rule-set' && data.ref) {
-    selectedModuleId.value = data.ref.moduleId || ''
-    ruleStore.select(data.ref.id)
-  }
-}
-const createRuleSet = (module) => {
-  const ruleSet = ruleStore.addRuleSet({
-    name: nextUniqueName(`${module.name}规则集`),
-    systemId: module.systemId,
-    moduleId: module.id,
-    desc: '从报文字段自动生成后，可按现场需要微调阈值。',
-  })
-  selectedKey.value = `rule-${ruleSet.id}`
-  selectedModuleId.value = module.id
-  ElMessage.success('规则集已创建')
-}
-const onAddLeaf = ({ module }) => createRuleSet(module)
-const createRuleSetFromHeader = () => {
-  const inCurrentSystem = (module) => module && (
-    systemStore.currentId == null || module.systemId === systemStore.currentId
-  )
-  let module = connStore.nodes.find((item) => item.id === selectedModuleId.value)
-  if (!inCurrentSystem(module)) {
-    module = connStore.nodes.find((item) => item.id === currentRuleSet.value?.moduleId)
-  }
-  if (!inCurrentSystem(module)) {
-    const modules = connStore.modulesOf(systemStore.currentId)
-    if (modules.length === 1) module = modules[0]
-  }
-  if (!module) {
-    ElMessage.warning('请先在左侧选择要创建规则集的模块')
-    return
-  }
-  createRuleSet(module)
-}
-const onDeleteLeaf = (data) => {
-  if (data.kind === 'rule-set' && data.ref) ruleStore.removeRuleSet(data.ref.id)
-}
-const onLeafAction = ({ action, data }) => {
-  if (!data?.ref) return
-  ruleStore.select(data.ref.id)
-  if (action === 'duplicate') duplicate()
-  if (action === 'export') exportJson()
+  if (data.kind === 'rule-set' && data.ref) ruleStore.select(data.ref.id)
 }
 
+const onLeafAction = ({ action, data }) => {
+  if (!data?.ref) return
+  if (action === 'generateRules' && data.kind === 'message') openGenerateForMessage(data.ref)
+  if (action === 'duplicate' && data.kind === 'rule-set') {
+    ruleStore.select(data.ref.id)
+    duplicate()
+  }
+  if (action === 'export' && data.kind === 'rule-set') {
+    ruleStore.select(data.ref.id)
+    exportJson()
+  }
+  if (action === 'delete-rule-set' && data.kind === 'rule-set') {
+    ruleStore.select(data.ref.id)
+    removeCurrent()
+  }
+}
+
+/* ---- 规则集创建（归属报文） ---- */
+const createRuleSetForMessage = (message, name) => {
+  const owner = message?.ownerIfaceId
+    ? protoStore.testInterfaces.find((i) => String(i.id) === String(message.ownerIfaceId))
+    : null
+  const ruleSet = ruleStore.addRuleSet({
+    name: name || nextUniqueName(`${message.name}规则集`),
+    systemId: owner?.systemId || message.systemId || null,
+    moduleId: owner?.moduleId || message.moduleId || null,
+    messageId: message.id,
+    desc: '从报文字段自动生成后，可按现场需要微调阈值。',
+  })
+  ElMessage.success('规则集已创建')
+  return ruleSet
+}
+
+const openGenerateForMessage = (message) => {
+  targetInterfaceId.value = message.id
+  const existing = ruleStore.ruleSetsOfMessage(message.id)
+  if (existing.length) {
+    ruleStore.select(existing[0].id)
+  } else {
+    createRuleSetForMessage(message, `${message.name}规则集`)
+  }
+  showGenerate.value = true
+}
+
+const createRuleSetFromCurrent = () => {
+  // 在当前规则集同报文下新建；未选中报文时提示先选报文
+  const message = ownerMessage.value
+  if (!message) {
+    ElMessage.warning('请先在左侧选择报文，右键「生成校验规则」创建规则集')
+    return
+  }
+  createRuleSetForMessage(message, `${message.name}规则集`)
+}
+
+/* ---- 编辑字段（本地状态，blur 时提交） ---- */
 const commitName = () => {
   if (!currentRuleSet.value) return
   const name = validateName(editName.value, currentRuleSet.value, '规则集')
@@ -213,12 +223,14 @@ const duplicate = () => {
   if (copy) ElMessage.success('规则集已复制')
 }
 const removeCurrent = () => {
+  if (!currentRuleSet.value) return
   ElMessageBox.confirm(`确定删除规则集「${currentRuleSet.value.name}」？`, '删除确认', {
     type: 'warning',
     confirmButtonText: '删除',
     cancelButtonText: '取消',
   }).then(() => {
     ruleStore.removeRuleSet(currentRuleSet.value.id)
+    selectedKey.value = ''
     ElMessage.success('规则集已删除')
   }).catch(() => {})
 }
@@ -232,37 +244,25 @@ const exportJson = () => {
   URL.revokeObjectURL(url)
 }
 
-/* ---- 字段 ↔ 规则 双向跳转 ---- */
+/* ---- 报文 ↔ 规则 双向跳转 ---- */
 const jumpToProtocol = (interfaceId) => {
-  const iface = protoStore.interfaces.find((item) => item.id === interfaceId)
-  if (!iface) return
-  systemStore.setCurrent(iface.systemId)
-  protoStore.selectedInterfaceId = iface.id
-  protoStore.selectedProtocolId = protoStore.protocols.find((p) => p.moduleId === iface.moduleId)?.id ?? null
-  router.push({ path: '/protocol', query: { interfaceId: String(iface.id) } })
+  router.push({ path: '/protocol', query: { interfaceId: String(interfaceId) } })
 }
 
-// 从字段页跳转过来时，自动选中同模块规则集并弹出规则生成对话框
+// 从报文字段页跳转过来时，定位同报文规则集并（可选）弹出规则生成对话框
 watch(() => route.query.interfaceId, (ifaceId) => {
   if (!ifaceId) {
     targetInterfaceId.value = null
     return
   }
   targetInterfaceId.value = ifaceId
-  const iface = protoStore.interfaces.find((item) => String(item.id) === String(ifaceId))
-  if (!iface) return
-  // 定位到同模块的规则集（优先已有的，否则新建）
-  systemStore.setCurrent(iface.systemId)
-  const existing = ruleStore.ruleSetsOfModule(iface.moduleId)
+  const message = protoStore.interfaces.find((item) => String(item.id) === String(ifaceId))
+  if (!message) return
+  const existing = ruleStore.ruleSetsOfMessage(message.id)
   if (existing.length) {
     ruleStore.select(existing[0].id)
   } else {
-    ruleStore.addRuleSet({
-      name: `${iface.name}规则集`,
-      systemId: iface.systemId,
-      moduleId: iface.moduleId,
-      desc: '从报文字段自动生成后，可按现场需要微调阈值。',
-    })
+    createRuleSetForMessage(message, `${message.name}规则集`)
   }
   if (route.query.action === 'generate') {
     showGenerate.value = true
@@ -297,7 +297,7 @@ watch(() => route.query.interfaceId, (ifaceId) => {
   flex-shrink: 0;
   :deep(.el-input) { width: 100%; }
 }
-:deep(.smt) {
+:deep(.mtree) {
   width: 100%;
   min-width: 0;
   flex: 1;
@@ -305,6 +305,10 @@ watch(() => route.query.interfaceId, (ifaceId) => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+:deep(.mtree > .el-card__body) {
+  min-height: 0;
   overflow: hidden;
 }
 .main-panel {

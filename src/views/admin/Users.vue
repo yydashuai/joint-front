@@ -47,10 +47,10 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="分配系统" min-width="200">
+        <el-table-column label="分配联试对象" min-width="200">
           <template #default="{ row }">
             <template v-if="row.role === 'admin'">
-              <el-tag size="small" type="success" effect="plain">全部系统</el-tag>
+              <el-tag size="small" type="success" effect="plain">全部联试对象</el-tag>
             </template>
             <template v-else>
               <div class="sys-tags">
@@ -141,8 +141,8 @@
         <el-form-item label="邮箱">
           <el-input v-model="form.email" placeholder="可选" />
         </el-form-item>
-        <el-form-item v-if="form.role === 'tester'" label="分配系统">
-          <el-select v-model="form.systemIds" multiple placeholder="选择可访问的系统" style="width: 100%;">
+        <el-form-item v-if="form.role === 'tester'" label="分配联试对象">
+          <el-select v-model="form.systemIds" multiple placeholder="选择可访问的联试对象" style="width: 100%;">
             <el-option
               v-for="sys in systemStore.systems"
               :key="sys.id"
@@ -192,7 +192,7 @@ const systemStore = useSystemStore()
 /* ========== 统计 ========== */
 const disabledCount = computed(() => authStore.users.filter(u => u.status === 'disabled').length)
 
-/* ========== 分配系统显示 ========== */
+/* ========== 分配联试对象显示 ========== */
 const getAssignedSystems = (userId) => {
   const ids = authStore.getSystemIds(userId)
   return systemStore.systems.filter(s => ids.includes(s.id))

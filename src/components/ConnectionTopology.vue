@@ -1,6 +1,6 @@
 <template>
   <div class="topo">
-    <!-- 中心：本机联试工具 / 当前系统 -->
+    <!-- 中心：本机联试工具 / 当前联试对象 -->
     <div class="topo__hub">
       <el-icon class="topo__hub-icon"><Monitor /></el-icon>
       <div class="topo__hub-name">{{ hubLabel }}</div>
@@ -9,19 +9,19 @@
 
     <div v-if="hasContent" class="topo__groups">
       <div v-for="g in renderGroups" :key="g.id" class="topo__group" :class="{ 'no-sys': !g.showSys }">
-        <!-- 系统中间节点（仅"全部系统"模式） -->
+        <!-- 二级节点：系统接口 / xx方案 -->
         <template v-if="g.showSys">
           <span class="topo__line line--sys" />
-          <div class="topo__sysnode" @click="emit('select-system', g.id)">
-            <el-icon class="topo__sysnode-icon"><Box /></el-icon>
+          <div class="topo__sysnode" :class="{ 'is-active': g.selectId && g.selectId === selectedId }" @click="emit('select', g.selectId)">
+            <el-icon class="topo__sysnode-icon"><component :is="g.icon" /></el-icon>
             <div class="topo__sysnode-main">
               <div class="topo__sysnode-name">{{ g.name }}</div>
-              <div class="topo__sysnode-sub">在线 {{ onlineOf(g.modules) }} / {{ g.modules.length }}</div>
+              <div v-if="g.sub" class="topo__sysnode-sub">{{ g.sub }}</div>
             </div>
           </div>
         </template>
 
-        <!-- 模块节点 -->
+        <!-- 叶子节点：接口卡 -->
         <div v-if="g.modules.length" class="topo__spokes">
           <div v-for="m in g.modules" :key="m.id" class="topo__spoke">
             <span class="topo__line" :class="`line--${m.status}`" />
@@ -33,7 +33,7 @@
               <span class="dot" :class="`dot--${m.status}`" />
               <div class="topo__node-main">
                 <div class="topo__node-name">{{ m.name }}</div>
-                <div class="topo__node-sub">{{ m.ip }}:{{ m.port }}</div>
+                <div class="topo__node-sub">{{ m.status === 'unlinked' ? '未配置链路节点' : `${m.ip}:${m.port}` }}</div>
                 <div v-if="m.desc" class="topo__node-desc">{{ m.desc }}</div>
               </div>
               <el-tag size="small" :type="statusMeta[m.status].tag" effect="light" disable-transitions>
@@ -47,22 +47,22 @@
             </div>
           </div>
         </div>
-        <span v-else class="topo__nomod">该系统暂无模块</span>
+        <span v-else class="topo__nomod">暂无接口</span>
       </div>
     </div>
-    <el-empty v-else :image-size="56" description="暂无模块" />
+    <el-empty v-else :image-size="56" description="暂无接口或方案" />
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
-import { Monitor, Box } from '@element-plus/icons-vue'
+import { Monitor } from '@element-plus/icons-vue'
 
 const props = defineProps({
   modules: { type: Array, default: () => [] },
   groups: { type: Array, default: () => [] },
   grouped: { type: Boolean, default: false },
-  hubLabel: { type: String, default: '全部系统' },
+  hubLabel: { type: String, default: '联试工具' },
   selectedId: { type: [Number, String, null], default: null }
 })
 const emit = defineEmits(['select', 'ping', 'select-system'])
@@ -70,12 +70,11 @@ const emit = defineEmits(['select', 'ping', 'select-system'])
 const statusMeta = {
   online: { text: '在线', tag: 'success' },
   offline: { text: '离线', tag: 'info' },
-  pinging: { text: '检测中', tag: 'warning' }
+  pinging: { text: '检测中', tag: 'warning' },
+  unlinked: { text: '未配置', tag: 'info' }
 }
 
-const onlineOf = (modules) => modules.filter((m) => m.status === 'online').length
-
-// 统一成"分组"渲染：全部系统→按系统分组；单系统→一个无系统节点的组直接挂模块
+// 统一成"分组"渲染：全部联试对象→按联试对象分组；单个联试对象→一个无联试对象节点的组直接挂链路节点
 const renderGroups = computed(() =>
   props.grouped
     ? props.groups.map((g) => ({ ...g, showSys: true }))
@@ -119,7 +118,7 @@ const hasContent = computed(() => (props.grouped ? props.groups.length > 0 : pro
   &-sub { font-size: 11px; opacity: 0.85; margin-top: 2px; }
 }
 
-/* 系统分组列 */
+/* 分组（系统接口 / xx方案） */
 .topo__groups {
   display: flex;
   flex-direction: column;
@@ -132,7 +131,7 @@ const hasContent = computed(() => (props.grouped ? props.groups.length > 0 : pro
   display: flex;
   align-items: center;
 
-  /* 竖向脊线（hub → 各系统/各模块） */
+  /* 竖向脊线（hub → 二级节点） */
   &::after {
     content: '';
     position: absolute;
@@ -146,11 +145,11 @@ const hasContent = computed(() => (props.grouped ? props.groups.length > 0 : pro
   &:only-child::after { display: none; }
 }
 
-/* 系统中间节点 */
+/* 二级节点框：系统接口 / xx方案 */
 .topo__sysnode {
   position: relative;
   flex-shrink: 0;
-  width: 150px;
+  min-width: 150px;
   margin-right: 40px;
   display: flex;
   align-items: center;
@@ -163,8 +162,9 @@ const hasContent = computed(() => (props.grouped ? props.groups.length > 0 : pro
   transition: all 0.15s;
 
   &:hover { background: var(--el-color-primary-light-8); box-shadow: 0 2px 8px rgba(47, 111, 235, 0.15); }
+  &.is-active { border-color: var(--el-color-primary); background: var(--el-color-primary-light-8); }
 
-  /* 系统 → 模块的横向短线 */
+  /* 二级节点 → 接口的横向短线 */
   &::after {
     content: '';
     position: absolute;
@@ -180,14 +180,14 @@ const hasContent = computed(() => (props.grouped ? props.groups.length > 0 : pro
   &-sub { font-size: 11px; color: var(--el-text-color-secondary); }
 }
 
-/* 无模块占位（保留与系统节点的连线，所以挂在 sysnode 右侧） */
+/* 暂无接口占位 */
 .topo__nomod {
   font-size: 12px;
   color: var(--el-text-color-placeholder);
   align-self: center;
 }
 
-/* 模块列 */
+/* 接口列 */
 .topo__spokes {
   display: flex;
   flex-direction: column;
@@ -223,6 +223,7 @@ const hasContent = computed(() => (props.grouped ? props.groups.length > 0 : pro
   &.line--online { border-color: var(--el-color-success); }
   &.line--pinging { border-top-style: dashed; border-color: var(--el-color-warning); }
   &.line--offline { border-top-style: dashed; border-color: var(--el-border-color); }
+  &.line--unlinked { border-top-style: dashed; border-color: var(--el-border-color-lighter); }
 }
 
 /* 模块节点卡片 */
@@ -244,6 +245,7 @@ const hasContent = computed(() => (props.grouped ? props.groups.length > 0 : pro
   &.is-active { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
   &.node--online { border-left-color: var(--el-color-success); }
   &.node--pinging { border-left-color: var(--el-color-warning); }
+  &.node--unlinked { border-left-color: var(--el-text-color-placeholder); opacity: .85; }
 
   &-main { flex: 1; min-width: 0; }
   &-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -259,6 +261,7 @@ const hasContent = computed(() => (props.grouped ? props.groups.length > 0 : pro
   &--online { background: var(--el-color-success); box-shadow: 0 0 0 3px var(--el-color-success-light-7); }
   &--offline { background: var(--el-text-color-placeholder); }
   &--pinging { background: var(--el-text-color-placeholder); animation: pulse 1s infinite; }
+  &--unlinked { background: var(--el-border-color); }
 }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 </style>

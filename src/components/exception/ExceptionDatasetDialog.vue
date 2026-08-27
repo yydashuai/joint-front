@@ -60,8 +60,7 @@
         <div v-else class="target-form">
           <el-input v-model="newName" maxlength="50" show-word-limit placeholder="输入数据集名称" />
           <div class="scope-preview">
-            <span>所属系统</span><strong>{{ systemName }}</strong>
-            <span>所属模块</span><strong>{{ moduleName }}</strong>
+            <span>所属联试对象</span><strong>{{ systemName }}</strong>
             <span>关联报文</span><strong>{{ samples[0]?.iface || '未关联' }}</strong>
           </div>
         </div>
@@ -83,7 +82,6 @@ import { ElMessage } from 'element-plus'
 import { useExceptionStore } from '@/stores/exception'
 import { useTestDataStore } from '@/stores/testData'
 import { useSystemStore } from '@/stores/system'
-import { useConnectionStore } from '@/stores/connection'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -95,7 +93,6 @@ const emit = defineEmits(['update:modelValue', 'saved'])
 const exceptionStore = useExceptionStore()
 const dataStore = useTestDataStore()
 const systemStore = useSystemStore()
-const connStore = useConnectionStore()
 const targetMode = ref('existing')
 const datasetId = ref(null)
 const newName = ref('')
@@ -111,7 +108,6 @@ const candidateDatasets = computed(() => {
   return dataStore.datasets.filter((dataset) => !systemId || dataset.systemId === systemId)
 })
 const systemName = computed(() => systemStore.systems.find((item) => item.id === firstSample.value?.systemId)?.name || '未归属系统')
-const moduleName = computed(() => connStore.nodes.find((item) => item.id === firstSample.value?.moduleId)?.name || '未归属模块')
 const canSubmit = computed(() => props.samples.length > 0 && (
   targetMode.value === 'existing' ? datasetId.value != null : newName.value.trim()
 ))
@@ -150,7 +146,6 @@ const submit = () => {
     dataset = dataStore.addDataset({
       name: newName.value.trim(),
       systemId: firstSample.value?.systemId || null,
-      moduleName: moduleName.value === '未归属模块' ? '' : moduleName.value,
       linkedInterface: firstSample.value?.iface || '',
       desc: '由异常数据管理保存，用于复现异常或构造对端测试数据。',
     })

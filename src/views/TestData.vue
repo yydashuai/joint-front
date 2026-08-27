@@ -482,7 +482,7 @@ const onUploadFile = (data) => {
 const showDataChainDialog = ref(false)
 const dataChainPreset = ref(null)
 
-// 默认归属：取连接树当前选中节点（系统 + 模块）
+// 默认归属：取连接树当前选中节点（联试对象 + 链路节点）
 const currentSystemId = computed(() => connStore.selected?.systemId ?? systemStore.currentId ?? '')
 const currentModuleName = computed(() => connStore.selected?.name ?? '')
 

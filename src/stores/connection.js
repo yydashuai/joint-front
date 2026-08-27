@@ -46,7 +46,7 @@ export const useConnectionStore = defineStore('connection', {
     add(node) {
       const n = makeNode({
         ...node,
-        name: makeUniqueName(this.nodes, node.name || '新建模块'),
+        name: makeUniqueName(this.nodes, node.name || '新建链路节点'),
       })
       this.nodes.unshift(n)
       this.selectedId = n.id

@@ -23,8 +23,8 @@ export const useEntityNameGuard = () => {
   const ruleStore = useRuleStore()
 
   const namedEntities = computed(() => [
-    ...systemStore.systems.map((item) => ({ item, type: '系统' })),
-    ...connectionStore.nodes.map((item) => ({ item, type: '模块' })),
+    ...systemStore.systems.map((item) => ({ item, type: '联试对象' })),
+    ...connectionStore.nodes.map((item) => ({ item, type: '链路节点' })),
     ...protocolStore.protocols.map((item) => ({ item, type: '字段' })),
     ...protocolStore.interfaces.map((item) => ({ item, type: '报文' })),
     ...protocolStore.testInterfaces.map((item) => ({ item, type: '接口' })),

@@ -53,18 +53,6 @@
           <span class="topbar__logo">●</span>
           <span class="topbar__name">便携式智能联试工具</span>
         </div>
-        <div class="topbar__system">
-          <span class="topbar__system-label">被测系统：</span>
-          <el-select v-model="currentSystemKey" class="topbar__system-select" size="small">
-            <el-option
-              v-for="option in systemStore.options"
-              :key="option.value ?? 'all'"
-              :label="option.label"
-              :value="option.value ?? ALL_SYSTEM_KEY"
-            />
-          </el-select>
-          <el-button v-if="isAdmin" :icon="Setting" size="small" @click="systemManagerVisible = true">管理</el-button>
-        </div>
         <div class="topbar__user">
           <el-tooltip content="通知中心">
             <el-badge :value="notificationCount" :hidden="!notificationCount" :max="99" class="topbar__notify">
@@ -102,7 +90,6 @@
       </main>
     </div>
 
-    <SystemManager v-model="systemManagerVisible" />
     <el-drawer v-model="notifyDrawerVisible" title="通知中心" size="420px" @open="activeNotifyTab = 'alert'">
       <div class="notify-panel">
         <el-tabs v-model="activeNotifyTab" class="notify-tabs">
@@ -146,7 +133,6 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bell, Setting, User, Lock, SwitchButton, Fold, Expand } from '@element-plus/icons-vue'
-import SystemManager from '@/components/SystemManager.vue'
 import { navRoutes } from '@/router'
 import { useSystemStore } from '@/stores/system'
 import { useAuthStore } from '@/stores/auth'
@@ -161,11 +147,9 @@ const authStore = useAuthStore()
 const connStore = useConnectionStore()
 const exceptionStore = useExceptionStore()
 const configStore = useConfigStore()
-const systemManagerVisible = ref(false)
 const notifyDrawerVisible = ref(false)
 const activeNotifyTab = ref('alert')
 const railCollapsed = ref(false)
-const ALL_SYSTEM_KEY = '__all__'
 
 const isActive = (item) => route.path === item.path
 const isAdmin = computed(() => authStore.currentUser?.role === 'admin')
@@ -176,13 +160,8 @@ const avatarText = computed(() => {
   return name.charAt(0) || '?'
 })
 
-const currentSystemKey = computed({
-  get: () => systemStore.currentId ?? ALL_SYSTEM_KEY,
-  set: (id) => systemStore.setCurrent(id === ALL_SYSTEM_KEY ? null : id)
-})
-
-const systemName = (id) => systemStore.systems.find((item) => item.id === id)?.name || '未归属系统'
-const moduleName = (id) => connStore.nodes.find((item) => item.id === id)?.name || '未归属模块'
+const systemName = (id) => systemStore.systems.find((item) => item.id === id)?.name || '未归属联试对象'
+const moduleName = (id) => connStore.nodes.find((item) => item.id === id)?.name || '未归属链路节点'
 const inCurrentScope = (systemId) => systemStore.currentId == null || systemId === systemStore.currentId
 
 const alertNotificationItems = computed(() => {
