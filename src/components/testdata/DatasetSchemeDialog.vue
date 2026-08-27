@@ -43,7 +43,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
+import { reactive, computed, watch } from 'vue'
 import { useTestDataStore } from '@/stores/testData'
 import { useSystemStore } from '@/stores/system'
 import { useEntityNameGuard } from '@/composables/useEntityNameGuard'

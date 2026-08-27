@@ -125,8 +125,7 @@ const saveSystem = async () => {
       systemStore.update(editingId.value, payload)
       ElMessage.success('联试对象信息已更新')
     } else {
-      const created = systemStore.add(payload)
-      systemStore.setCurrent(created.id)
+      systemStore.add(payload)
       ElMessage.success('联试对象已创建')
     }
     resetForm()
@@ -134,7 +133,6 @@ const saveSystem = async () => {
 }
 
 const manageModules = async (system) => {
-  systemStore.setCurrent(system.id)
   emit('update:modelValue', false)
   await nextTick()
   router.push('/connection')

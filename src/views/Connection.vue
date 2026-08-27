@@ -63,9 +63,9 @@
                 <div class="head-copy">
                   <span class="head-eyebrow">当前接口</span>
                   <strong>{{ selIface.name }}</strong>
-                  <span class="head-meta">
-                    所属联试对象：{{ systemName(selIface.systemId) }} · 报文：{{ (selIface.messageIds || []).length }} 个
-                  </span>
+                    <span class="head-meta">
+                      报文：{{ (selIface.messageIds || []).length }} 个
+                    </span>
                 </div>
               </div>
               <el-button link type="primary" size="small" @click="goEditIface(selIface)">编辑接口</el-button>
@@ -149,9 +149,9 @@
                 <div class="head-copy">
                   <span class="head-eyebrow">当前方案</span>
                   <strong>{{ selScheme.name }}</strong>
-                  <span class="head-meta">
-                    包含接口：{{ (selScheme.interfaceIds || []).length }} 个 · 所属联试对象：{{ systemName(selScheme.systemId) }}
-                  </span>
+                    <span class="head-meta">
+                      包含接口：{{ (selScheme.interfaceIds || []).length }} 个
+                    </span>
                 </div>
               </div>
               <el-button link type="primary" size="small" @click="goEditScheme(selScheme)">编辑方案</el-button>
@@ -313,7 +313,6 @@ const linkNodeSystemKey = computed({
 /* ========== 树徽标 / 系统名 ========== */
 const ifaceBadge = (iface) => `${(iface?.messageIds || []).length} 报文`
 const schemeBadge = (scheme) => `${(scheme?.interfaceIds || []).length} 接口`
-const systemName = (id) => systemStore.systems.find((s) => s.id === id)?.name || '—'
 const moduleSystemOptions = computed(() => [
   ...systemStore.systems.map((system) => ({ label: system.name, value: system.id })),
   { label: '未分配', value: UNASSIGNED_KEY }
@@ -473,7 +472,7 @@ const handleRemove = () => {
 const dialogVisible = ref(false)
 const systemManagerVisible = ref(false)
 const createRef = ref()
-const defaultSystemId = () => systemStore.currentId ?? systemStore.systems[0]?.id ?? null
+const defaultSystemId = () => systemStore.systems[0]?.id ?? null
 const blankDraft = () => ({
   systemId: defaultSystemId(),
   name: '',

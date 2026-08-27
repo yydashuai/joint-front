@@ -294,7 +294,6 @@ import { Search, WarningFilled, ArrowDown } from '@element-plus/icons-vue'
 import MonitorTree from '@/components/execution/MonitorTree.vue'
 import { useTestDataStore } from '@/stores/testData'
 import { useExecutionStore } from '@/stores/execution'
-import { useSystemStore } from '@/stores/system'
 import { useProtocolStore, collectInterfaceDatasetFields } from '@/stores/protocol'
 import { useReportStore } from '@/stores/report'
 import { excellentHeatHint, excellentHeatScore } from '@/utils/excellentHeat'
@@ -305,7 +304,6 @@ const props = defineProps({ mode: { type: String, default: 'history' } })
 const emit = defineEmits(['use-for-generation', 'open-file'])
 const store = useTestDataStore()
 const executionStore = useExecutionStore()
-const systemStore = useSystemStore()
 const protoStore = useProtocolStore()
 const reportStore = useReportStore()
 const router = useRouter()
@@ -409,7 +407,6 @@ const clearSelection = () => historyTableRef.value?.clearSelection?.()
 
 const baseRows = computed(() => store.allHistoryData
   .map((row) => ({ ...row, _rowKey: `${row._datasetId}-${row.id}`, source: normalizeSource(row.source) }))
-  .filter((row) => systemStore.currentId == null || row._systemId === systemStore.currentId)
   .filter((row) => props.mode !== 'excellent' || row.excellent))
 
 const filteredRows = computed(() => {

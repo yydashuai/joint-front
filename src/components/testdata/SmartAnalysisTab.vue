@@ -8,9 +8,6 @@
             <!-- S1：分析范围筛选（仅「数据分析」视图展示） -->
             <div class="scope-bar">
               <span class="scope-bar__label">分析范围</span>
-              <el-select v-show="false" v-model="systemId" clearable placeholder="全部联试对象" style="width: 150px" @change="onSystemChange">
-                <el-option v-for="s in systemStore.systems" :key="s.id" :label="s.name" :value="s.id" />
-              </el-select>
               <el-select v-model="interfaceId" clearable filterable placeholder="全部接口" style="width: 240px">
                 <el-option v-for="i in ifaceOptions" :key="i.id" :label="i.name" :value="i.id" />
               </el-select>
@@ -145,7 +142,6 @@ import { useExecutionStore } from '@/stores/execution'
 import { useTestTaskStore } from '@/stores/testTask'
 import { useDatasetSchemeStore } from '@/stores/datasetScheme'
 import { useAnalysisStore } from '@/stores/analysis'
-import { useSystemStore } from '@/stores/system'
 
 const emit = defineEmits(['navigate'])
 const tdStore = useTestDataStore()
@@ -154,33 +150,26 @@ const execStore = useExecutionStore()
 const taskStore = useTestTaskStore()
 const dsSchemeStore = useDatasetSchemeStore()
 const analysisStore = useAnalysisStore()
-const systemStore = useSystemStore()
 const activePanel = ref('analysis')
 
 /* ---------- S1：范围筛选 ---------- */
-const systemId = ref('')
 const interfaceId = ref('')
-const ifaceOptions = computed(() => protoStore.testInterfaces.filter((item) => !systemId.value || item.systemId === systemId.value))
-const onSystemChange = () => { interfaceId.value = '' }
-const resetScope = () => { systemId.value = ''; interfaceId.value = '' }
+const ifaceOptions = computed(() => protoStore.testInterfaces)
+const resetScope = () => { interfaceId.value = '' }
 const scopeTitle = computed(() => {
-  const parts = []
-  if (systemId.value) parts.push(systemStore.systems.find((s) => s.id === systemId.value)?.name || '')
-  if (interfaceId.value) parts.push(protoStore.testInterfaces.find((i) => String(i.id) === String(interfaceId.value))?.name || '')
-  return parts.filter(Boolean).join(' · ')
+  if (interfaceId.value) return protoStore.testInterfaces.find((i) => String(i.id) === String(interfaceId.value))?.name || ''
+  return ''
 })
 
 /* ---------- 范围数据 ---------- */
 // 数据集 / 文件按接口过滤：数据集无 interfaceId 字段，需经 messageId 反查报文的 ownerIfaceId
 const inScopeByIface = (ds) => !interfaceId.value || String(datasetIfaceId(ds)) === String(interfaceId.value)
-const scopeDatasets = computed(() => tdStore.datasets.filter((ds) => (!systemId.value || ds.systemId === systemId.value) && inScopeByIface(ds)))
+const scopeDatasets = computed(() => tdStore.datasets.filter(inScopeByIface))
 const scopeFiles = computed(() => tdStore.files.filter((file) => {
-  if (systemId.value && file.systemId !== systemId.value) return false
   if (interfaceId.value && !(file.interfaceIds || []).some((id) => String(id) === String(interfaceId.value))) return false
   return true
 }))
 const scopeHistory = computed(() => tdStore.allHistoryData.filter((row) => {
-  if (systemId.value && String(row._systemId) !== String(systemId.value)) return false
   if (interfaceId.value && String(row.interfaceId) !== String(interfaceId.value)) return false
   return true
 }))
@@ -373,7 +362,6 @@ const messageHasDataset = computed(() => {
   return set
 })
 const messagesInScope = computed(() => protoStore.interfaces.filter((m) => {
-  if (systemId.value && String(m.systemId) !== String(systemId.value)) return false
   if (interfaceId.value && String(m.ownerIfaceId) !== String(interfaceId.value)) return false
   return true
 }))

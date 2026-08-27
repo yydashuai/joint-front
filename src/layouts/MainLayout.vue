@@ -134,7 +134,6 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bell, Setting, User, Lock, SwitchButton, Fold, Expand } from '@element-plus/icons-vue'
 import { navRoutes } from '@/router'
-import { useSystemStore } from '@/stores/system'
 import { useAuthStore } from '@/stores/auth'
 import { useConnectionStore } from '@/stores/connection'
 import { useExceptionStore } from '@/stores/exception'
@@ -142,7 +141,6 @@ import { useConfigStore } from '@/stores/config'
 
 const route = useRoute()
 const router = useRouter()
-const systemStore = useSystemStore()
 const authStore = useAuthStore()
 const connStore = useConnectionStore()
 const exceptionStore = useExceptionStore()
@@ -160,21 +158,18 @@ const avatarText = computed(() => {
   return name.charAt(0) || '?'
 })
 
-const systemName = (id) => systemStore.systems.find((item) => item.id === id)?.name || '未归属联试对象'
 const moduleName = (id) => connStore.nodes.find((item) => item.id === id)?.name || '未归属链路节点'
-const inCurrentScope = (systemId) => systemStore.currentId == null || systemId === systemStore.currentId
 
 const alertNotificationItems = computed(() => {
   if (!configStore.notification.alertNotify) return []
   return exceptionStore.exceptions
-    .filter((item) => inCurrentScope(item.systemId))
     .filter((item) => !item.savedDatasetIds?.length)
     .map((item) => ({
       id: `alert-${item.id}`,
       kind: 'alert',
       tone: item.type === '无法解析' ? 'danger' : 'warning',
       title: item.type,
-      desc: `${systemName(item.systemId)} / ${moduleName(item.moduleId)} / ${item.iface}`,
+      desc: `${moduleName(item.moduleId)} / ${item.iface}`,
       time: item.capturedTime || '待记录',
       target: item,
     }))
@@ -183,14 +178,13 @@ const alertNotificationItems = computed(() => {
 const offlineNotificationItems = computed(() => {
   if (!configStore.notification.offlineNotify) return []
   return connStore.nodes
-    .filter((item) => inCurrentScope(item.systemId))
     .filter((item) => item.status === 'offline')
     .map((item) => ({
       id: `offline-${item.id}`,
       kind: 'offline',
       tone: 'offline',
       title: `${item.name} 链路不通`,
-      desc: `${systemName(item.systemId)} / ${item.ip}:${item.port}`,
+      desc: `${item.ip}:${item.port}`,
       time: '自动检测',
       target: item,
     }))
@@ -215,11 +209,8 @@ const jumpNotification = (item) => {
     router.push({ path: '/exception', query: { id: item.target.id } })
     return
   }
-  systemStore.setCurrent(item.target.systemId || null)
   router.push('/connection')
-}
-
-/** 用户下拉菜单命令处理 */
+}/** 用户下拉菜单命令处理 */
 const onUserCommand = (cmd) => {
   switch (cmd) {
     case 'settings':

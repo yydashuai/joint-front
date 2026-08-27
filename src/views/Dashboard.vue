@@ -115,7 +115,6 @@
                   >
                     {{ selectedTarget.kind === 'scheme' ? '接口方案' : '测试接口' }}
                   </el-tag>
-                  <span>{{ targetSystem?.name || '未归属联试对象' }}</span>
                 </div>
                 <h4>{{ selectedTarget.name }}</h4>
                 <p>{{ selectedTarget.desc || '暂无说明' }}</p>
@@ -219,14 +218,12 @@ import {
   Warning,
 } from '@element-plus/icons-vue'
 import MonitorTree from '@/components/execution/MonitorTree.vue'
-import { useSystemStore } from '@/stores/system'
 import { useProtocolStore, collectTestInterfaceFields } from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
 import { usePlanSchemeStore } from '@/stores/planScheme'
 import { useExceptionStore } from '@/stores/exception'
 
 const router = useRouter()
-const systemStore = useSystemStore()
 const protocolStore = useProtocolStore()
 const testDataStore = useTestDataStore()
 const schemeStore = usePlanSchemeStore()
@@ -277,7 +274,6 @@ const exceptionsOfIface = (iface) => {
     String(item.interfaceId) === String(iface.id) || names.has(item.iface)
   )
 }
-const systemNameOf = (id) => systemStore.systems.find((s) => s.id === id)?.name || '—'
 
 /** 首页卡片：接口卡 + 方案卡（替代原系统卡片） */
 const overviewCards = computed(() => {
@@ -291,7 +287,7 @@ const overviewCards = computed(() => {
       key: `iface-${iface.id}`,
       id: iface.id,
       name: iface.name,
-      desc: systemNameOf(iface.systemId),
+      desc: iface.desc || '测试接口',
       ref: iface,
       ok: ready,
       ready,
@@ -392,9 +388,6 @@ const targetInterfaces = computed(() => {
   return protocolStore.testInterfaces.filter((iface) => ids.has(String(iface.id)))
 })
 
-const targetSystem = computed(() =>
-  systemStore.systems.find((item) => item.id === selectedTarget.value?.systemId) || null
-)
 const targetTypeText = computed(() => selectedTarget.value?.kind === 'scheme' ? '方案' : '接口')
 
 const messageReadyCount = computed(() =>
@@ -459,7 +452,6 @@ const selectedTransport = computed(() => selectedMessage.value?.transportType ||
 
 const enterMonitor = (mode) => {
   if (!selectedTarget.value) return
-  systemStore.setCurrent(selectedTarget.value.systemId || null)
   router.push({
     path: '/execution',
     query: {

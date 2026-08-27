@@ -56,7 +56,7 @@
 <script setup>
 import { computed, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { TRANSPORT_TYPES, makeTransportConfig } from '@/stores/protocol'
+import { TRANSPORT_TYPES } from '@/stores/protocol'
 import { useCustomIfaceStore, makeHeaderConfig, makeListenConfig } from '@/stores/customIface'
 
 const props = defineProps({

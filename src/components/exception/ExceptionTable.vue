@@ -55,15 +55,7 @@
           @row-click="$emit('view', $event)"
         >
           <el-table-column type="selection" width="42" />
-          <el-table-column label="系统" prop="systemName" sortable="custom" min-width="140">
-            <template #default="{ row }">
-              <div class="stack">
-                <strong>{{ systemName(row.systemId) }}</strong>
-                <span>{{ row.iface }}</span>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column label="报文" prop="iface" sortable="custom" min-width="130">
+          <el-table-column label="报文" prop="iface" sortable="custom" min-width="150">
             <template #default="{ row }">
               <div class="stack">
                 <strong>{{ row.iface }}</strong>
@@ -117,7 +109,6 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { Download, Search } from '@element-plus/icons-vue'
 import { useExceptionStore } from '@/stores/exception'
-import { useSystemStore } from '@/stores/system'
 import TableRangeSelection from '@/components/common/TableRangeSelection.vue'
 
 const props = defineProps({
@@ -127,7 +118,6 @@ const props = defineProps({
 const emit = defineEmits(['view', 'save', 'variant', 'filters-change'])
 
 const store = useExceptionStore()
-const systemStore = useSystemStore()
 const selected = ref([])
 const groupSelections = new Map()
 const groupBy = ref('none')
@@ -146,7 +136,6 @@ watch(local, () => emit('filters-change', { ...local }), { deep: true })
 const typeOptions = computed(() => store.types)
 const tagOptions = computed(() => store.tagOptions)
 const typeMeta = (type) => store.typeMeta(type)
-const systemName = (id) => systemStore.systems.find((item) => item.id === id)?.name || '未归属系统'
 const firstIssue = (row) => row.issues?.[0] || {
   field: row.detail?.fieldPath || '',
   message: row.detail?.ruleMessage || row.remark || '',
@@ -160,7 +149,6 @@ const dataSummary = (row) => {
 }
 const savedStatus = (row) => row.savedDatasetIds?.length ? 'saved' : 'unsaved'
 const sortValue = (row, prop) => {
-  if (prop === 'systemName') return systemName(row.systemId)
   if (prop === 'issue') return `${firstIssue(row).field} ${firstIssue(row).message}`
   if (prop === 'savedStatus') return savedStatus(row)
   if (prop === 'capturedTime') return new Date(String(row.capturedTime || '').replace(/\//g, '-')).getTime() || 0
@@ -215,10 +203,9 @@ const onSortChange = ({ prop, order }) => {
   sortState.value = { prop: prop || '', order }
 }
 const exportCsv = () => {
-  const header = '捕获时间,系统,报文,异常类型,异常字段,异常说明,数据摘要,入库情况'
+  const header = '捕获时间,报文,异常类型,异常字段,异常说明,数据摘要,入库情况'
   const lines = sortedRows.value.map((row) => [
     row.capturedTime,
-    systemName(row.systemId),
     row.iface,
     row.type,
     firstIssue(row).field,

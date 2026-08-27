@@ -51,7 +51,7 @@
             </div>
           </div>
           <div class="iface-detail__meta">
-            {{ ifaceSystemName(detailIface) }} / {{ ifaceModuleName(detailIface) }}
+            <span v-if="ifaceModuleName(detailIface) && ifaceModuleName(detailIface) !== '—'">链路节点 {{ ifaceModuleName(detailIface) }}</span>
             <span v-if="detailIface.desc">· {{ detailIface.desc }}</span>
           </div>
           <div class="iface-detail__list">
@@ -100,7 +100,6 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Link, Plus, Search } from '@element-plus/icons-vue'
 import { useProtocolStore } from '@/stores/protocol'
-import { useSystemStore } from '@/stores/system'
 import { useConnectionStore } from '@/stores/connection'
 import { useCustomIfaceStore } from '@/stores/customIface'
 import MonitorTree from '@/components/execution/MonitorTree.vue'
@@ -108,7 +107,6 @@ import InterfaceEditor from '@/components/protocol/InterfaceEditor.vue'
 import InterfaceQuickConfig from '@/components/execution/InterfaceQuickConfig.vue'
 
 const store = useProtocolStore()
-const systemStore = useSystemStore()
 const connStore = useConnectionStore()
 const customStore = useCustomIfaceStore()
 const router = useRouter()
@@ -158,7 +156,6 @@ const ifaceMessages = (iface) => (iface?.messageIds || [])
   .filter(Boolean)
 const ifaceTransportType = (iface) => ifaceMessages(iface)[0]?.transportType || '—'
 const messageFieldCount = (message) => (message?.protocolRefs || []).length
-const ifaceSystemName = (iface) => systemStore.systems.find((s) => s.id === iface?.systemId)?.name || '—'
 const ifaceModuleName = (iface) => connStore.nodes.find((n) => n.id === iface?.moduleId)?.name || '—'
 
 /* ---- 树徽标 ---- */

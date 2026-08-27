@@ -44,19 +44,8 @@
       <el-form-item label="接口名称">
         <el-input v-model="form.name" placeholder="留空默认「新建接口」" clearable />
       </el-form-item>
-      <el-form-item v-if="ownerEditable" label="所属">
-        <div class="iqc-owner-selects">
-          <el-select v-model="form.systemId" placeholder="选择系统" @change="onOwnerSystemChange">
-            <el-option v-for="system in systemStore.visibleSystems" :key="system.id" :label="system.name" :value="system.id" />
-          </el-select>
-          <span>/</span>
-          <el-select v-model="form.moduleId" placeholder="选择模块" :disabled="!form.systemId" @change="form.datasetIds = []">
-            <el-option v-for="module in ownerModuleOptions" :key="module.id" :label="module.name" :value="module.id" />
-          </el-select>
-        </div>
-      </el-form-item>
-      <el-form-item v-else label="所属">
-        <span class="iqc-owner">{{ systemName }} / {{ moduleName }}</span>
+      <el-form-item v-if="!isCreate && form.moduleId" label="链路节点">
+        <span class="iqc-owner">{{ moduleName }}（可在「链路连接管理」中修改）</span>
       </el-form-item>
       <el-form-item label="备注">
         <el-input v-model="form.desc" type="textarea" :rows="2" placeholder="可选" />
@@ -102,7 +91,7 @@
       <div class="iqc-section">测试数据集</div>
       <el-form-item label="关联数据集">
         <template v-if="datasetOptions.length">
-          <el-select v-model="form.datasetIds" multiple filterable style="width: 100%" placeholder="选择本模块的数据集">
+          <el-select v-model="form.datasetIds" multiple filterable style="width: 100%" placeholder="选择关联数据集">
             <el-option
               v-for="ds in datasetOptions"
               :key="ds.id"
@@ -113,7 +102,7 @@
         </template>
         <template v-else>
           <span class="iqc-empty-hint">
-            本模块暂无数据集
+            暂无可用数据集
             <el-button link type="primary" size="small" @click="goTestData">去创建数据集</el-button>
           </span>
         </template>
@@ -195,7 +184,6 @@ import {
 } from '@/stores/protocol'
 import { useTestDataStore } from '@/stores/testData'
 import { useConnectionStore } from '@/stores/connection'
-import { useSystemStore } from '@/stores/system'
 import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const props = defineProps({
@@ -210,7 +198,6 @@ const router = useRouter()
 const protocolStore = useProtocolStore()
 const testDataStore = useTestDataStore()
 const connStore = useConnectionStore()
-const systemStore = useSystemStore()
 const { nextUniqueName, validateName } = useEntityNameGuard()
 
 const visible = computed({
@@ -249,23 +236,15 @@ watch(visible, (open) => {
   form.sendInterval = src?.sendInterval || 500
 }, { immediate: true })
 
-/* ---- 归属信息 ---- */
-const ownerEditable = computed(() => isCreate.value && !props.context)
-const ownerSystemId = computed(() => editingIface.value?.systemId ?? props.context?.systemId ?? form.systemId ?? null)
-const ownerModuleId = computed(() => editingIface.value?.moduleId ?? props.context?.moduleId ?? form.moduleId ?? null)
-const systemName = computed(() => systemStore.systems.find((s) => s.id === ownerSystemId.value)?.name || '—')
-const moduleName = computed(() => connStore.nodes.find((n) => n.id === ownerModuleId.value)?.name || '—')
-const ownerModuleOptions = computed(() => connStore.nodes.filter((module) => module.systemId === form.systemId))
+/* ---- 链路节点信息（可选关联，用于只读展示） ---- */
+const moduleName = computed(() => connStore.nodes.find((n) => n.id === form.moduleId)?.name || '—')
 
-const onOwnerSystemChange = () => {
-  form.moduleId = null
-  form.datasetIds = []
-}
-
-/* ---- 数据集选项：按系统 + 模块过滤 ---- */
-const datasetOptions = computed(() =>
-  testDataStore.datasets.filter((d) => d.systemId === ownerSystemId.value && d.moduleName === moduleName.value)
-)
+/* ---- 数据集选项：按接口名下报文关联 ---- */
+const datasetOptions = computed(() => {
+  const msgIds = new Set(form.messageIds.map(String))
+  const msgNames = new Set(formMessages.value.map((m) => m.name))
+  return testDataStore.datasets.filter((d) => msgIds.has(String(d.messageId)) || msgNames.has(d.linkedInterface))
+})
 
 /* ---- 接口 → 报文 → 字段链路不完整时禁止测试 ---- */
 const linkedFields = computed(() => collectTestInterfaceFields(
@@ -304,8 +283,6 @@ const addMessage = () => {
     name: newMessage.name.trim() || nextUniqueName('新建报文'),
     transportType: newMessage.transportType,
     desc: '',
-    systemId: editingIface.value.systemId,
-    moduleId: editingIface.value.moduleId,
   })
   form.messageIds = [...form.messageIds, message.id]
   newMessage.name = ''
@@ -327,16 +304,11 @@ const goConfigureMessage = (message = null) => {
     return
   }
   protocolStore.selectedInterfaceId = target.id
-  if (target.systemId) systemStore.setCurrent(target.systemId)
   router.push({ path: '/protocol', query: { kind: 'interface', iface: String(target.id) } })
 }
 
-/* ---- 保存 ---- */
+/* ---- 保存（归属链路节点可选，不再强制） ---- */
 const save = (silent = false) => {
-  if (!ownerSystemId.value || !ownerModuleId.value) {
-    ElMessage.warning('请选择所属联试对象和模块')
-    return null
-  }
   let iface = editingIface.value
   const candidateName = form.name.trim() || iface?.name || nextUniqueName('新建接口')
   const validName = validateName(candidateName, iface, '接口')
@@ -352,8 +324,8 @@ const save = (silent = false) => {
     iface = protocolStore.addTestInterface({
       name: validName,
       desc: form.desc,
-      systemId: ownerSystemId.value,
-      moduleId: ownerModuleId.value,
+      systemId: form.systemId ?? null,
+      moduleId: form.moduleId ?? null,
       datasetIds: [...form.datasetIds],
       strategy: { ...form.strategy },
       sendInterval: form.sendInterval || 500,
@@ -389,13 +361,6 @@ const goTestData = () => {
   color: var(--el-text-color-primary);
 }
 .iqc-owner { color: var(--el-text-color-secondary); font-size: 13px; }
-.iqc-owner-selects {
-  width: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-}
 .iqc-empty-hint { color: var(--el-text-color-secondary); font-size: 13px; }
 .iqc-msgs { width: 100%; display: flex; flex-direction: column; gap: 6px; }
 .iqc-msg {

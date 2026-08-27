@@ -13,7 +13,6 @@ import { useExceptionStore } from '@/stores/exception'
 import { useProtocolStore } from '@/stores/protocol'
 import { useReceptionStore } from '@/stores/reception'
 import { useRunBatchStore } from '@/stores/runBatch'
-import { useSystemStore } from '@/stores/system'
 import { useTestDataStore } from '@/stores/testData'
 
 const SEND_COLOR = '#2f6bff'
@@ -75,8 +74,7 @@ function trendOf(items, dateOf, valueOf = () => 1) {
     .map(([date, rows]) => ({ x: date.slice(5), y: sum(rows, valueOf) }))
 }
 
-const moduleNameOf = (moduleId) => useConnectionStore().nodes.find((item) => item.id === moduleId)?.name || '未归属模块'
-const systemNameOf = (systemId) => useSystemStore().systems.find((item) => item.id === systemId)?.name || '未归属联试对象'
+const moduleNameOf = (moduleId) => useConnectionStore().nodes.find((item) => item.id === moduleId)?.name || '未归属链路节点'
 /** 接口名（按接口 id 解析；未匹配时用报文/接口名字段兜底） */
 const interfaceNameOf = (id, fallback = '') => {
   if (id == null || id === '') return fallback
@@ -250,7 +248,6 @@ export function aggregateSend(filters = {}) {
     messagesByDay: trendOf(runs, (item) => item.dateKey || item.startedAt, (item) => item.total),
     batchesByDay: trendOf(batches, (item) => item.dateKey || item.startedAt),
     byInterface: sumBars(runs, (item) => interfaceNameOf(item.interfaceId, item.iface || '未命名接口'), (item) => item.total, (key) => key),
-    bySystem: sumBars(runs, (item) => item.systemId, (item) => item.total, systemNameOf),
     recentBatches: [...batches]
       .sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')))
       .slice(0, 20)
@@ -382,7 +379,6 @@ export function exportRows(category, filters = {}) {
     return aggregateReceive(filters).latest.map((item) => ({
       序号: item.seq,
       时间: item.time,
-      联试对象: systemNameOf(item.systemId),
       接口: interfaceNameOf(item.interfaceId, item.iface || ''),
       报文: item.iface,
       字节数: item.byteLength,
@@ -393,7 +389,6 @@ export function exportRows(category, filters = {}) {
   if (category === 'exception') {
     return aggregateException(filters).latest.map((item) => ({
       时间: item.capturedTime,
-      联试对象: systemNameOf(item.systemId),
       接口: interfaceNameOf(item.interfaceId, item.iface || ''),
       报文: item.iface,
       类型: item.type,
@@ -416,7 +411,6 @@ export function exportRows(category, filters = {}) {
   if (category === 'asset') {
     return getDatasets(filters).map((dataset) => ({
       数据集: dataset.name,
-      联试对象: systemNameOf(dataset.systemId),
       关联报文: dataset.linkedInterface || '',
       当前数据行: dataset.rows?.length || 0,
       历史数据行: dataset.historyRows?.length || 0,

@@ -69,7 +69,6 @@
           <div class="panel-title"><span>样本信息</span></div>
           <el-descriptions :column="1" border size="small">
             <el-descriptions-item label="来源">{{ sourceLabel }}</el-descriptions-item>
-            <el-descriptions-item label="所属联试对象">{{ systemName }}</el-descriptions-item>
             <el-descriptions-item label="所属报文">{{ exception.iface }}</el-descriptions-item>
             <el-descriptions-item v-if="exception.batchId || exception.runId" label="关联批次">{{ exception.batchId || exception.runId }}</el-descriptions-item>
             <el-descriptions-item label="数据集复用">
@@ -105,7 +104,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useExceptionStore, EXC_SOURCES } from '@/stores/exception'
-import { useSystemStore } from '@/stores/system'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -114,7 +112,6 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'save-dataset', 'create-variant'])
 
 const store = useExceptionStore()
-const systemStore = useSystemStore()
 const tagDraft = ref([])
 
 const visible = computed({
@@ -146,7 +143,6 @@ const byteLength = computed(() => {
   return Math.floor(compact.length / 2)
 })
 const sourceLabel = computed(() => EXC_SOURCES.find((item) => item.value === props.exception?.source)?.label || '接收数据自动捕获')
-const systemName = computed(() => systemStore.systems.find((item) => item.id === props.exception?.systemId)?.name || '未归属系统')
 
 watch(() => props.exception?.id, () => {
   tagDraft.value = [...(props.exception?.tags || [])]

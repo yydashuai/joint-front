@@ -60,7 +60,6 @@
         <div v-else class="target-form">
           <el-input v-model="newName" maxlength="50" show-word-limit placeholder="输入数据集名称" />
           <div class="scope-preview">
-            <span>所属联试对象</span><strong>{{ systemName }}</strong>
             <span>关联报文</span><strong>{{ samples[0]?.iface || '未关联' }}</strong>
           </div>
         </div>
@@ -81,7 +80,6 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useExceptionStore } from '@/stores/exception'
 import { useTestDataStore } from '@/stores/testData'
-import { useSystemStore } from '@/stores/system'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -92,7 +90,6 @@ const emit = defineEmits(['update:modelValue', 'saved'])
 
 const exceptionStore = useExceptionStore()
 const dataStore = useTestDataStore()
-const systemStore = useSystemStore()
 const targetMode = ref('existing')
 const datasetId = ref(null)
 const newName = ref('')
@@ -107,7 +104,6 @@ const candidateDatasets = computed(() => {
   const systemId = firstSample.value?.systemId
   return dataStore.datasets.filter((dataset) => !systemId || dataset.systemId === systemId)
 })
-const systemName = computed(() => systemStore.systems.find((item) => item.id === firstSample.value?.systemId)?.name || '未归属系统')
 const canSubmit = computed(() => props.samples.length > 0 && (
   targetMode.value === 'existing' ? datasetId.value != null : newName.value.trim()
 ))

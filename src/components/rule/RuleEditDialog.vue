@@ -139,7 +139,6 @@
 <script setup>
 import { computed, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
 import { RULE_TYPES, useRuleStore } from '@/stores/rule'
 import { useProtocolStore, BYTE_DATA_TYPES, DATA_RULE_CATEGORIES } from '@/stores/protocol'
 import { flattenInterfaceFields, inferConstraint, extractStructFields } from '@/utils/ruleEngine'

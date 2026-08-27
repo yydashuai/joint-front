@@ -145,9 +145,6 @@
             <ChartCard title="接口发送量 Top">
               <BarChart :data="send.byInterface" horizontal />
             </ChartCard>
-            <ChartCard title="按联试对象发送量">
-              <BarChart :data="send.bySystem" horizontal />
-            </ChartCard>
           </div>
           <ChartCard title="最近执行批次" full>
             <el-table :data="send.recentBatches" size="small" max-height="300" empty-text="当前范围暂无执行批次">
@@ -314,7 +311,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, Download, RefreshLeft } from '@element-plus/icons-vue'
 import BarChart from '@/components/stats/BarChart.vue'

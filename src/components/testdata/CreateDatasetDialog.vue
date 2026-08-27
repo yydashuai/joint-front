@@ -8,7 +8,7 @@
         <el-input v-model="form.desc" type="textarea" :rows="2" placeholder="可选" />
       </el-form-item>
       <el-form-item label="所属链路节点">
-        <el-input :model-value="`${form.moduleName}（${form.systemId}）`" disabled />
+        <el-input :model-value="form.moduleName || '未归属'" disabled />
       </el-form-item>
 
       <el-form-item label="关联报文" required>

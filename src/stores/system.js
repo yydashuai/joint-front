@@ -8,13 +8,9 @@ let seq = 100
 export const useSystemStore = defineStore('system', {
   state: () => ({
     systems: JSON.parse(JSON.stringify(seedSystems)),
-    currentId: null
   }),
 
   getters: {
-    current: (state) => state.systems.find((system) => system.id === state.currentId) || null,
-    isAll: (state) => state.currentId === null,
-
     /** 当前用户可见的系统列表（admin 看全部，tester 看授权列表） */
     visibleSystems(state) {
       const auth = useAuthStore()
@@ -35,9 +31,6 @@ export const useSystemStore = defineStore('system', {
   },
 
   actions: {
-    setCurrent(id) {
-      this.currentId = id ?? null
-    },
     add(system) {
       const next = {
         id: system.id || `sys-${++seq}`,
@@ -63,7 +56,6 @@ export const useSystemStore = defineStore('system', {
       const index = this.systems.findIndex((item) => item.id === id)
       if (index < 0) return
       this.systems.splice(index, 1)
-      if (this.currentId === id) this.currentId = null
     }
   }
 })

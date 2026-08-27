@@ -1,5 +1,4 @@
 import { defineStore } from 'pinia'
-import { useSystemStore } from '@/stores/system'
 import { nodes as seedNodes } from '@/mock/seed-data'
 import { makeUniqueName } from '@/utils/entityName'
 
@@ -29,14 +28,6 @@ export const useConnectionStore = defineStore('connection', {
 
   getters: {
     selected: (s) => s.nodes.find((n) => n.id === s.selectedId) || null,
-    modulesOf: (s) => (systemId) => (systemId === null ? s.nodes : s.nodes.filter((n) => n.systemId === systemId)),
-    onlineCount: (s) => {
-      const systemStore = useSystemStore()
-      const modules = systemStore.currentId === null ? s.nodes : s.nodes.filter((n) => n.systemId === systemStore.currentId)
-      return modules.filter((n) => n.status === 'online').length
-    },
-    /** 所有 Broker 节点（保留 getter 供首页兼容，实际不再有 broker 数据） */
-    brokers: (s) => s.nodes.filter(n => n.nodeType === 'broker'),
   },
 
   actions: {

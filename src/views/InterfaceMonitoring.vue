@@ -325,7 +325,6 @@ import { useTestDataStore } from '@/stores/testData'
 import { useTestTaskStore } from '@/stores/testTask'
 import { usePlanSchemeStore } from '@/stores/planScheme'
 import { useRunBatchStore } from '@/stores/runBatch'
-import { useSystemStore } from '@/stores/system'
 import { useEntityNameGuard } from '@/composables/useEntityNameGuard'
 
 const route = useRoute()
@@ -338,7 +337,6 @@ const testDataStore = useTestDataStore()
 const taskStore = useTestTaskStore()
 const schemeStore = usePlanSchemeStore()
 const batchStore = useRunBatchStore()
-const systemStore = useSystemStore()
 const { nextUniqueName, validateName } = useEntityNameGuard()
 
 protocolStore.migrateAllFromV1()
@@ -527,7 +525,6 @@ const onLeafAction = ({ action, data }) => {
 const goEditMessage = (message) => {
   if (!message) return
   protocolStore.selectedInterfaceId = message.id
-  if (message.systemId) systemStore.setCurrent(message.systemId)
   router.push({ path: '/protocol', query: { kind: 'interface', iface: String(message.id) } })
 }
 

@@ -197,12 +197,10 @@ import { downloadBlob } from '@/services/testDataService'
 import { useDatasetSchemeStore } from '@/stores/datasetScheme'
 import { useProtocolStore, collectInterfaceDatasetFields } from '@/stores/protocol'
 import { useConnectionStore } from '@/stores/connection'
-import { useSystemStore } from '@/stores/system'
 
 const tdStore = useTestDataStore()
 const protoStore = useProtocolStore()
 const connStore = useConnectionStore()
-const systemStore = useSystemStore()
 const schemeStore = useDatasetSchemeStore()
 const router = useRouter()
 
@@ -421,7 +419,6 @@ const onDuplicateDataset = (dup) => {
 const goEditMessage = (message) => {
   if (!message) return
   protoStore.selectedInterfaceId = message.id
-  if (message.systemId) systemStore.setCurrent(message.systemId)
   router.push({ path: '/protocol', query: { kind: 'interface', iface: String(message.id) } })
 }
 
@@ -482,8 +479,8 @@ const onUploadFile = (data) => {
 const showDataChainDialog = ref(false)
 const dataChainPreset = ref(null)
 
-// 默认归属：取连接树当前选中节点（联试对象 + 链路节点）
-const currentSystemId = computed(() => connStore.selected?.systemId ?? systemStore.currentId ?? '')
+// 默认归属：取连接树当前选中链路节点
+const currentSystemId = computed(() => connStore.selected?.systemId ?? '')
 const currentModuleName = computed(() => connStore.selected?.name ?? '')
 
 const openDataChainDialog = (preset = null) => {
